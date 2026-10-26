@@ -152,6 +152,7 @@ struct MacSettingsView: View {
     @State private var ramSizeGB = 8
     @State private var sharedFolderPath: String?
     @State private var sharedFolderReadOnly = false
+    @State private var shareClipboard = true
     @State private var restorePoints: [MacRestorePoint] = []
     @State private var newPointName = ""
     @State private var restoreMessage: String?
@@ -192,9 +193,20 @@ struct MacSettingsView: View {
             if sharedFolderPath != nil {
                 Toggle("macOS in the machine can only read it", isOn: $sharedFolderReadOnly)
             }
-            Text("It appears in the machine's Finder as My Shared Files, in Locations.")
+            Text(shareClipboard
+                 ? "It appears in the machine's Finder in Locations, My Shared Files, under its own name."
+                 : "It appears in the machine's Finder as My Shared Files, in Locations.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            Text("Clipboard")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            Toggle("Share the clipboard with \(configuration.name)", isOn: $shareClipboard)
+            Text("Text copied on the Mac can be pasted in macOS, and the other way round. Once, in macOS: open Finder, Locations, My Shared Files, AVM Clipboard, and open Install Clipboard Sharing. Takes effect at the next Start.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             restorePointsSection
 
@@ -214,6 +226,7 @@ struct MacSettingsView: View {
             ramSizeGB = configuration.ramSizeGB
             sharedFolderPath = configuration.sharedFolderPath
             sharedFolderReadOnly = configuration.sharedFolderIsReadOnly
+            shareClipboard = configuration.sharesClipboard
             reloadPoints()
         }
     }
@@ -333,6 +346,7 @@ struct MacSettingsView: View {
         updated.ramSizeGB = ramSizeGB
         updated.sharedFolderPath = sharedFolderPath
         updated.sharedFolderReadOnly = sharedFolderReadOnly ? true : nil
+        updated.shareClipboard = shareClipboard ? nil : false
         vmStore.save(updated)
         Announcer.shared.announce("Settings saved.", tone: .success)
         dismiss()

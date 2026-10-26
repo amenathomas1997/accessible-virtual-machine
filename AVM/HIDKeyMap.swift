@@ -85,3 +85,73 @@ nonisolated enum HIDKeyMap {
         return t
     }()
 }
+
+/// The keyboard for Windows' keys, from HID usages to what Windows gets
+/// (2026-10-26): Fn combinations, the Apple ISO swap, Pause, and each
+/// release matching its press. Pure, so the tests run it (AVMLogicTests).
+nonisolated struct WindowsKeyTranslator {
+    enum Output: Equatable {
+        case key(Int32, down: Bool)
+        case pause(down: Bool)
+    }
+
+    var appleISO = false
+    private(set) var fnHeld = false
+    private(set) var pressed = Set<Int32>()
+    /// What each held key was sent as, so its release matches its press
+    /// even if Fn came up in between.
+    private var sentFor: [Int: Int32] = [:]
+
+    mutating func translate(usage rawUsage: Int, pressed down: Bool) -> Output? {
+        if rawUsage == HIDKeyMap.fnUsage { fnHeld = down; return nil }
+        let usage = appleISO ? HIDKeyMap.isoSwapped(rawUsage) : rawUsage
+        if usage == HIDKeyMap.pauseUsage { return .pause(down: down) }
+        if down {
+            guard let code = (fnHeld ? HIDKeyMap.fnLayer[usage] : nil) ?? HIDKeyMap.scancode(forUsage: usage) else { return nil }
+            let scancode = Int32(code)
+            sentFor[usage] = scancode
+            pressed.insert(scancode)
+            return .key(scancode, down: true)
+        }
+        guard let scancode = sentFor.removeValue(forKey: usage) ?? HIDKeyMap.scancode(forUsage: usage).map(Int32.init) else { return nil }
+        pressed.remove(scancode)
+        return .key(scancode, down: false)
+    }
+
+    /// Everything still down, to release; the state starts over.
+    mutating func releaseAll() -> [Int32] {
+        let codes = Array(pressed)
+        pressed.removeAll()
+        sentFor.removeAll()
+        fnHeld = false
+        return codes
+    }
+}
+
+/// Which side of a modifier a Mac key event is about (2026-10-26): the
+/// device-dependent bits of NSEvent's modifier flags (IOLLEvent.h's
+/// NX_DEVICE…KEYMASK). The device-independent .shift stays set while the
+/// OTHER Shift is held, so releasing one Shift looked like a press.
+nonisolated enum ModifierSides {
+    /// Mac virtual key codes (Carbon's kVK_…) for the eight modifiers.
+    static func sideMask(forVirtualKey vk: Int) -> UInt {
+        switch vk {
+        case 0x3B: return 0x0000_0001   // left Control
+        case 0x38: return 0x0000_0002   // left Shift
+        case 0x3C: return 0x0000_0004   // right Shift
+        case 0x37: return 0x0000_0008   // left Command
+        case 0x36: return 0x0000_0010   // right Command
+        case 0x3A: return 0x0000_0020   // left Option
+        case 0x3D: return 0x0000_0040   // right Option
+        case 0x3E: return 0x0000_2000   // right Control
+        default:   return 0
+        }
+    }
+
+    /// Whether this modifier key is down after a flagsChanged event with
+    /// these raw modifier flags; nil for keys that aren't modifiers.
+    static func isDown(virtualKey vk: Int, flags: UInt) -> Bool? {
+        let side = sideMask(forVirtualKey: vk)
+        return side == 0 ? nil : (flags & side) != 0
+    }
+}

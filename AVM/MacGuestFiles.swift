@@ -14,6 +14,10 @@ nonisolated struct MacGuestFiles {
     var auxiliaryStorage: URL { folder.appendingPathComponent("AuxiliaryStorage") }
     var hardwareModel: URL { folder.appendingPathComponent("HardwareModel") }
     var machineIdentifier: URL { folder.appendingPathComponent("MachineIdentifier") }
+    /// The machine's network card's address, kept so it's the same at every
+    /// start: a saved machine resumes only on the configuration it was saved
+    /// with (2026-10-26), and macOS sees the same network card throughout.
+    var macAddress: URL { folder.appendingPathComponent("MACAddress") }
     /// A running machine saved to disk (MacGuestRunner.saveAndStop), to be
     /// resumed at the next Start.
     var savedState: URL { folder.appendingPathComponent("SavedState.vzvmsave") }

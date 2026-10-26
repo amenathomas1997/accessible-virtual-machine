@@ -246,7 +246,7 @@ class FocusLockManager: ObservableObject {
         guestName = VMManager.currentGuestName
         // Copied on the Mac before entering? Offer it to the guest now.
         AVMPasteboard.shared.macPasteboardMayHaveChanged()
-        Announcer.shared.announce("Entering \(guestName)", tone: .info)
+        Announcer.shared.announce("Entering \(guestName)", tone: .enterGuest)
         AVMLog.write("AVM: FocusLock.lock() — NOW LOCKED (isLocked=true).")
     }
 
@@ -266,7 +266,7 @@ class FocusLockManager: ObservableObject {
         // Caps Lock back to normal Mac behavior BEFORE the transition
         // announcement, for the same queue-flush reason as lock().
         CapsLockRemapper.shared.restoreForUnlock()
-        Announcer.shared.announce("Entering Mac", tone: .info)
+        Announcer.shared.announce("Entering Mac", tone: .leaveGuest)
         AVMLog.write("AVM: FocusLock.unlock() — NOW UNLOCKED (isLocked=false).")
     }
 
@@ -387,7 +387,7 @@ class FocusLockManager: ObservableObject {
             if voiceOverIsRunning {
                 AVMLog.write("AVM: FocusLock — key watch: window REGAINED key; announcement suppressed (VoiceOver running).")
             } else {
-                Announcer.shared.announce("Entering \(guestName)", tone: .info)
+                Announcer.shared.announce("Entering \(guestName)", tone: .enterGuest)
                 AVMLog.write("AVM: FocusLock — key watch: window REGAINED key; ANNOUNCED return.")
             }
         } else {

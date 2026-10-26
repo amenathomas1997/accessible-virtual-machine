@@ -46,7 +46,8 @@ enum MacGuestConfiguration {
 
     /// The machine as Apple's framework runs it, from AVM's settings.
     static func make(_ config: VMConfiguration, files: MacGuestFiles,
-                     hardwareModel: VZMacHardwareModel? = nil) throws -> VZVirtualMachineConfiguration {
+                     hardwareModel: VZMacHardwareModel? = nil,
+                     clipboardFolder: URL? = nil) throws -> VZVirtualMachineConfiguration {
         let model: VZMacHardwareModel
         if let hardwareModel {
             model = hardwareModel
@@ -82,6 +83,14 @@ enum MacGuestConfiguration {
 
         let network = VZVirtioNetworkDeviceConfiguration()
         network.attachment = VZNATNetworkDeviceAttachment()
+        if let text = try? String(contentsOf: files.macAddress, encoding: .utf8),
+           let saved = VZMACAddress(string: text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            network.macAddress = saved
+        } else {
+            let fresh = VZMACAddress.randomLocallyAdministered()
+            network.macAddress = fresh
+            try? fresh.string.write(to: files.macAddress, atomically: true, encoding: .utf8)
+        }
         vz.networkDevices = [network]
 
         let graphics = VZMacGraphicsDeviceConfiguration()
@@ -114,11 +123,20 @@ enum MacGuestConfiguration {
         vz.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
 
         // The shared folder appears in the machine's Finder by itself, as
-        // "My Shared Files", in /Volumes.
-        if let shared = config.sharedFolderURL {
-            let share = VZSingleDirectoryShare(directory: VZSharedDirectory(url: shared, readOnly: config.sharedFolderIsReadOnly))
-            let fs = VZVirtioFileSystemDeviceConfiguration(tag: VZVirtioFileSystemDeviceConfiguration.macOSGuestAutomountTag)
-            fs.share = share
+        // "My Shared Files", in /Volumes. With clipboard sharing
+        // (MacClipboard.swift) there are two folders, so each is a folder
+        // inside My Shared Files: the user's by its own name, and AVM
+        // Clipboard.
+        let fs = VZVirtioFileSystemDeviceConfiguration(tag: VZVirtioFileSystemDeviceConfiguration.macOSGuestAutomountTag)
+        if let clipboardFolder {
+            var directories = [MacClipboard.folderName: VZSharedDirectory(url: clipboardFolder, readOnly: false)]
+            if let shared = config.sharedFolderURL {
+                directories[shared.lastPathComponent] = VZSharedDirectory(url: shared, readOnly: config.sharedFolderIsReadOnly)
+            }
+            fs.share = VZMultipleDirectoryShare(directories: directories)
+            vz.directorySharingDevices = [fs]
+        } else if let shared = config.sharedFolderURL {
+            fs.share = VZSingleDirectoryShare(directory: VZSharedDirectory(url: shared, readOnly: config.sharedFolderIsReadOnly))
             vz.directorySharingDevices = [fs]
         }
 
@@ -316,11 +334,12 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     private var keyMonitor: Any?
     private var machine: VZVirtualMachine?
     private var files: MacGuestFiles?
+    private var clipboard: MacClipboard?
     private var vzConfiguration: VZVirtualMachineConfiguration?
     private var window: NSWindow?
     private var name = "macOS"
 
-    func start(_ config: VMConfiguration) {
+    func start(_ config: VMConfiguration, attempt: Int = 1) {
         if runningID == config.id {
             window?.makeKeyAndOrderFront(nil)
             Announcer.shared.announce("\(config.name) is already running; its window is in front.", tone: .info)
@@ -335,7 +354,9 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             guard files.isInstalled else {
                 throw MacGuestError("macOS isn't installed in \(config.name). Next: delete it and make it again with New macOS Virtual Machine.")
             }
-            let vz = try MacGuestConfiguration.make(config, files: files)
+            clipboard = config.sharesClipboard ? (try? MacClipboard(vmFolder: files.folder)) : nil
+            let vz = try MacGuestConfiguration.make(config, files: files, clipboardFolder: clipboard?.sharedDirectory)
+            clipboard?.start()
             let machine = VZVirtualMachine(configuration: vz)
             machine.delegate = self
             self.machine = machine
@@ -351,6 +372,19 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             Announcer.shared.announce("Starting \(config.name).", tone: .info)
             coldStart(machine, config: config)
         } catch {
+            clipboard?.stop()
+            clipboard = nil
+            // Just after an install (2026-10-26, measured by the macOS
+            // test): the installer's machine still holds the auxiliary
+            // storage for a few seconds, and the start fails with "Failed
+            // to lock auxiliary storage". Tried again, quietly, for 15 s.
+            if error.localizedDescription.localizedCaseInsensitiveContains("lock"), attempt < 6 {
+                AVMLog.write("AVM: MacGuest — \(config.name)'s files are still in use (\(error.localizedDescription)); trying again in 3 seconds.")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                    MainActor.assumeIsolated { self?.start(config, attempt: attempt + 1) }
+                }
+                return
+            }
             Announcer.shared.announce("\(config.name) could not start. Reason: \(error.localizedDescription)", tone: .failure)
         }
     }
@@ -553,7 +587,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         if MacVoiceOver.noteEnteringGuest() {
             entering += (entering.hasSuffix(".") ? " " : ". ") + "Press Command-F5 to turn your Mac's VoiceOver off while you're in \(guestName); AVM turns it back on when you return."
         }
-        Announcer.shared.announce(entering, tone: .info)
+        Announcer.shared.announce(entering, tone: .enterGuest)
         hintGiven = true
         AVMLog.write("AVM: MacGuest — keyboard to macOS.")
     }
@@ -565,7 +599,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         // Off first, so windowDidResignKey doesn't announce it again.
         releaseFullControl()
         setKeyboard(inGuest: false)
-        Announcer.shared.announce("Entering Mac", tone: .info)
+        Announcer.shared.announce("Entering Mac", tone: .leaveGuest)
         // The machine keeps the keyboard until Control and Command are let
         // go, so it sees them come up rather than staying held.
         whenModifiersReleased { [weak self] in
@@ -836,7 +870,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             releaseFullControl()
             setKeyboard(inGuest: false)
             window?.makeFirstResponder(giveButton)
-            Announcer.shared.announce("Entering Mac", tone: .info)
+            Announcer.shared.announce("Entering Mac", tone: .leaveGuest)
             AVMLog.write("AVM: MacGuest — keyboard to the Mac (window left).")
         }
     }
@@ -896,6 +930,8 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         window = nil
         machine = nil
         files = nil
+        clipboard?.stop()
+        clipboard = nil
         vzConfiguration = nil
         machineView = nil
         statusLabel = nil

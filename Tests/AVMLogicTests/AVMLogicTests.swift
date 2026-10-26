@@ -606,6 +606,67 @@ final class MacRestorePointTests: XCTestCase {
     }
 }
 
+/// The keyboard paths that went wrong on 2026-10-26, as tests: a key or
+/// modifier left down in Windows is a silent, maddening failure.
+final class KeyboardPathTests: XCTestCase {
+    // Mac virtual key codes.
+    let leftShift = 0x38, rightShift = 0x3C, leftCommand = 0x37, rightOption = 0x3D
+    // Device-dependent flag bits.
+    let lShiftBit: UInt = 0x2, rShiftBit: UInt = 0x4
+
+    func testBothShiftsReleaseSeparately() {
+        // Left Shift down, then Right Shift down, then Right Shift up: the
+        // device-independent .shift is still set, but Right Shift is up.
+        XCTAssertEqual(ModifierSides.isDown(virtualKey: leftShift, flags: lShiftBit), true)
+        XCTAssertEqual(ModifierSides.isDown(virtualKey: rightShift, flags: lShiftBit | rShiftBit), true)
+        XCTAssertEqual(ModifierSides.isDown(virtualKey: rightShift, flags: lShiftBit), false)
+        XCTAssertEqual(ModifierSides.isDown(virtualKey: leftShift, flags: 0), false)
+    }
+
+    func testEveryModifierHasItsOwnBit() {
+        let keys = [0x3B, 0x38, 0x3C, 0x37, 0x36, 0x3A, 0x3D, 0x3E]
+        let bits = keys.map(ModifierSides.sideMask(forVirtualKey:))
+        XCTAssertFalse(bits.contains(0))
+        XCTAssertEqual(Set(bits).count, keys.count)
+        XCTAssertNil(ModifierSides.isDown(virtualKey: 0x00, flags: 0xFFFF), "a letter isn't a modifier")
+    }
+
+    func testFnReleaseMatchesPressEvenIfFnLetGoFirst() {
+        var t = WindowsKeyTranslator()
+        XCTAssertNil(t.translate(usage: HIDKeyMap.fnUsage, pressed: true))
+        XCTAssertEqual(t.translate(usage: 0x2A, pressed: true), .key(0x153, down: true))    // Fn-Backspace: Delete
+        XCTAssertNil(t.translate(usage: HIDKeyMap.fnUsage, pressed: false))
+        XCTAssertEqual(t.translate(usage: 0x2A, pressed: false), .key(0x153, down: false))  // Delete up, not Backspace
+        XCTAssertEqual(t.translate(usage: 0x2A, pressed: true), .key(0x0E, down: true))     // plain Backspace now
+        XCTAssertTrue(t.pressed.contains(0x0E))
+    }
+
+    func testISOSwapOnlyWhenAsked() {
+        var plain = WindowsKeyTranslator()
+        XCTAssertEqual(plain.translate(usage: 0x35, pressed: true), .key(0x29, down: true))
+        var iso = WindowsKeyTranslator()
+        iso.appleISO = true
+        XCTAssertEqual(iso.translate(usage: 0x35, pressed: true), .key(0x56, down: true))
+        XCTAssertEqual(iso.translate(usage: 0x64, pressed: true), .key(0x29, down: true))
+    }
+
+    func testPauseGoesItsOwnWay() {
+        var t = WindowsKeyTranslator()
+        XCTAssertEqual(t.translate(usage: HIDKeyMap.pauseUsage, pressed: true), .pause(down: true))
+        XCTAssertEqual(t.translate(usage: HIDKeyMap.pauseUsage, pressed: false), .pause(down: false))
+        XCTAssertTrue(t.pressed.isEmpty)
+    }
+
+    func testReleaseAllLetsGoOfEverything() {
+        var t = WindowsKeyTranslator()
+        _ = t.translate(usage: 0xE3, pressed: true)   // Windows key
+        _ = t.translate(usage: 0x04, pressed: true)   // a
+        XCTAssertEqual(Set(t.releaseAll()), [0x15B, 0x1E])
+        XCTAssertTrue(t.pressed.isEmpty)
+        XCTAssertEqual(t.translate(usage: 0x04, pressed: false), .key(0x1E, down: false), "a late key-up still maps")
+    }
+}
+
 final class HIDKeyMapTests: XCTestCase {
     func testCommonKeys() {
         XCTAssertEqual(HIDKeyMap.scancode(forUsage: 0x04), 0x1E)        // a

@@ -1566,8 +1566,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
             // held, so releasing one Shift was sent as a second press and it
             // stayed down in the guest. The device-dependent bits say which.
             let mask = Self.modifierMask(forVirtualKey: vk)
-            let side = Self.sideMask(forVirtualKey: vk)
-            let isDown = !mask.isEmpty && (side != 0 ? (flags.rawValue & side) != 0 : flags.contains(mask))
+            let isDown = ModifierSides.isDown(virtualKey: vk, flags: flags.rawValue) ?? (!mask.isEmpty && flags.contains(mask))
             // Stage B: names which modifier went down/up and when — key
             // identity, so gated. The send below is NOT gated.
             if KeyEventLogging.isEnabled {
@@ -2200,22 +2199,6 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
 
 // MARK: - Keycode translation (macOS virtual keycode -> PC XT set-1 scancode)
 extension SPICECoordinator {
-
-    /// The device-dependent bit for one side's modifier (IOLLEvent.h's
-    /// NX_DEVICE…KEYMASK), 0 for keys that aren't modifiers.
-    static func sideMask(forVirtualKey vk: Int) -> UInt {
-        switch vk {
-        case kVK_Control:      return 0x0000_0001
-        case kVK_Shift:        return 0x0000_0002
-        case kVK_RightShift:   return 0x0000_0004
-        case kVK_Command:      return 0x0000_0008
-        case kVK_RightCommand: return 0x0000_0010
-        case kVK_Option:       return 0x0000_0020
-        case kVK_RightOption:  return 0x0000_0040
-        case kVK_RightControl: return 0x0000_2000
-        default:               return 0
-        }
-    }
 
     static func modifierMask(forVirtualKey vk: Int) -> NSEvent.ModifierFlags {
         switch vk {

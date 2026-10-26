@@ -31,16 +31,14 @@ final class WindowsKeyboard {
     /// Sends Pause, which has no single scancode (HIDKeyMap.pauseUsage).
     var sendPause: ((Bool) -> Void)?
     /// An Apple ISO keyboard: § and ` swapped back (HIDKeyMap.isoSwapped).
-    var appleISO = false
-    /// An Apple keyboard's Fn is held: its Fn combinations apply.
-    private var fnHeld = false
-    /// What each held key was sent as, so its release matches its press
-    /// even if Fn came up in between.
-    private var sentFor: [Int: Int32] = [:]
+    var appleISO: Bool {
+        get { translator.appleISO }
+        set { translator.appleISO = newValue }
+    }
+    private var translator = WindowsKeyTranslator()
 
     private(set) var keyboardID: String?
     private var keyboardName = "The keyboard for Windows"
-    private var pressed = Set<Int32>()
     private var announcedHeld = false
 
     private init() {}
@@ -94,26 +92,13 @@ final class WindowsKeyboard {
         }
     }
 
-    func key(usage rawUsage: Int, pressed down: Bool) {
+    func key(usage: Int, pressed down: Bool) {
         guard keyboardID != nil, let send else { return }
-        if rawUsage == HIDKeyMap.fnUsage { fnHeld = down; return }
-        let usage = appleISO ? HIDKeyMap.isoSwapped(rawUsage) : rawUsage
-        if usage == HIDKeyMap.pauseUsage {
-            sendPause?(down)
-            return
+        switch translator.translate(usage: usage, pressed: down) {
+        case .key(let scancode, let isDown): send(scancode, isDown)
+        case .pause(let isDown): sendPause?(isDown)
+        case nil: break
         }
-        let scancode: Int32
-        if down {
-            guard let code = (fnHeld ? HIDKeyMap.fnLayer[usage] : nil) ?? HIDKeyMap.scancode(forUsage: usage) else { return }
-            scancode = Int32(code)
-            sentFor[usage] = scancode
-            pressed.insert(scancode)
-        } else {
-            guard let code = sentFor.removeValue(forKey: usage) ?? HIDKeyMap.scancode(forUsage: usage).map(Int32.init) else { return }
-            scancode = code
-            pressed.remove(scancode)
-        }
-        send(scancode, down)
     }
 
     func stateChanged(_ id: String, held: Bool, detail: String?) {
@@ -140,11 +125,9 @@ final class WindowsKeyboard {
     }
 
     private func releaseAllKeys() {
-        fnHeld = false
-        sentFor.removeAll()
-        guard let send else { pressed.removeAll(); return }
-        for code in pressed { send(code, false) }
-        pressed.removeAll()
+        let codes = translator.releaseAll()
+        guard let send else { return }
+        for code in codes { send(code, false) }
     }
 
     private static func reason(_ error: USBHelperError) -> String {
