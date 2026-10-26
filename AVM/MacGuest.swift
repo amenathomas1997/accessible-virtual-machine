@@ -427,14 +427,12 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         // machine still sees the Control and Option presses alone, and
         // macOS's VoiceOver dings at the half-chords. Said every time the
         // Mac's VoiceOver is on as macOS takes the keyboard.
-        // AVM turns it off itself, at the user's request, and back on when
-        // the keyboard leaves macOS (MacVoiceOver below).
+        // AVM can't turn it off for good (measured; MacVoiceOver below), so
+        // it asks for Command-F5, and turns it back on itself when the
+        // keyboard leaves macOS.
         var entering = hintGiven ? "Entering \(guestName)" : "Entering \(guestName). Control-Command-Escape returns to your Mac."
-        switch MacVoiceOver.turnOffForGuest() {
-        case .wasOff, .turnedOff:
-            break
-        case .refused(let reason):
-            entering += " Your Mac's VoiceOver is still on, so the two VoiceOvers share your keys: turn it off with Command-F5. \(reason)"
+        if MacVoiceOver.noteEnteringGuest() {
+            entering += (entering.hasSuffix(".") ? " " : ". ") + "Press Command-F5 to turn your Mac's VoiceOver off while you're in \(guestName); AVM turns it back on when you return."
         }
         Announcer.shared.announce(entering, tone: .info)
         hintGiven = true
@@ -712,68 +710,54 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
 
 // MARK: - The Mac's VoiceOver while macOS has the keyboard
 
-/// Turns the Mac's VoiceOver off while a macOS machine has the keyboard,
-/// and back on afterwards (2026-10-26, at the user's request). With both
-/// on, the Mac's VoiceOver takes arrow keys (Quick Nav) and its
-/// Control-Option commands, and macOS's dings at what's left: keys
-/// "don't get through consistently". The log showed the Mac's VoiceOver
-/// on at every entry.
+/// The Mac's VoiceOver while a macOS machine has the keyboard (2026-10-26).
+/// With both on, the Mac's VoiceOver takes arrow keys (Quick Nav) and its
+/// Control-Option commands, and macOS's dings at what's left.
 ///
-/// Off: VoiceOver's own AppleScript ("tell application VoiceOver to
-/// quit"), which needs VoiceOver Utility > General > "Allow VoiceOver to
-/// be controlled with AppleScript", and macOS's one-time Automation
-/// permission for AVM. On: opening VoiceOver.app, which starts VoiceOver
-/// the way Command-F5 does. Back on only if AVM turned it off.
+/// AVM CAN'T TURN IT OFF, MEASURED 2026-10-26: VoiceOver's AppleScript
+/// "quit" stops it, but macOS's own setting (com.apple.universalaccess
+/// voiceOverOnOffKey) stays on, and launchd starts VoiceOver again within
+/// 2 seconds (new process each time, the setting 1 throughout). That
+/// setting can't be written from outside ("Could not write domain"), and
+/// macOS ignores a Command-F5 a program sends (CGEvent, posting allowed).
+/// Only the person's own Command-F5 turns it off for good, so AVM asks for
+/// it on entering, and turns VoiceOver back on itself on leaving: opening
+/// VoiceOver.app starts it the way Command-F5 does, and that works.
 @MainActor
 enum MacVoiceOver {
-    enum Result { case wasOff, turnedOff, refused(String) }
 
-    /// Kept on disk, not just in memory (2026-10-26, keyboard audit): if
-    /// AVM crashes or is force-quit while macOS has the keyboard,
-    /// applicationWillTerminate never runs, and the Mac would stay without
-    /// its screen reader. recoverAtLaunch turns it back on next time.
+    /// Kept on disk, not just in memory: if AVM crashes or is force-quit
+    /// while macOS has the keyboard, applicationWillTerminate never runs,
+    /// and the Mac would stay without its screen reader. recoverAtLaunch
+    /// turns it back on next time.
     private static let flagKey = "AVMMacVoiceOverTurnedOff"
-    private static var turnedOffByAVM: Bool {
+    private static var bringBack: Bool {
         get { UserDefaults.standard.bool(forKey: flagKey) }
         set { UserDefaults.standard.set(newValue, forKey: flagKey) }
     }
 
-    /// At launch: VoiceOver back on if a previous AVM turned it off and
-    /// didn't live to turn it back on. Touches nothing otherwise.
+    /// On entering macOS: true if the Mac's VoiceOver is on (AVM then asks
+    /// for Command-F5), remembering to bring it back on the way out.
+    static func noteEnteringGuest() -> Bool {
+        let on = NSWorkspace.shared.isVoiceOverEnabled
+        AVMLog.write("AVM: MacVoiceOver — \(on ? "on" : "off") on entering macOS.")
+        if on { bringBack = true }
+        return on
+    }
+
+    /// At launch: VoiceOver back on if a previous AVM ended while macOS had
+    /// the keyboard. Touches nothing otherwise.
     static func recoverAtLaunch() {
-        guard turnedOffByAVM else { return }
-        AVMLog.write("AVM: MacVoiceOver — AVM ended while the Mac's VoiceOver was off for macOS; turning it back on.")
+        guard bringBack else { return }
+        AVMLog.write("AVM: MacVoiceOver — AVM ended while macOS had the keyboard; bringing the Mac's VoiceOver back.")
         restoreAfterGuest()
     }
 
-    static func turnOffForGuest() -> Result {
-        guard NSWorkspace.shared.isVoiceOverEnabled else {
-            AVMLog.write("AVM: MacVoiceOver — already off on entering macOS.")
-            return .wasOff
-        }
-        var error: NSDictionary?
-        NSAppleScript(source: "tell application \"VoiceOver\" to quit")?.executeAndReturnError(&error)
-        if let error {
-            let code = error[NSAppleScript.errorNumber] as? Int ?? 0
-            AVMLog.write("AVM: MacVoiceOver — couldn't turn it off (AppleScript error \(code)).")
-            let reason = code == -1743
-                ? "To let AVM do it for you, allow AVM to control VoiceOver in System Settings, Privacy and Security, Automation."
-                : "To let AVM do it for you, turn on Allow VoiceOver to be controlled with AppleScript, in VoiceOver Utility under General."
-            return .refused(reason)
-        }
-        turnedOffByAVM = true
-        AVMLog.write("AVM: MacVoiceOver — turned off for macOS.")
-        return .turnedOff
-    }
-
     static func restoreAfterGuest() {
-        guard turnedOffByAVM else { return }
-        turnedOffByAVM = false
-        // Already back on (Command-F5 while in macOS): opening VoiceOver.app
-        // again would toggle nothing, but say so in the log rather than
-        // claim AVM turned it on.
+        guard bringBack else { return }
+        bringBack = false
         if NSWorkspace.shared.isVoiceOverEnabled {
-            AVMLog.write("AVM: MacVoiceOver — already back on.")
+            AVMLog.write("AVM: MacVoiceOver — still on on leaving macOS.")
             return
         }
         let app = URL(fileURLWithPath: "/System/Library/CoreServices/VoiceOver.app")
