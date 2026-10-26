@@ -301,6 +301,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     @Published private(set) var keyboardInGuest = false
     private var machineView: VZVirtualMachineView?
     private var statusLabel: NSTextField?
+    private weak var giveButton: NSButton?
     private var keyMonitor: Any?
     private var machine: VZVirtualMachine?
     private var window: NSWindow?
@@ -371,15 +372,12 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             NSSound.beep()
             return
         }
+        // Set before the window becomes key, so windowDidBecomeKey leaves
+        // the screen as first responder.
+        setKeyboard(inGuest: true)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(machineView)
-        // While macOS has the keyboard, system shortcuts are its own (as on
-        // a real Mac), Command-F5 among them: the Mac would otherwise take
-        // Command-F5 for its own VoiceOver. Control-Command-Escape still
-        // comes back first (the key monitor sees it before the screen).
-        machineView.capturesSystemKeys = true
-        setKeyboard(inGuest: true)
         Announcer.shared.announce(spoken ?? "\(name) has the keyboard. Control-Command-Escape returns to your Mac.", tone: .info)
         AVMLog.write("AVM: MacGuest — keyboard to macOS.")
     }
@@ -387,10 +385,10 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     /// Gives the keyboard back to the Mac; the machine keeps running.
     /// Control-Command-Escape.
     func leave() {
-        guard window != nil else { return }
-        machineView?.capturesSystemKeys = false
-        window?.makeFirstResponder(nil)
+        guard window != nil, keyboardInGuest else { return }
+        // Off first, so windowDidResignKey doesn't announce it again.
         setKeyboard(inGuest: false)
+        window?.makeFirstResponder(giveButton)
         if let main = NSApp.windows.first(where: { $0 !== window && $0.isVisible && $0.canBecomeMain }) {
             main.makeKeyAndOrderFront(nil)
         }
@@ -414,13 +412,13 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             if type == .keyDown { machineView.keyDown(with: event) } else { machineView.keyUp(with: event) }
         }
         AVMLog.write("AVM: MacGuest — sent Command-F5 to macOS.")
-        Announcer.shared.announce("Sent Command-F5 to \(name), which turns its VoiceOver on or off. If your Mac's VoiceOver is on too, turn it off with Command-F5 while you work in \(name).", tone: .info)
+        Announcer.shared.announce("Sent Command-F5 to \(name), which turns its VoiceOver on or off.", tone: .info)
     }
 
     private func setKeyboard(inGuest: Bool) {
         keyboardInGuest = inGuest
         statusLabel?.stringValue = inGuest
-            ? "Keyboard: \(name). Control-Command-Escape returns to your Mac."
+            ? "Keyboard: \(name). Every key goes to \(name). Control-Command-Escape returns to your Mac; Command-Shift-Option-V turns VoiceOver in \(name) on or off."
             : "Keyboard: your Mac. Command-Shift-E, or the button, gives it to \(name)."
     }
 
@@ -439,6 +437,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         let status = NSTextField(labelWithString: "")
         status.setAccessibilityLabel("Keyboard status")
         let give = NSButton(title: "Give \(title) the Keyboard", target: self, action: #selector(giveKeyboard))
+        giveButton = give
         let voiceOver = NSButton(title: "Turn VoiceOver On or Off in \(title)", target: self, action: #selector(voiceOverPressed))
         voiceOver.setAccessibilityHelp("Sends Command-F5 into \(title), so its own VoiceOver starts or stops. Your Mac doesn't catch it.")
         let shut = NSButton(title: "Shut Down", target: self, action: #selector(shutDownPressed))
@@ -472,18 +471,38 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         window.isReleasedWhenClosed = false
         window.setAccessibilityLabel("\(title), macOS virtual machine")
         window.center()
-        window.makeKeyAndOrderFront(nil)
         self.window = window
         self.machineView = view
         self.statusLabel = status
         setKeyboard(inGuest: false)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(give)
 
-        // Control-Command-Escape, before the machine's screen sees it.
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, event.window === self.window, event.keyCode == 53,
-                  event.modifierFlags.intersection([.control, .command, .option, .shift]) == [.control, .command] else { return event }
-            self.leave()
-            return nil
+        // THE ONE KEYBOARD RULE (2026-10-26, after "switching is unclear and
+        // keystrokes don't work consistently"): keys reach macOS only after
+        // Enter (Command-Shift-E or the button), and then every key does,
+        // Command shortcuts included, so AVM's menus can't take Command-Q or
+        // Command-W from macOS. Two chords are AVM's: Control-Command-Escape
+        // (back to the Mac) and Command-Shift-Option-V (VoiceOver in macOS).
+        // Command-F5 and Command-Tab are the Mac's own; macOS lets no app
+        // see them, so Command-Tab leaves macOS, and says so.
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+            guard let self, event.window === self.window, self.keyboardInGuest, let screen = self.machineView else { return event }
+            let mods = event.modifierFlags.intersection([.control, .command, .option, .shift])
+            if event.type == .keyDown, event.keyCode == 53, mods == [.control, .command] {
+                self.leave()
+                return nil
+            }
+            if event.type == .keyDown, event.keyCode == 9, mods == [.command, .shift, .option] {   // V
+                self.toggleGuestVoiceOver()
+                return nil
+            }
+            if mods.contains(.command) {
+                // Straight to macOS, past AVM's menus.
+                if event.type == .keyDown { screen.keyDown(with: event) } else { screen.keyUp(with: event) }
+                return nil
+            }
+            return event
         }
     }
 
@@ -491,12 +510,25 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     @objc private func voiceOverPressed() { toggleGuestVoiceOver() }
     @objc private func shutDownPressed() { shutDown() }
 
+    /// Leaving the window by any other way (Command-Tab, a click on the
+    /// dashboard) gives the keyboard back to the Mac, and says so.
     nonisolated func windowDidResignKey(_ notification: Notification) {
         MainActor.assumeIsolated {
-            if keyboardInGuest {
-                machineView?.capturesSystemKeys = false
-                setKeyboard(inGuest: false)
-            }
+            guard keyboardInGuest else { return }
+            setKeyboard(inGuest: false)
+            window?.makeFirstResponder(giveButton)
+            Announcer.shared.announce("Keyboard back on your Mac. Command-Shift-E returns to \(name).", tone: .info)
+            AVMLog.write("AVM: MacGuest — keyboard to the Mac (window left).")
+        }
+    }
+
+    /// Arriving at the window (Command-backquote, a click, VoiceOver) does
+    /// not give macOS the keyboard: only Enter does. Focus rests on the
+    /// bar's button, so keys typed here go nowhere unexpected.
+    nonisolated func windowDidBecomeKey(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            guard !keyboardInGuest else { return }
+            window?.makeFirstResponder(giveButton)
         }
     }
 
