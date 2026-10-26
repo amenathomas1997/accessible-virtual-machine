@@ -79,7 +79,7 @@ struct MacSetupView: View {
                         .disabled(working)
                 }
                 if working {
-                    Text("Keep this window open. A download and install take 20 minutes to over an hour; AVM speaks each step.")
+                    Text("Keep this window open. The download is large (26 GB for macOS 27) and is kept for your next macOS machine; the install itself takes a few minutes. AVM speaks each step.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

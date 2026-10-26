@@ -208,7 +208,9 @@ final class MacInstaller: NSObject, URLSessionDownloadDelegate {
             say("Using the macOS \(latest.operatingSystemVersion.description) installer downloaded before.")
             return cached
         }
-        say("Downloading macOS \(latest.operatingSystemVersion.description) from Apple, about 15 gigabytes. AVM says how far it has got every gigabyte.")
+        // The size comes from the download itself (26 GB for macOS 27.0.1,
+        // 2026-10-26), in the first progress line.
+        say("Downloading macOS \(latest.operatingSystemVersion.description) from Apple. It's large, usually over 15 gigabytes; AVM says how far it has got every gigabyte.")
         lastSpokenGB = 0
         downloadDestination = cached
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
