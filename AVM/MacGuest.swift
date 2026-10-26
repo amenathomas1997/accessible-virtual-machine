@@ -31,6 +31,7 @@
 // speaks, or Command-F5 once the Mac's VoiceOver is off.
 
 import AppKit
+import Carbon.HIToolbox
 import Combine
 import Virtualization
 
@@ -384,6 +385,12 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(machineView)
+        // Full control (2026-10-26): system shortcuts too (Command-Tab,
+        // Command-F5, Command-Space...) go to macOS while it has the
+        // keyboard, as on a real Mac. The way out is guarded twice: the key
+        // monitor below, and a system-wide Control-Command-Escape hotkey.
+        machineView.capturesSystemKeys = true
+        registerEscapeHotKey()
         // "Entering macOS", the same words every time, as for Windows; the
         // keys to know are added the first time only.
         Announcer.shared.announce(hintGiven ? "Entering \(guestName)" : "Entering \(guestName). Control-Command-Escape returns to your Mac.", tone: .info)
@@ -396,6 +403,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     func leave() {
         guard window != nil, keyboardInGuest else { return }
         // Off first, so windowDidResignKey doesn't announce it again.
+        releaseFullControl()
         setKeyboard(inGuest: false)
         window?.makeFirstResponder(giveButton)
         if let main = NSApp.windows.first(where: { $0 !== window && $0.isVisible && $0.canBecomeMain }) {
@@ -411,23 +419,72 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     /// Command-F5 typed into the window).
     func toggleGuestVoiceOver() {
         guard let window, let machineView else { NSSound.beep(); return }
-        let f5: UInt16 = 96
-        for type in [NSEvent.EventType.keyDown, .keyUp] {
-            guard let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: .command,
-                                               timestamp: ProcessInfo.processInfo.systemUptime,
-                                               windowNumber: window.windowNumber, context: nil,
-                                               characters: "", charactersIgnoringModifiers: "",
-                                               isARepeat: false, keyCode: f5) else { continue }
-            if type == .keyDown { machineView.keyDown(with: event) } else { machineView.keyUp(with: event) }
+        // The whole chord, as fingers make it: Command down, F5 down and
+        // up, Command up. F5 tagged "with Command" alone reached macOS only
+        // sometimes ("VoiceOver is fidgety starting", 2026-10-26): the
+        // machine presses keys it is told about, and Command was never
+        // pressed.
+        let f5: UInt16 = 96, command: UInt16 = 55
+        func modifier(_ flags: NSEvent.ModifierFlags) -> NSEvent? {
+            NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: flags,
+                             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                             context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: command)
         }
+        func key(_ type: NSEvent.EventType) -> NSEvent? {
+            NSEvent.keyEvent(with: type, location: .zero, modifierFlags: .command,
+                             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                             context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: f5)
+        }
+        if let down = modifier(.command) { machineView.flagsChanged(with: down) }
+        if let press = key(.keyDown) { machineView.keyDown(with: press) }
+        if let lift = key(.keyUp) { machineView.keyUp(with: lift) }
+        if let up = modifier([]) { machineView.flagsChanged(with: up) }
         AVMLog.write("AVM: MacGuest — sent Command-F5 to macOS.")
         Announcer.shared.announce("Sent Command-F5 to \(name), which turns its VoiceOver on or off.", tone: .info)
+    }
+
+    // MARK: Full control's way out
+
+    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyHandler: EventHandlerRef?
+    /// "AVMm": not FocusLockManager's id, so neither handler acts on the
+    /// other's hotkey (only one is ever registered at a time anyway).
+    private static let escapeHotKeyID = EventHotKeyID(signature: OSType(0x4156_4D6D), id: 2)
+
+    /// Control-Command-Escape as a system-wide hotkey while macOS has full
+    /// control, the mechanism Windows' focus lock relies on, so the way
+    /// back works even when the machine has captured the keyboard.
+    private func registerEscapeHotKey() {
+        guard hotKeyRef == nil else { return }
+        var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ -> OSStatus in
+            var id = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                              nil, MemoryLayout<EventHotKeyID>.size, nil, &id)
+            guard id.signature == MacGuestRunner.escapeHotKeyID.signature, id.id == MacGuestRunner.escapeHotKeyID.id else {
+                return OSStatus(eventNotHandledErr)
+            }
+            DispatchQueue.main.async { MainActor.assumeIsolated { MacGuestRunner.shared.leave() } }
+            return noErr
+        }, 1, &type, nil, &hotKeyHandler)
+        let status = RegisterEventHotKey(UInt32(kVK_Escape), UInt32(controlKey | cmdKey), Self.escapeHotKeyID,
+                                         GetApplicationEventTarget(), 0, &hotKeyRef)
+        AVMLog.write("AVM: MacGuest — Control-Command-Escape hotkey \(status == noErr ? "registered" : "not registered (\(status))").")
+    }
+
+    /// Back to the Mac's own shortcuts, and the hotkey off.
+    private func releaseFullControl() {
+        machineView?.capturesSystemKeys = false
+        if let hotKeyRef { UnregisterEventHotKey(hotKeyRef) }
+        hotKeyRef = nil
+        if let hotKeyHandler { RemoveEventHandler(hotKeyHandler) }
+        hotKeyHandler = nil
     }
 
     private func setKeyboard(inGuest: Bool) {
         keyboardInGuest = inGuest
         statusLabel?.stringValue = inGuest
-            ? "Keyboard: \(name). Every key goes to \(name). Control-Command-Escape returns to your Mac; Command-Shift-Option-V turns VoiceOver in \(name) on or off."
+            ? "Keyboard: \(name). Every key goes to \(name), Command-Tab and Command-F5 too. Control-Command-Escape returns to your Mac."
             : "Keyboard: your Mac. Command-Shift-E, or the button, gives it to \(name)."
     }
 
@@ -493,8 +550,8 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         // Command shortcuts included, so AVM's menus can't take Command-Q or
         // Command-W from macOS. Two chords are AVM's: Control-Command-Escape
         // (back to the Mac) and Command-Shift-Option-V (VoiceOver in macOS).
-        // Command-F5 and Command-Tab are the Mac's own; macOS lets no app
-        // see them, so Command-Tab leaves macOS, and says so.
+        // Command-F5 and Command-Tab also go to macOS, through full control
+        // (capturesSystemKeys, set in enter()).
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
             guard let self, event.window === self.window, self.keyboardInGuest, let screen = self.machineView else { return event }
             let mods = event.modifierFlags.intersection([.control, .command, .option, .shift])
@@ -524,6 +581,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     nonisolated func windowDidResignKey(_ notification: Notification) {
         MainActor.assumeIsolated {
             guard keyboardInGuest else { return }
+            releaseFullControl()
             setKeyboard(inGuest: false)
             window?.makeFirstResponder(giveButton)
             Announcer.shared.announce("Entering Mac", tone: .info)
@@ -571,6 +629,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
 
     private func ended(spoken: String, tone: Announcer.Tone) {
         AVMLog.write("AVM: MacGuest — \(spoken)")
+        releaseFullControl()
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
         window?.delegate = nil
