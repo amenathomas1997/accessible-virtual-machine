@@ -306,6 +306,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     /// The first "Entering macOS" of a run adds the key back; later ones
     /// are just the two words.
     private var hintGiven = false
+    private var lastVoiceOverToggle: Date?
     /// Spoken as "Entering macOS" whatever the machine is called.
     private let guestName = "macOS"
     private var keyMonitor: Any?
@@ -421,28 +422,34 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     /// Command-F5 typed into the window).
     func toggleGuestVoiceOver() {
         guard let window, let machineView else { NSSound.beep(); return }
-        // The whole chord, as fingers make it: Command down, F5 down and
-        // up, Command up. F5 tagged "with Command" alone reached macOS only
-        // sometimes ("VoiceOver is fidgety starting", 2026-10-26): the
-        // machine presses keys it is told about, and Command was never
-        // pressed.
+        // One press per 8 seconds (2026-10-26, "VoiceOver doesn't start
+        // consistently"): VoiceOver in a new macOS takes several seconds to
+        // start, and the log showed presses 5 to 10 seconds apart, each
+        // turning it back off before it had spoken.
+        if let last = lastVoiceOverToggle, Date().timeIntervalSince(last) < 8 {
+            Announcer.shared.announce("VoiceOver in \(name) is still starting or stopping. Give it a few seconds.", tone: .info)
+            return
+        }
+        lastVoiceOverToggle = Date()
+        // The whole chord, as fingers make it, a few milliseconds apart:
+        // Command down, F5 down and up, Command up.
         let f5: UInt16 = 96, command: UInt16 = 55
-        func modifier(_ flags: NSEvent.ModifierFlags) -> NSEvent? {
-            NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: flags,
+        func event(_ type: NSEvent.EventType, _ flags: NSEvent.ModifierFlags, _ code: UInt16) -> NSEvent? {
+            NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags,
                              timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                             context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: command)
+                             context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)
         }
-        func key(_ type: NSEvent.EventType) -> NSEvent? {
-            NSEvent.keyEvent(with: type, location: .zero, modifierFlags: .command,
-                             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                             context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: f5)
+        let steps: [() -> Void] = [
+            { if let e = event(.flagsChanged, .command, command) { machineView.flagsChanged(with: e) } },
+            { if let e = event(.keyDown, .command, f5) { machineView.keyDown(with: e) } },
+            { if let e = event(.keyUp, .command, f5) { machineView.keyUp(with: e) } },
+            { if let e = event(.flagsChanged, [], command) { machineView.flagsChanged(with: e) } },
+        ]
+        for (i, step) in steps.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(40 * i)) { step() }
         }
-        if let down = modifier(.command) { machineView.flagsChanged(with: down) }
-        if let press = key(.keyDown) { machineView.keyDown(with: press) }
-        if let lift = key(.keyUp) { machineView.keyUp(with: lift) }
-        if let up = modifier([]) { machineView.flagsChanged(with: up) }
         AVMLog.write("AVM: MacGuest — sent Command-F5 to macOS.")
-        Announcer.shared.announce("Sent Command-F5 to \(name), which turns its VoiceOver on or off.", tone: .info)
+        Announcer.shared.announce("Turning VoiceOver in \(name) on or off. It can take a few seconds to start.", tone: .info)
     }
 
     // MARK: Full control's way out
