@@ -35,7 +35,7 @@ struct MacSetupView: View {
                 Text("New macOS Virtual Machine")
                     .font(.title)
                     .accessibilityAddTraits(.isHeader)
-                Text("macOS runs on Apple's own virtualization. AVM gets macOS from Apple and installs it, saying how far it has got. macOS's Setup Assistant then runs the first time you start the machine, and offers VoiceOver itself: press Escape when it speaks. To use VoiceOver inside the machine, turn your Mac's VoiceOver off with Command-F5 while you work there.")
+                Text("macOS runs on Apple's own virtualization. AVM gets macOS from Apple and installs it, saying how far it has got. macOS's Setup Assistant then runs the first time you start the machine, and offers VoiceOver itself: give macOS the keyboard, wait about a minute on its first screen, and press Escape when it speaks. macOS keeps VoiceOver on after that. To use VoiceOver inside the machine, turn your Mac's VoiceOver off with Command-F5 while you work there.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
