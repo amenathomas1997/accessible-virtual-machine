@@ -1,0 +1,228 @@
+#!/bin/bash
+# test-windows-install.sh
+# AVM — Accessible Virtual Machine
+#
+# A complete unattended Windows install with no one at the screen
+# (2026-10-26), to prove a change to the answer file or the install media
+# before anyone spends an hour on a test install:
+#   1. builds fresh install media with AVM's own pipeline
+#      (AVM --build-install-media), with NVDA and JAWS, and setup answers
+#      for a local test account, so Windows signs in by itself;
+#   2. makes a blank disk, Secure Boot firmware settings and a TPM, and
+#      starts QEMU the way AVM does, with no window;
+#   3. presses Enter at "Press any key to boot from CD", then waits;
+#   4. reads AVMSTATUS.TXT, the report the answer file writes on the
+#      UNATTEND volume, until the first sign-in has finished;
+#   5. says what was installed and what wasn't. If Windows stops on a
+#      screen instead, it saves a screenshot of it (screen.png).
+# It takes 30 to 90 minutes and about 25 GB of disk space while it runs.
+# The test machine is deleted afterwards unless it failed or --keep.
+#
+#   Tools/test-windows-install.sh [--iso PATH] [--app PATH] [--minutes N] [--keep]
+#
+# --iso      a Windows 11 ARM64 ISO (default: the newest *arm64*.iso in Downloads)
+# --app      the AVM.app to test (default: the Debug build in ~/Library/Caches/AVM-build)
+# --minutes  how long to wait before giving up (default 150)
+
+set -euo pipefail
+
+ISO=""
+APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/AVM.app"
+MINUTES=150
+KEEP=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --iso) ISO="$2"; shift 2 ;;
+        --app) APP="$2"; shift 2 ;;
+        --minutes) MINUTES="$2"; shift 2 ;;
+        --keep) KEEP=1; shift ;;
+        -h|--help) sed -n 2,29p "$0"; exit 0 ;;
+        *) echo "Unknown option $1. Run with --help."; exit 64 ;;
+    esac
+done
+
+step() { echo; echo "== $1"; }
+info() { echo "   $1"; }
+fail() {
+    echo "FAILED: $1"
+    if [ $# -ge 2 ]; then echo "Next: $2"; fi
+    command -v say >/dev/null && say "The install test failed." || true
+    exit 1
+}
+
+if [ -z "$ISO" ]; then
+    ISO="$(ls -t "$HOME"/Downloads/*[Aa][Rr][Mm]64*.iso 2>/dev/null | sed -n 1p || true)"
+fi
+[ -n "$ISO" ] && [ -f "$ISO" ] || fail "No Windows 11 ARM64 ISO found." "Pass one with --iso, or download one with AVM's Download Windows 11 for ARM."
+R="$APP/Contents/Resources"
+[ -x "$APP/Contents/MacOS/AVM" ] && [ -x "$R/qemu-system-aarch64" ] || fail "No AVM build at $APP." "Build AVM first, or pass --app."
+for f in qemu-img swtpm mtools edk2-aarch64-secure-code.fd edk2-arm-secure-vars.fd; do
+    [ -e "$R/$f" ] || fail "$f is missing from $APP."
+done
+
+WORK="$HOME/Library/Caches/AVM-build/install-test-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$WORK/tpm"
+chmod 700 "$WORK"
+QMP="$WORK/qmp.sock"
+QEMU_PID=""
+TPM_PID=""
+RESULT=1
+
+qmp() {
+    # qmp <command> [json arguments]: one QMP command, reply on stdout.
+    python3 -I - "$QMP" "$@" <<'PY'
+import json, socket, sys
+path, command = sys.argv[1], sys.argv[2]
+arguments = json.loads(sys.argv[3]) if len(sys.argv) > 3 else None
+s = socket.socket(socket.AF_UNIX); s.settimeout(10); s.connect(path)
+f = s.makefile("rw")
+f.readline()
+f.write(json.dumps({"execute": "qmp_capabilities"}) + "\n"); f.flush(); f.readline()
+request = {"execute": command}
+if arguments is not None: request["arguments"] = arguments
+f.write(json.dumps(request) + "\n"); f.flush()
+while True:
+    line = f.readline()
+    if not line or "return" in line or "error" in line:
+        print(line.strip()); break
+PY
+}
+
+status() {
+    MTOOLS_SKIP_CHECK=1 env -u DYLD_LIBRARY_PATH "$R/mtools" -c mtype -i "$WORK/autounattend.img" ::AVMSTATUS.TXT 2>/dev/null | tr -d '\r' || true
+}
+
+cleanup() {
+    [ -n "$QEMU_PID" ] && kill -0 "$QEMU_PID" 2>/dev/null && { qmp quit >/dev/null 2>&1 || kill "$QEMU_PID" 2>/dev/null || true; }
+    [ -n "$TPM_PID" ] && kill "$TPM_PID" 2>/dev/null || true
+    if [ "$RESULT" = "0" ] && [ "$KEEP" = "0" ]; then
+        rm -rf "$WORK"
+    else
+        echo "   The test machine is kept in $WORK"
+    fi
+}
+trap cleanup EXIT
+
+step "Building install media with AVM's pipeline"
+info "ISO: $ISO"
+# Setup answers for an unattended run: a local account, so Windows signs
+# in by itself and the first sign-in's steps (NVDA) run too.
+python3 -I - "$WORK/windows-setup.json" <<'PY'
+import base64, json, secrets, sys
+password = secrets.token_urlsafe(12)
+encoded = base64.b64encode((password + "Password").encode("utf-16-le")).decode()
+json.dump({
+    "locale": "en-US", "inputLocale": "0409:00000409", "computerName": "AVM-TEST",
+    "timeZone": "UTC", "privacy": "mostPrivate",
+    "localAccount": {"userName": "avmtest", "displayName": "AVM Test", "encodedPassword": encoded},
+}, open(sys.argv[1], "w"))
+PY
+chmod 600 "$WORK/windows-setup.json"
+"$APP/Contents/MacOS/AVM" --build-install-media --iso "$ISO" --out "$WORK" --screen-readers nvda,jaws \
+    || fail "AVM couldn't build the install media." "See the line above, and AVM's diagnostic log."
+[ -f "$WORK/install-avm.iso" ] && [ -f "$WORK/autounattend.img" ] || fail "AVM said it built the media, but the files aren't there."
+
+step "Making the test machine"
+"$R/qemu-img" create -q -f qcow2 "$WORK/disk.qcow2" 64G
+"$R/qemu-img" convert -O raw "$R/edk2-arm-secure-vars.fd" "$WORK/nvram.fd"
+"$R/swtpm" socket --tpmstate "dir=$WORK/tpm" --ctrl "type=unixio,path=$WORK/tpm.sock" --tpm2 --log level=0 &
+TPM_PID=$!
+sleep 1
+info "64 GB disk, Secure Boot, TPM 2.0, 4 cores, 8 GB of memory"
+
+step "Starting Windows Setup (no window)"
+"$R/qemu-system-aarch64" -L "$R" \
+    -machine virt,accel=hvf -cpu host -smp 4 -m 8192M \
+    -smbios "type=1,manufacturer=AVM,product=AVM Virtual Machine,serial=avm-install-test" \
+    -drive "if=pflash,format=raw,file=$R/edk2-aarch64-secure-code.fd,readonly=on" \
+    -drive "if=pflash,format=raw,file=$WORK/nvram.fd" \
+    -device qemu-xhci,id=usb,p2=8,p3=8 \
+    -device usb-kbd,bus=usb.0,port=1 \
+    -device usb-tablet,bus=usb.0,port=2,display=gpu0 \
+    -drive "if=none,id=disk0,file=$WORK/disk.qcow2,format=qcow2,cache=writeback,discard=unmap,detect-zeroes=unmap" \
+    -device nvme,drive=disk0,serial=avmdisk0,bootindex=1 \
+    -drive "if=none,id=cdrom0,file=$WORK/install-avm.iso,media=cdrom,readonly=on" \
+    -device usb-storage,drive=cdrom0,bus=usb.0,port=3,bootindex=0,removable=on \
+    -drive "if=none,id=unattend,file=$WORK/autounattend.img,format=raw,cache=writeback" \
+    -device usb-storage,drive=unattend,bus=usb.0,port=4,removable=on \
+    -netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
+    -spice "unix=on,addr=$WORK/spice.sock,disable-ticketing=on,agent-mouse=on" \
+    -device ramfb -device virtio-gpu-pci,id=gpu0 \
+    -audiodev none,id=noaudio -device intel-hda -device hda-duplex,audiodev=noaudio \
+    -device virtio-serial-pci \
+    -chardev spicevmc,id=vdagent,name=vdagent \
+    -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \
+    -chardev "socket,id=qga0,path=$WORK/qga.sock,server=on,wait=off" \
+    -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
+    -chardev "socket,id=char-qmp,path=$QMP,server=on,wait=off" -qmp chardev:char-qmp \
+    -chardev "socket,id=chrtpm,path=$WORK/tpm.sock" -tpmdev emulator,id=tpm0,chardev=chrtpm \
+    -device tpm-tis-device,tpmdev=tpm0 \
+    -rtc base=localtime,clock=host \
+    -serial "file:$WORK/firmware-serial.log" -display none -monitor none \
+    > "$WORK/qemu.log" 2>&1 &
+QEMU_PID=$!
+for _ in $(seq 1 20); do [ -S "$QMP" ] && break; sleep 0.5; done
+[ -S "$QMP" ] || fail "QEMU didn't start." "See $WORK/qemu.log."
+for _ in $(seq 1 60); do
+    qmp send-key '{"keys":[{"type":"qcode","data":"ret"}]}' >/dev/null 2>&1 || true
+    sleep 0.4
+done
+info "Pressed Enter to boot the installer."
+
+step "Waiting for Windows (checking every minute, up to $MINUTES minutes)"
+START=$(date +%s)
+LAST=""
+while :; do
+    kill -0 "$QEMU_PID" 2>/dev/null || fail "QEMU stopped during the install." "See $WORK/qemu.log."
+    REPORT="$(status)"
+    NOW="$(echo "$REPORT" | sed -n '$p')"
+    ELAPSED=$(( ($(date +%s) - START) / 60 ))
+    if [ "$NOW" != "$LAST" ]; then
+        info "$ELAPSED min: ${NOW:-installing}"
+        LAST="$NOW"
+    fi
+    echo "$REPORT" | grep -q "first-sign-in-done" && break
+    if [ "$ELAPSED" -ge "$MINUTES" ]; then
+        qmp screendump "{\"filename\":\"$WORK/screen.png\",\"format\":\"png\"}" >/dev/null 2>&1 || true
+        echo "$REPORT"
+        if echo "$REPORT" | grep -q "specialize-done"; then
+            fail "Windows finished setup's own steps but never reached the first sign-in." "It's probably waiting on a setup screen: see $WORK/screen.png."
+        fi
+        fail "Windows didn't finish setup in $MINUTES minutes." "See $WORK/screen.png and $WORK/firmware-serial.log."
+    fi
+    sleep 60
+done
+
+step "What setup installed"
+REPORT="$(status)"
+MISSING=0
+for item in vdagent-installed webdavd-installed qemu-ga-installed jaws-installed nvda-staged nvda-installed first-sign-in-done; do
+    if echo "$REPORT" | grep -qx "$item"; then
+        info "yes  $item"
+    else
+        info "NO   $item"
+        MISSING=1
+    fi
+done
+if python3 -I - "$WORK/qga.sock" <<'PY'
+import json, socket, sys
+s = socket.socket(socket.AF_UNIX); s.settimeout(10); s.connect(sys.argv[1])
+s.sendall(b'{"execute":"guest-ping"}\n')
+sys.exit(0 if b"return" in s.recv(4096) else 1)
+PY
+then
+    info "yes  the guest agent answers"
+else
+    info "NO   the guest agent answers"
+    MISSING=1
+fi
+
+ELAPSED=$(( ($(date +%s) - START) / 60 ))
+if [ "$MISSING" = "0" ]; then
+    RESULT=0
+    echo; echo "PASSED in $ELAPSED minutes."
+    command -v say >/dev/null && say "The install test passed." || true
+else
+    qmp screendump "{\"filename\":\"$WORK/screen.png\",\"format\":\"png\"}" >/dev/null 2>&1 || true
+    fail "Windows installed, but something above is missing." "See $WORK/screen.png."
+fi

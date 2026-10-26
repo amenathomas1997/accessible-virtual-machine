@@ -3132,6 +3132,15 @@ enum AVMError: LocalizedError {
     }
 }
 
+// MARK: - Install media with no VM (2026-10-26; InstallMediaJob.swift)
+
+extension VMManager {
+    /// The first start's media build, into a folder of the caller's.
+    func buildInstallMedia(configuration: VMConfiguration, into folder: URL) async throws {
+        try await ensureInstallMedia(configuration: configuration, runtimeDir: folder)
+    }
+}
+
 // MARK: - Guest agent (2026-10-26; protocol in AVM/GuestAgent.swift)
 
 extension VMManager {
