@@ -172,6 +172,8 @@ step "Starting Windows Setup (no window)"
     -device virtio-serial-pci \
     -chardev spicevmc,id=vdagent,name=vdagent \
     -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \
+    -chardev spiceport,id=webdav0,name=org.spice-space.webdav.0 \
+    -device virtserialport,chardev=webdav0,name=org.spice-space.webdav.0 \
     -chardev "socket,id=qga0,path=$WORK/qga.sock,server=on,wait=off" \
     -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
     -chardev "socket,id=char-qmp,path=$QMP,server=on,wait=off" -qmp chardev:char-qmp \
@@ -218,7 +220,7 @@ done
 step "What setup installed"
 REPORT="$(status)"
 MISSING=0
-for item in vdagent-installed webdavd-installed qemu-ga-installed jaws-installed nvda-staged nvda-installed first-sign-in-done; do
+for item in vdagent-installed webdavd-installed qemu-ga-installed jaws-installed nvda-staged nvda-installed nvda-starts-after-sign-in first-sign-in-done; do
     if echo "$REPORT" | grep -qx "$item"; then
         info "yes  $item"
     else
