@@ -393,8 +393,16 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         setKeyboard(inGuest: true)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(machineView)
-        AVMLog.write("AVM: MacGuest — machine's screen is \(window.firstResponder === machineView ? "" : "NOT ")first responder; window is \(window.isKeyWindow ? "" : "NOT ")key.")
+        // The screen takes the keyboard only once every modifier is let go
+        // (2026-10-26): Command-Shift-E is still held as this runs, and a
+        // machine that sees Command go up without going down (or the other
+        // way round) can be left thinking it's held, so Return arrives as
+        // Command-Return.
+        whenModifiersReleased { [weak self] in
+            guard let self, self.keyboardInGuest, let window = self.window, let machineView = self.machineView else { return }
+            window.makeFirstResponder(machineView)
+            AVMLog.write("AVM: MacGuest — machine's screen is \(window.firstResponder === machineView ? "" : "NOT ")first responder; window is \(window.isKeyWindow ? "" : "NOT ")key; AVM is \(NSApp.isActive ? "" : "NOT ")active.")
+        }
         // NEVER capturesSystemKeys = true here (2026-10-26, a user stuck in
         // macOS): Apple's capture takes the keyboard below AVM's key monitor
         // AND its system-wide hotkey, so Control-Command-Escape stopped
@@ -429,12 +437,32 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         // Off first, so windowDidResignKey doesn't announce it again.
         releaseFullControl()
         setKeyboard(inGuest: false)
-        window?.makeFirstResponder(giveButton)
-        if let main = NSApp.windows.first(where: { $0 !== window && $0.isVisible && $0.canBecomeMain }) {
-            main.makeKeyAndOrderFront(nil)
-        }
         Announcer.shared.announce("Entering Mac", tone: .info)
+        // The machine keeps the keyboard until Control and Command are let
+        // go, so it sees them come up rather than staying held.
+        whenModifiersReleased { [weak self] in
+            guard let self, !self.keyboardInGuest else { return }
+            self.window?.makeFirstResponder(self.giveButton)
+            if let main = NSApp.windows.first(where: { $0 !== self.window && $0.isVisible && $0.canBecomeMain }) {
+                main.makeKeyAndOrderFront(nil)
+            }
+        }
         AVMLog.write("AVM: MacGuest — keyboard to the Mac.")
+    }
+
+    /// Runs `action` once no modifier key is held, checking every 20 ms,
+    /// for at most 3 seconds.
+    private func whenModifiersReleased(_ action: @escaping @MainActor () -> Void) {
+        let deadline = Date().addingTimeInterval(3)
+        func check() {
+            let held = NSEvent.modifierFlags.intersection([.command, .control, .option, .shift])
+            if held.isEmpty || Date() > deadline {
+                action()
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(20)) { MainActor.assumeIsolated { check() } }
+            }
+        }
+        check()
     }
 
     // MARK: Full control's way out
@@ -576,7 +604,16 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             // and macOS never got them; Return and Escape in Setup
             // Assistant failed that way once the Mac's VoiceOver was off
             // and keys came through AppKit. Counted, never identified.
-            if event.type == .keyDown { self.keysToMacOS += 1 }
+            if event.type == .keyDown {
+                self.keysToMacOS += 1
+                // Where this key is going, never which key it is: the first
+                // few of each stretch in macOS, to tell whether a "thunk"
+                // is the Mac's (a key nothing took) or macOS's.
+                if self.keysToMacOS <= 5 {
+                    let responder = self.window?.firstResponder.map { String(describing: type(of: $0)) } ?? "none"
+                    AVMLog.write("AVM: MacGuest — a key to the machine's window: first responder \(responder), window \(self.window?.isKeyWindow == true ? "key" : "NOT key"), AVM \(NSApp.isActive ? "active" : "NOT active"), modifiers held: \(event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty ? "none" : "some").")
+                }
+            }
             return event
         }
     }
