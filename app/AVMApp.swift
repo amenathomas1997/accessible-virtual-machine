@@ -634,7 +634,24 @@ enum QuitCoordinator {
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Quit Now")
-            return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+            // Save and Quit (2026-10-26): macOS kept as it is, resumed in
+            // seconds at the next Start (MacGuestRunner.saveAndStop).
+            let saveable = MacGuestRunner.shared.canSave
+            if saveable {
+                alert.addButton(withTitle: "Save and Quit")
+                alert.informativeText += " Save and Quit keeps macOS as it is, open apps and all, and its next Start carries on from there in seconds."
+            }
+            switch alert.runModal() {
+            case .alertSecondButtonReturn:
+                return .terminateNow
+            case .alertThirdButtonReturn where saveable:
+                MacGuestRunner.shared.saveAndStop { saved in
+                    NSApp.reply(toApplicationShouldTerminate: saved)
+                }
+                return .terminateLater
+            default:
+                return .terminateCancel
+            }
         }
         let vmActive = vmIsActive
         let hasUSB = !USBRedirectController.shared.portByDevice.isEmpty

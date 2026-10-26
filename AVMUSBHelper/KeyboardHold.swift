@@ -230,14 +230,26 @@ final class KeyboardHold {
         }
     }
 
-    /// On `queue`. Only page-7 key usages, 4 through 0xE7; the rest
-    /// (rollover reports, vendor pages) are dropped. Never logged.
+    /// On `queue`. Only page-7 key usages, 4 through 0xE7, and an Apple
+    /// keyboard's Fn; the rest (rollover reports, other vendor usages) are
+    /// dropped. Never logged.
     private func handle(_ value: IOHIDValue) {
         let element = IOHIDValueGetElement(value)
-        guard IOHIDElementGetUsagePage(element) == UInt32(kHIDPage_KeyboardOrKeypad) else { return }
+        let page = IOHIDElementGetUsagePage(element)
         let usage = Int(IOHIDElementGetUsage(element))
+        let pressed = IOHIDValueGetIntegerValue(value) != 0
+        // An Apple keyboard's Fn key (2026-10-26): on Apple's own pages
+        // (0xFF, the older top-case page, and 0xFF01), usage 3. macOS
+        // turns Fn combinations into Forward Delete, Home, End and the
+        // rest; with the keyboard held, AVM does (WindowsKeyboard), so Fn
+        // goes to AVM as HIDKeyMap.fnUsage.
+        if (page == 0xFF || page == 0xFF01) && usage == 0x03 {
+            client()?.keyboardKey(usage: 0x1_0003, pressed: pressed)
+            return
+        }
+        guard page == UInt32(kHIDPage_KeyboardOrKeypad) else { return }
         guard (0x04...0xE7).contains(usage) else { return }
-        client()?.keyboardKey(usage: usage, pressed: IOHIDValueGetIntegerValue(value) != 0)
+        client()?.keyboardKey(usage: usage, pressed: pressed)
     }
 
     private func keyboardWentAway() {

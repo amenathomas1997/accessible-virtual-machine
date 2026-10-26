@@ -1115,7 +1115,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
                     // audio-teardown deadlock case), a synchronous call
                     // deadlocks the main thread. Queue the flush on the SPICE
                     // context.
-                    self?.flushGuestKeysOnSpiceContext(reason: "unlock observed")
+                    self?.flushGuestKeysOnSpiceContext(reason: "unlock observed", maskWindowsKey: true)
                 } else {
                     // The Mac's Caps Lock and modifiers as they are now
                     // (2026-10-26, keyboard audit): with a stale
@@ -1264,6 +1264,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         // the keyboard after the machine's view was gone.
         WindowsKeyboard.shared.stop()
         WindowsKeyboard.shared.send = nil
+        WindowsKeyboard.shared.sendPause = nil
 
         // Silence delegate callbacks immediately (plain property write; not a
         // context-bound CocoaSpice operation).
@@ -1333,7 +1334,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
     /// (Issue #4: held mouse buttons flush here too — an unlock mid-drag must
     /// not strand a held button in the guest, exactly as it must not strand a
     /// held key.)
-    private func flushGuestKeysOnSpiceContext(reason: String) {
+    private func flushGuestKeysOnSpiceContext(reason: String, maskWindowsKey: Bool = false) {
         let inputToFlush = input
         let codesToRelease = pressedScancodes
         pressedScancodes.removeAll()
@@ -1352,6 +1353,18 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
             }
             for button in Self.allMouseButtons where buttonsToRelease.contains(button) {
                 inputToFlush.sendMouseButton(button, mask: [], pressed: false)
+            }
+            // NO START MENU ON THE WAY OUT (2026-10-26): Control-Command-
+            // Escape leaves Control and Command (the Windows key) down in
+            // the guest, the Escape being the hotkey's; releasing them then
+            // is a bare Windows-key tap, which opens Start. A Control tap
+            // while the Windows key is down is what Windows takes as "that
+            // was a shortcut", so Start stays shut (the same mask AutoHotkey
+            // uses). Harmless when the Windows key isn't down; to a screen
+            // reader, Control only stops speech.
+            if maskWindowsKey {
+                inputToFlush.send(.press, code: 0x1D)
+                inputToFlush.send(.release, code: 0x1D)
             }
             inputToFlush.releaseKeys()
         }
@@ -2141,9 +2154,13 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         WindowsKeyboard.shared.send = { [weak input] code, down in
             input?.send(down ? .press : .release, code: code)
         }
+        WindowsKeyboard.shared.sendPause = { [weak input] down in
+            input?.sendPause(down ? .press : .release)
+        }
         let id = VMSession.current?.configuration.id
         if let saved = id.flatMap({ id in VMStore.shared?.configurations.first { $0.id == id } }),
            let keyboardID = saved.windowsKeyboardID {
+            WindowsKeyboard.shared.appleISO = saved.windowsKeyboardAppleISO == true
             WindowsKeyboard.shared.start(keyboardID: keyboardID, name: saved.windowsKeyboardName)
         }
     }
@@ -2154,6 +2171,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
             self.input = nil
             WindowsKeyboard.shared.stop()
             WindowsKeyboard.shared.send = nil
+            WindowsKeyboard.shared.sendPause = nil
         }
     }
 

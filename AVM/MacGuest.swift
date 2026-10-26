@@ -39,27 +39,6 @@ import Carbon.HIToolbox
 import Combine
 import Virtualization
 
-// MARK: - Files
-
-nonisolated struct MacGuestFiles {
-    let folder: URL
-    var disk: URL { folder.appendingPathComponent("macos-disk.img") }
-    var auxiliaryStorage: URL { folder.appendingPathComponent("AuxiliaryStorage") }
-    var hardwareModel: URL { folder.appendingPathComponent("HardwareModel") }
-    var machineIdentifier: URL { folder.appendingPathComponent("MachineIdentifier") }
-
-    var isInstalled: Bool {
-        [disk, auxiliaryStorage, hardwareModel, machineIdentifier].allSatisfy {
-            FileManager.default.fileExists(atPath: $0.path)
-        }
-    }
-}
-
-nonisolated struct MacGuestError: LocalizedError, Sendable {
-    let errorDescription: String?
-    init(_ message: String) { errorDescription = message }
-}
-
 // MARK: - Configuration
 
 @MainActor
@@ -217,6 +196,12 @@ final class MacInstaller: NSObject, URLSessionDownloadDelegate {
             }
         }
         AVMLog.write("AVM: MacGuest — installed macOS \(image.operatingSystemVersion.description) in \(config.name).")
+        // A restore point of the fresh install, free on APFS (2026-10-26).
+        do {
+            try MacRestorePoints.take(files, name: "Fresh install of macOS \(image.operatingSystemVersion.description)")
+        } catch {
+            AVMLog.write("AVM: MacGuest — no fresh-install restore point: \(error.localizedDescription)")
+        }
     }
 
     private func restoreImage(_ ipsw: URL?) async throws -> URL {
@@ -330,6 +315,8 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     private let guestName = "macOS"
     private var keyMonitor: Any?
     private var machine: VZVirtualMachine?
+    private var files: MacGuestFiles?
+    private var vzConfiguration: VZVirtualMachineConfiguration?
     private var window: NSWindow?
     private var name = "macOS"
 
@@ -352,23 +339,155 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             let machine = VZVirtualMachine(configuration: vz)
             machine.delegate = self
             self.machine = machine
+            self.vzConfiguration = vz
             runningID = config.id
             name = config.name
             showWindow(for: machine, title: config.name)
-            Announcer.shared.announce("Starting \(config.name).", tone: .info)
-            machine.start { [weak self] result in
-                guard let self else { return }
-                switch result {
-                case .success:
-                    AVMLog.write("AVM: MacGuest — \(config.name) started.")
-                    Announcer.shared.announce("\(config.name) is running.", tone: .success)
-                    self.enter()
-                case .failure(let error):
-                    self.ended(spoken: "\(config.name) could not start. Reason: \(error.localizedDescription)", tone: .failure)
-                }
+            self.files = files
+            if #available(macOS 14.0, *), FileManager.default.fileExists(atPath: files.savedState.path) {
+                resume(machine, config: config, files: files)
+                return
             }
+            Announcer.shared.announce("Starting \(config.name).", tone: .info)
+            coldStart(machine, config: config)
         } catch {
             Announcer.shared.announce("\(config.name) could not start. Reason: \(error.localizedDescription)", tone: .failure)
+        }
+    }
+
+    private func coldStart(_ machine: VZVirtualMachine, config: VMConfiguration) {
+        machine.start { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success:
+                AVMLog.write("AVM: MacGuest — \(config.name) started.")
+                Announcer.shared.announce("\(config.name) is running.", tone: .success)
+                self.enter()
+                self.offerVoiceOverOnce(config)
+            case .failure(let error):
+                self.ended(spoken: "\(config.name) could not start. Reason: \(error.localizedDescription)", tone: .failure)
+            }
+        }
+    }
+
+    // MARK: Saved state (2026-10-26)
+
+    /// The machine as it was when saved, running again in seconds instead
+    /// of a 3-minute start. The saved file is used once: it's deleted as
+    /// soon as the machine runs from it (the disk moves on from there), or
+    /// if it can't be used, and then the machine starts as usual.
+    @available(macOS 14.0, *)
+    private func resume(_ machine: VZVirtualMachine, config: VMConfiguration, files: MacGuestFiles) {
+        Announcer.shared.announce("Resuming \(config.name) where you left it.", tone: .info)
+        machine.restoreMachineStateFrom(url: files.savedState) { [weak self] error in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if let error {
+                        AVMLog.write("AVM: MacGuest — saved state not usable: \(error.localizedDescription); starting as usual.")
+                        try? FileManager.default.removeItem(at: files.savedState)
+                        Announcer.shared.announce("\(config.name) couldn't resume, so it's starting as usual. Reason: \(error.localizedDescription)", tone: .info)
+                        self.coldStart(machine, config: config)
+                        return
+                    }
+                    machine.resume { result in
+                        try? FileManager.default.removeItem(at: files.savedState)
+                        switch result {
+                        case .success:
+                            AVMLog.write("AVM: MacGuest — \(config.name) resumed from its saved state.")
+                            Announcer.shared.announce("\(config.name) is running again.", tone: .success)
+                            self.enter()
+                        case .failure(let error):
+                            self.ended(spoken: "\(config.name) could not resume. Reason: \(error.localizedDescription) Start it again to start it as usual.", tone: .failure)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// True if this machine can be saved and resumed (macOS 14 and later,
+    /// and a configuration Apple's framework can save).
+    var canSave: Bool {
+        guard #available(macOS 14.0, *), let machine, let vzConfiguration,
+              machine.state == .running || machine.state == .paused else { return false }
+        do {
+            try vzConfiguration.validateSaveRestoreSupport()
+            return true
+        } catch {
+            AVMLog.write("AVM: MacGuest — this machine can't be saved: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Pauses the machine, saves it to disk and stops it; the next Start
+    /// resumes it. `done` gets whether it was saved.
+    func saveAndStop(done: @escaping @MainActor (Bool) -> Void) {
+        guard #available(macOS 14.0, *), let machine, let files else { done(false); return }
+        if keyboardInGuest { leave() }
+        Announcer.shared.announce("Saving \(name).", tone: .info)
+        let finish: @MainActor (Error?) -> Void = { [weak self] error in
+            guard let self else { done(false); return }
+            if let error {
+                AVMLog.write("AVM: MacGuest — couldn't save: \(error.localizedDescription)")
+                try? FileManager.default.removeItem(at: files.savedState)
+                Announcer.shared.announce("\(self.name) couldn't be saved. Reason: \(error.localizedDescription)", tone: .failure)
+                if machine.state == .paused { machine.resume { _ in } }
+                done(false)
+                return
+            }
+            AVMLog.write("AVM: MacGuest — saved; stopping.")
+            machine.stop { [weak self] _ in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        self?.ended(spoken: "\(self?.name ?? "macOS") is saved. Start it to carry on where you left it.", tone: .success)
+                        done(true)
+                    }
+                }
+            }
+        }
+        let save = {
+            machine.saveMachineStateTo(url: files.savedState) { error in
+                DispatchQueue.main.async { MainActor.assumeIsolated { finish(error) } }
+            }
+        }
+        if machine.state == .paused {
+            save()
+        } else {
+            machine.pause { result in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        if case .failure(let error) = result { finish(error) } else { save() }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: VoiceOver at the first start (2026-10-26)
+
+    /// A new machine's first start: when Setup Assistant should be up
+    /// (about 3 minutes, measured), AVM runs the Command-F5 pass itself,
+    /// so turning on macOS's VoiceOver needs no button. Once per machine.
+    private func offerVoiceOverOnce(_ config: VMConfiguration) {
+        // false only for machines made since this existed (MacSetupView):
+        // older ones have been through Setup Assistant already.
+        guard config.macVoiceOverOffered == false else { return }
+        var updated = VMStore.shared?.configurations.first { $0.id == config.id } ?? config
+        updated.macVoiceOverOffered = true
+        VMStore.shared?.save(updated)
+        Announcer.shared.announce("When macOS's Setup Assistant is up, in about 3 minutes, AVM will ask you to press Command-F5 to turn on its VoiceOver.", tone: .info)
+        let id = config.id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 200) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.runningID == id else { return }
+                guard self.keyboardInGuest else {
+                    Announcer.shared.announce("Setup Assistant should be up in \(self.name). To turn on its VoiceOver, choose Turn On VoiceOver in macOS in its window.", tone: .info)
+                    return
+                }
+                AVMLog.write("AVM: MacGuest — first start: passing Command-F5 for macOS's VoiceOver.")
+                self.passSystemKeysBriefly()
+            }
         }
     }
 
@@ -742,9 +861,16 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Shut Down")
             alert.addButton(withTitle: "Force Stop")
+            let saveable = canSave
+            if saveable {
+                alert.addButton(withTitle: "Save and Close")
+                alert.informativeText += " Save and Close keeps \(name) as it is, open apps and all, and the next Start carries on from there in seconds."
+            }
             switch alert.runModal() {
             case .alertSecondButtonReturn: shutDown()
             case .alertThirdButtonReturn: forceStop()
+            case NSApplication.ModalResponse(rawValue: NSApplication.ModalResponse.alertThirdButtonReturn.rawValue + 1) where saveable:
+                saveAndStop { _ in }
             default: break
             }
             return false
@@ -769,6 +895,8 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         window?.close()
         window = nil
         machine = nil
+        files = nil
+        vzConfiguration = nil
         machineView = nil
         statusLabel = nil
         if keyboardInGuest { MacVoiceOver.restoreAfterGuest() }

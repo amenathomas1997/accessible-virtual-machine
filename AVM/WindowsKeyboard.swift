@@ -28,6 +28,15 @@ final class WindowsKeyboard {
     /// Sends a scancode to the running guest; set by VMView's SPICE
     /// coordinator while connected.
     var send: ((Int32, Bool) -> Void)?
+    /// Sends Pause, which has no single scancode (HIDKeyMap.pauseUsage).
+    var sendPause: ((Bool) -> Void)?
+    /// An Apple ISO keyboard: § and ` swapped back (HIDKeyMap.isoSwapped).
+    var appleISO = false
+    /// An Apple keyboard's Fn is held: its Fn combinations apply.
+    private var fnHeld = false
+    /// What each held key was sent as, so its release matches its press
+    /// even if Fn came up in between.
+    private var sentFor: [Int: Int32] = [:]
 
     private(set) var keyboardID: String?
     private var keyboardName = "The keyboard for Windows"
@@ -85,10 +94,25 @@ final class WindowsKeyboard {
         }
     }
 
-    func key(usage: Int, pressed down: Bool) {
-        guard keyboardID != nil, let code = HIDKeyMap.scancode(forUsage: usage), let send else { return }
-        let scancode = Int32(code)
-        if down { pressed.insert(scancode) } else { pressed.remove(scancode) }
+    func key(usage rawUsage: Int, pressed down: Bool) {
+        guard keyboardID != nil, let send else { return }
+        if rawUsage == HIDKeyMap.fnUsage { fnHeld = down; return }
+        let usage = appleISO ? HIDKeyMap.isoSwapped(rawUsage) : rawUsage
+        if usage == HIDKeyMap.pauseUsage {
+            sendPause?(down)
+            return
+        }
+        let scancode: Int32
+        if down {
+            guard let code = (fnHeld ? HIDKeyMap.fnLayer[usage] : nil) ?? HIDKeyMap.scancode(forUsage: usage) else { return }
+            scancode = Int32(code)
+            sentFor[usage] = scancode
+            pressed.insert(scancode)
+        } else {
+            guard let code = sentFor.removeValue(forKey: usage) ?? HIDKeyMap.scancode(forUsage: usage).map(Int32.init) else { return }
+            scancode = code
+            pressed.remove(scancode)
+        }
         send(scancode, down)
     }
 
@@ -116,6 +140,8 @@ final class WindowsKeyboard {
     }
 
     private func releaseAllKeys() {
+        fnHeld = false
+        sentFor.removeAll()
         guard let send else { pressed.removeAll(); return }
         for code in pressed { send(code, false) }
         pressed.removeAll()

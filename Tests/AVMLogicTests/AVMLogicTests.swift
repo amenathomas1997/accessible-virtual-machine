@@ -582,6 +582,30 @@ final class AnswerFileLimitsTests: XCTestCase {
 
 // MARK: - The keyboard for Windows: HID usages to PC scancodes
 
+final class MacRestorePointTests: XCTestCase {
+    func testTakeListRestoreDelete() throws {
+        // On the same volume as the build, which is APFS.
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let files = MacGuestFiles(folder: folder)
+        try Data("before".utf8).write(to: files.disk)
+        try Data("aux-before".utf8).write(to: files.auxiliaryStorage)
+        try MacRestorePoints.take(files, name: "First")
+        let points = MacRestorePoints.list(files)
+        XCTAssertEqual(points.map(\.name), ["First"])
+        try Data("after".utf8).write(to: files.disk)
+        try Data("state".utf8).write(to: files.savedState)
+        try MacRestorePoints.restore(points[0], into: files)
+        XCTAssertEqual(try String(contentsOf: files.disk, encoding: .utf8), "before")
+        XCTAssertEqual(try String(contentsOf: files.auxiliaryStorage, encoding: .utf8), "aux-before")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: files.savedState.path))
+        XCTAssertEqual(MacRestorePoints.list(files).count, 1, "restoring keeps the point")
+        try MacRestorePoints.delete(points[0])
+        XCTAssertTrue(MacRestorePoints.list(files).isEmpty)
+    }
+}
+
 final class HIDKeyMapTests: XCTestCase {
     func testCommonKeys() {
         XCTAssertEqual(HIDKeyMap.scancode(forUsage: 0x04), 0x1E)        // a
@@ -601,6 +625,12 @@ final class HIDKeyMapTests: XCTestCase {
         XCTAssertEqual(HIDKeyMap.scancode(forUsage: 0x80), 0x130)       // Volume Up
         XCTAssertEqual(HIDKeyMap.scancode(forUsage: 0x81), 0x12E)       // Volume Down
         XCTAssertEqual(HIDKeyMap.scancode(forUsage: 0x85), 0x7E)        // keypad comma
+        XCTAssertEqual(HIDKeyMap.fnLayer[0x2A], 0x153)                 // Fn-Backspace: Delete
+        XCTAssertEqual(HIDKeyMap.fnLayer[0x50], 0x147)                 // Fn-Left: Home
+        XCTAssertEqual(HIDKeyMap.isoSwapped(0x35), 0x64)
+        XCTAssertEqual(HIDKeyMap.isoSwapped(0x64), 0x35)
+        XCTAssertEqual(HIDKeyMap.isoSwapped(0x04), 0x04)
+        XCTAssertNil(HIDKeyMap.scancode(forUsage: HIDKeyMap.pauseUsage), "Pause goes through sendPause")
     }
 
     /// Two keys never send the same scancode, except the two backslash

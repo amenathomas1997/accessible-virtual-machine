@@ -16,6 +16,37 @@ nonisolated enum HIDKeyMap {
 
     private static let extended = 0x100
 
+    /// An Apple keyboard's Fn key, as the helper passes it (not a page-7
+    /// usage; KeyboardHold.handle).
+    static let fnUsage = 0x1_0003
+    /// Pause has no plain scancode: PC keyboards send E1 1D 45 E1 9D C5,
+    /// which CocoaSpice's sendPause does. WindowsKeyboard sends it that way.
+    static let pauseUsage = 0x48
+
+    /// With Fn held, what an Apple keyboard's keys mean on a Mac, as the
+    /// PC keys that do the same in Windows: Forward Delete, Page Up and
+    /// Down, Home, End.
+    static let fnLayer: [Int: Int] = [
+        0x2A: extended | 0x53,   // Fn-Backspace: Delete
+        0x52: extended | 0x49,   // Fn-Up: Page Up
+        0x51: extended | 0x51,   // Fn-Down: Page Down
+        0x50: extended | 0x47,   // Fn-Left: Home
+        0x4F: extended | 0x4F,   // Fn-Right: End
+        0x28: extended | 0x1C,   // Fn-Return: keypad Enter
+    ]
+
+    /// An Apple ISO keyboard reports the key left of 1 (§) and the key
+    /// right of left Shift (`) the other way round from a PC keyboard;
+    /// macOS swaps them back, and with the keyboard held, AVM does, when
+    /// the setting says so.
+    static func isoSwapped(_ usage: Int) -> Int {
+        switch usage {
+        case 0x35: return 0x64
+        case 0x64: return 0x35
+        default: return usage
+        }
+    }
+
     static let table: [Int: Int] = {
         var t: [Int: Int] = [:]
         // Letters a-z, in HID order.
