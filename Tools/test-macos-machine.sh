@@ -15,7 +15,10 @@
 # It takes 15 to 30 minutes and about 30 GB while it runs. The test machine
 # is deleted afterwards unless it failed or --keep.
 #
-#   Tools/test-macos-machine.sh [--ipsw PATH] [--app PATH] [--keep]
+#   Tools/test-macos-machine.sh [--ipsw PATH] [--app PATH] [--keep] [--reuse FOLDER]
+#
+# --reuse FOLDER runs the steps after the install on a test machine a
+# failed run kept, which saves the install's few minutes.
 #
 # Without --ipsw it uses the macOS installer AVM downloaded before.
 
@@ -24,12 +27,14 @@ set -euo pipefail
 IPSW=""
 APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/AVM.app"
 KEEP=0
+REUSE=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --ipsw) IPSW="$2"; shift 2 ;;
         --app) APP="$2"; shift 2 ;;
         --keep) KEEP=1; shift ;;
-        -h|--help) sed -n 2,21p "$0"; exit 0 ;;
+        --reuse) REUSE="$2"; shift 2 ;;
+        -h|--help) sed -n 2,24p "$0"; exit 0 ;;
         *) echo "Unknown option $1. Run with --help."; exit 64 ;;
     esac
 done
@@ -46,13 +51,13 @@ fi
 [ -n "$IPSW" ] && [ -f "$IPSW" ] || fail "No macOS installer. Pass one with --ipsw, or make a macOS machine in AVM once so it downloads one."
 [ -x "$APP/Contents/MacOS/AVM" ] || fail "No AVM build at $APP. Build AVM first, or pass --app."
 
-WORK="$HOME/Library/Caches/AVM-build/macos-test-$(date +%Y%m%d-%H%M%S)"
+WORK="${REUSE:-$HOME/Library/Caches/AVM-build/macos-test-$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$WORK"
 chmod 700 "$WORK"
 START=$(date +%s)
 
 set +e
-"$APP/Contents/MacOS/AVM" --test-mac-machine --ipsw "$IPSW" --out "$WORK"
+"$APP/Contents/MacOS/AVM" --test-mac-machine --ipsw "$IPSW" --out "$WORK" ${REUSE:+--reuse}
 CODE=$?
 set -e
 MINUTES=$(( ($(date +%s) - START + 59) / 60 ))

@@ -42,6 +42,7 @@ enum MacTestJob {
             exit(64)
         }
         let bootMinutes = Double(value("--boot-minutes") ?? "8") ?? 8
+        let reuse = arguments.contains("--reuse")
         final class Outcome { var code: Int32? }
         let outcome = Outcome()
         guard #available(macOS 14.0, *) else {
@@ -50,7 +51,7 @@ enum MacTestJob {
         }
         Task { @MainActor in
             do {
-                try await run(ipsw: URL(fileURLWithPath: ipsw), folder: URL(fileURLWithPath: out, isDirectory: true), bootMinutes: bootMinutes)
+                try await run(ipsw: URL(fileURLWithPath: ipsw), folder: URL(fileURLWithPath: out, isDirectory: true), bootMinutes: bootMinutes, reuse: reuse)
                 print("PASSED")
                 outcome.code = 0
             } catch {
@@ -70,17 +71,21 @@ enum MacTestJob {
     }
 
     @available(macOS 14.0, *)
-    private static func run(ipsw: URL, folder: URL, bootMinutes: Double) async throws {
+    private static func run(ipsw: URL, folder: URL, bootMinutes: Double, reuse: Bool) async throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var config = VMConfiguration(name: "macOS test", cpuCount: 4, ramSizeGB: 8, diskSizeGB: 64,
                                      guestOSName: GuestOS.macOS.rawValue)
         config.storageFolderPath = folder.path
         let files = MacGuestFiles(folder: folder)
 
-        step("Installing macOS from \(ipsw.lastPathComponent)")
-        let installer = MacInstaller()
-        installer.onProgress = { print("   \($0)"); fflush(stdout) }
-        try await installer.install(config, ipsw: ipsw)
+        if reuse && files.isInstalled {
+            step("Using the machine already installed in \(folder.lastPathComponent)")
+        } else {
+            step("Installing macOS from \(ipsw.lastPathComponent)")
+            let installer = MacInstaller()
+            installer.onProgress = { print("   \($0)"); fflush(stdout) }
+            try await installer.install(config, ipsw: ipsw)
+        }
         let points = MacRestorePoints.list(files)
         guard let fresh = points.first(where: { $0.name.hasPrefix("Fresh install") }) else {
             throw MacGuestError("The fresh-install restore point wasn't taken.")
@@ -91,25 +96,66 @@ enum MacTestJob {
         // The installer's machine lets go of the files a few seconds after
         // the install (measured: "Failed to lock auxiliary storage").
         var vz: VZVirtualMachineConfiguration!
-        for attempt in 1...10 {
+        var machine: VZVirtualMachine!
+        for attempt in 1...20 {
             do {
                 vz = try MacGuestConfiguration.make(config, files: files)
+                machine = VZVirtualMachine(configuration: vz)
+                try await start(machine)
                 break
-            } catch where attempt < 10 && error.localizedDescription.localizedCaseInsensitiveContains("lock") {
+            } catch where attempt < 20 && error.localizedDescription.localizedCaseInsensitiveContains("lock") {
                 print("   (files still in use; trying again in 3 seconds)")
+                fflush(stdout)
+                machine = nil
                 try await Task.sleep(nanoseconds: 3_000_000_000)
             }
         }
         let mac = vz.networkDevices.first?.macAddress.string ?? ""
         try vz.validateSaveRestoreSupport()
-        var machine = VZVirtualMachine(configuration: vz)
-        try await start(machine)
         try await waitForLease(mac: mac, minutes: bootMinutes)
         print("   yes  macOS is up (it asked for a network address)")
 
+        print("   (letting Setup Assistant settle for 3 minutes)")
+        fflush(stdout)
+        try await Task.sleep(nanoseconds: 180_000_000_000)
+
         step("Saving it while it runs, as Save and Quit does")
         try await pause(machine)
-        try await save(machine, to: files.savedState)
+        // Where the framework may write a saved machine (2026-10-26, a
+        // "permission denied" in the machine's own folder): tried in turn,
+        // each reported, the first that works used.
+        let candidates = [
+            files.savedState,
+            FileManager.default.temporaryDirectory.appendingPathComponent("avm-test-\(UUID().uuidString).vzvmsave"),
+            try MacInstaller.cacheFolder.deletingLastPathComponent().appendingPathComponent("avm-test-\(UUID().uuidString).vzvmsave"),
+        ]
+        var savedAt: URL?
+        for url in candidates {
+            try? FileManager.default.removeItem(at: url)
+            do {
+                try await save(machine, to: url)
+                print("   saved at \(url.path)")
+                savedAt = url
+                break
+            } catch {
+                print("   (couldn't save at \(url.path): \(describe(error)))")
+                fflush(stdout)
+            }
+        }
+        var failures: [String] = []
+        if let savedAt, savedAt != files.savedState {
+            try? FileManager.default.removeItem(at: files.savedState)
+            try FileManager.default.moveItem(at: savedAt, to: files.savedState)
+        }
+        if savedAt == nil {
+            // MEASURED 2026-10-26: "permission denied" from the framework,
+            // in the machine's folder, in the temporary folder and in
+            // Application Support alike, run from a shell or opened by
+            // Launch Services, with the machine in Setup Assistant.
+            failures.append("saving a running machine (the framework said permission denied)")
+            print("   NO   couldn't save; carrying on with the restore point steps")
+            try await stop(machine)
+        } else {
         try await stop(machine)
         let savedSize = (try? FileManager.default.attributesOfItem(atPath: files.savedState.path)[.size] as? Int) ?? 0
         guard savedSize > 0 else { throw MacGuestError("No saved state was written.") }
@@ -124,9 +170,10 @@ enum MacTestJob {
         try await Task.sleep(nanoseconds: 30_000_000_000)
         guard machine.state == .running else { throw MacGuestError("After resuming, the machine is \(machine.state.rawValue), not running.") }
         print("   yes  running again \(Int(Date().timeIntervalSince(resumedAt) - 30)) seconds after Start, and still running 30 seconds later")
+        try await stop(machine)
+        }
 
         step("Putting it back to the fresh-install restore point")
-        try await stop(machine)
         try MacRestorePoints.restore(fresh, into: files)
         print("   yes  restored")
 
@@ -137,6 +184,20 @@ enum MacTestJob {
         try await waitForLease(mac: again.networkDevices.first?.macAddress.string ?? mac, minutes: bootMinutes, after: Date())
         try await stop(machine)
         print("   yes  the restored machine comes up")
+        if !failures.isEmpty {
+            throw MacGuestError("everything else passed, but not: " + failures.joined(separator: "; "))
+        }
+    }
+
+    /// The whole error chain, for the log of a failed run.
+    private static func describe(_ error: Error) -> String {
+        var parts: [String] = []
+        var current: NSError? = error as NSError
+        while let e = current {
+            parts.append("\(e.domain) \(e.code): \(e.localizedDescription)")
+            current = e.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return parts.joined(separator: " <- ")
     }
 
     // MARK: The framework's calls, as async

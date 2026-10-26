@@ -370,7 +370,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                 return
             }
             Announcer.shared.announce("Starting \(config.name).", tone: .info)
-            coldStart(machine, config: config)
+            coldStart(machine, config: config, attempt: attempt)
         } catch {
             clipboard?.stop()
             clipboard = nil
@@ -389,9 +389,21 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         }
     }
 
-    private func coldStart(_ machine: VZVirtualMachine, config: VMConfiguration) {
+    private func coldStart(_ machine: VZVirtualMachine, config: VMConfiguration, attempt: Int = 1) {
         machine.start { [weak self] result in
             guard let self else { return }
+            // The installer's lock on the files (see start()) can also
+            // show here, as the machine starts: closed quietly and
+            // started again.
+            if case .failure(let error) = result,
+               error.localizedDescription.localizedCaseInsensitiveContains("lock"), attempt < 6 {
+                AVMLog.write("AVM: MacGuest — \(config.name)'s files are still in use as it starts (\(error.localizedDescription)); trying again in 3 seconds.")
+                self.ended(spoken: nil, tone: .info)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                    MainActor.assumeIsolated { self?.start(config, attempt: attempt + 1) }
+                }
+                return
+            }
             switch result {
             case .success:
                 AVMLog.write("AVM: MacGuest — \(config.name) started.")
@@ -920,8 +932,9 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         MainActor.assumeIsolated { ended(spoken: "\(name) stopped unexpectedly. Reason: \(error.localizedDescription)", tone: .failure) }
     }
 
-    private func ended(spoken: String, tone: Announcer.Tone) {
-        AVMLog.write("AVM: MacGuest — \(spoken)")
+    /// `spoken` nil: closed quietly, to be started again at once.
+    private func ended(spoken: String?, tone: Announcer.Tone) {
+        if let spoken { AVMLog.write("AVM: MacGuest — \(spoken)") }
         releaseFullControl()
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
@@ -939,7 +952,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         keyboardInGuest = false
         hintGiven = false
         runningID = nil
-        Announcer.shared.announce(spoken, tone: tone)
+        if let spoken { Announcer.shared.announce(spoken, tone: tone) }
     }
 }
 
