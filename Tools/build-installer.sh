@@ -416,10 +416,33 @@ step "Making the Sparkle update zip"
 ZIP="$OUT_DIR/AVM-$VERSION.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 info "$ZIP"
+# Signed with this fork's update key (2026-10-26): Sparkle's EdDSA key in
+# the login keychain, account fullcircleat-avm, whose public half is
+# SUPublicEDKey in AVM/Info.plist. The first time, macOS asks to let
+# sign_update use the key; choose Always Allow. The result is the update
+# feed entry for this release, which Tools/publish-release.sh adds to
+# appcast.xml when the release is published.
+SPARKLE_ACCOUNT="${AVM_SPARKLE_ACCOUNT:-fullcircleat-avm}"
+REPO_SLUG="${AVM_REPO:-amenathomas1997/accessible-virtual-machine}"
 SIGN_UPDATE="$(find "$BUILD_DIR/DerivedData/SourcePackages/artifacts" -path '*Sparkle/bin/sign_update' -type f 2>/dev/null | sed -n 1p || true)"
-if [ -n "$SIGN_UPDATE" ]; then
-    info "For appcast.xml, sign it with the update key: \"$SIGN_UPDATE\" \"$ZIP\""
+if [ -z "$SIGN_UPDATE" ]; then
+    fail "Sparkle's sign_update tool was not found in the build." "Check that the archive step resolved the Sparkle package."
 fi
+info "Signing the update zip with the update key ($SPARKLE_ACCOUNT). If macOS asks, choose Always Allow."
+SIGNATURE="$("$SIGN_UPDATE" --account "$SPARKLE_ACCOUNT" "$ZIP")" || \
+    fail "sign_update could not sign the zip." "Check the key: run generate_keys --account $SPARKLE_ACCOUNT, and allow keychain access."
+ITEM="$OUT_DIR/appcast-item.xml"
+cat > "$ITEM" <<ITEMXML
+        <item>
+            <title>Version $VERSION</title>
+            <sparkle:version>$BUILD_NUMBER</sparkle:version>
+            <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <pubDate>$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")</pubDate>
+            <enclosure url="https://github.com/$REPO_SLUG/releases/download/v$VERSION/AVM-$VERSION.zip" $SIGNATURE type="application/octet-stream" />
+        </item>
+ITEMXML
+info "Update feed entry: $ITEM"
 
 # MARK: - Done
 
@@ -431,4 +454,5 @@ CURRENT_STEP="done"
 echo
 echo "== Done. AVM $VERSION installer:"
 echo "   $DMG"
+echo "   To publish it as an update: Tools/publish-release.sh"
 speak "AVM $VERSION installer is ready."
