@@ -9,6 +9,13 @@
 #   - well-formedness of the update feed and Info.plist.
 # The app itself needs the UTM sysroot (Tools/build-sysroot.sh, about an
 # hour), so it is built on a Mac, not here.
+#
+# RUNNERS (2026-10-26): macos-26 runners were short enough that GitHub
+# gave up on every job after 15 minutes in the queue ("not acquired by
+# Runner"), so each push was marked failed without running anything. The
+# logic tests use macos-15, which has many more runners, with its newest
+# Xcode (the package needs Swift 6.2). The script and file checks need no
+# Mac at all and run on Linux.
 
 name: CI
 
@@ -19,9 +26,15 @@ on:
 jobs:
   logic-tests:
     name: Logic tests
-    runs-on: macos-26
+    runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Use the newest Xcode
+        run: |
+          newest="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          echo "Using $newest"
+          sudo xcode-select -s "$newest"
       - name: Swift version
         run: swift --version
       - name: Run the logic tests
@@ -29,7 +42,8 @@ jobs:
 
   scripts-and-files:
     name: Scripts and files
-    runs-on: macos-26
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Shell syntax
@@ -38,13 +52,12 @@ jobs:
             bash -n "$f" && echo "ok: $f"
           done
       - name: ShellCheck (errors only)
+        run: shellcheck -S error Tools/*.sh
+      - name: Update feed, answer file and Info.plist are well formed
         run: |
-          brew install shellcheck >/dev/null
-          shellcheck -S error Tools/*.sh
-      - name: Update feed and Info.plist are well formed
-        run: |
-          xmllint --noout appcast.xml
-          plutil -lint AVM/Info.plist
+          sudo apt-get install -y libxml2-utils >/dev/null
+          xmllint --noout appcast.xml Resources/autounattend.xml
+          python3 -c "import plistlib; plistlib.load(open('AVM/Info.plist', 'rb')); print('ok: AVM/Info.plist')"
       - name: Sysroot patches are named for a UTM patch
         run: |
           for p in Tools/sysroot-patches/*.patch; do
