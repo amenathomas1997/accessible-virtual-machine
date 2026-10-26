@@ -385,11 +385,13 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(machineView)
-        // Full control (2026-10-26): system shortcuts too (Command-Tab,
-        // Command-F5, Command-Space...) go to macOS while it has the
-        // keyboard, as on a real Mac. The way out is guarded twice: the key
-        // monitor below, and a system-wide Control-Command-Escape hotkey.
-        machineView.capturesSystemKeys = true
+        // NEVER capturesSystemKeys = true here (2026-10-26, a user stuck in
+        // macOS): Apple's capture takes the keyboard below AVM's key monitor
+        // AND its system-wide hotkey, so Control-Command-Escape stopped
+        // working and only quitting AVM got the keyboard back. Command-Tab
+        // and Command-F5 stay the Mac's; Command-Shift-Option-V (or the
+        // button) turns VoiceOver in macOS on and off. The hotkey stays as a
+        // second way out.
         registerEscapeHotKey()
         // "Entering macOS", the same words every time, as for Windows; the
         // keys to know are added the first time only.
@@ -484,7 +486,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     private func setKeyboard(inGuest: Bool) {
         keyboardInGuest = inGuest
         statusLabel?.stringValue = inGuest
-            ? "Keyboard: \(name). Every key goes to \(name), Command-Tab and Command-F5 too. Control-Command-Escape returns to your Mac."
+            ? "Keyboard: \(name). Every key goes to \(name) except Command-Tab and Command-F5, which stay your Mac's. Control-Command-Escape returns to your Mac; Command-Shift-Option-V turns VoiceOver in \(name) on or off."
             : "Keyboard: your Mac. Command-Shift-E, or the button, gives it to \(name)."
     }
 
@@ -550,8 +552,9 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         // Command shortcuts included, so AVM's menus can't take Command-Q or
         // Command-W from macOS. Two chords are AVM's: Control-Command-Escape
         // (back to the Mac) and Command-Shift-Option-V (VoiceOver in macOS).
-        // Command-F5 and Command-Tab also go to macOS, through full control
-        // (capturesSystemKeys, set in enter()).
+        // Command-F5 and Command-Tab are the Mac's own: macOS lets no app see
+        // them without capturing the keyboard, and capturing it disables the
+        // way out (see enter()).
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
             guard let self, event.window === self.window, self.keyboardInGuest, let screen = self.machineView else { return event }
             let mods = event.modifierFlags.intersection([.control, .command, .option, .shift])
