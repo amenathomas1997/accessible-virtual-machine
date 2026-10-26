@@ -9,5 +9,13 @@
              sign_update), matching SUPublicEDKey in AVM/Info.plist. The
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
+        <item>
+            <title>Version 0.2.0</title>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <pubDate>Mon, 26 Oct 2026 15:56:46 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.2.0/AVM-0.2.0.zip" sparkle:edSignature="AcoKLjgrAzYU4GJVYccbq050Tdqp7DAAgaZ2C4cFP6vc94LTmmtsSUUHtjy965+i1aneWjILsMDmjjFrfkXzBg==" length="49170581" type="application/octet-stream" />
+        </item>
     </channel>
 </rss>
