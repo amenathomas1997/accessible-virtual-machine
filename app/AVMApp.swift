@@ -50,6 +50,9 @@ struct AVMApp: App {
     /// menu redraw when they change.
     @ObservedObject private var activity = VMActivity.shared
     @ObservedObject private var usbRedirect = USBRedirectController.shared
+    /// A running macOS machine (MacGuest.swift): Enter goes to it when no
+    /// QEMU machine is running.
+    @ObservedObject private var macGuest = MacGuestRunner.shared
 
     /// AVM's FIRST app delegate (added 2026-07-26). See AVMAppDelegate below
     /// for why one became necessary.
@@ -312,7 +315,14 @@ struct AVMApp: App {
                     .disabled(!activity.canStart)
                 }
 
-                Button("Enter \(focusLock.guestName)") {
+                Button(macGuest.runningID != nil && !activity.isRunningOrPaused ? "Enter macOS" : "Enter \(focusLock.guestName)") {
+                    // A macOS machine has its own window and keyboard model
+                    // (2026-10-26, MacGuest.swift).
+                    if macGuest.runningID != nil && !activity.isRunningOrPaused {
+                        AVMLog.write("AVM: Enter macOS menu — giving the macOS machine the keyboard.")
+                        macGuest.enter()
+                        return
+                    }
                     // Same gate as the dashboard's Enter Windows button: only
                     // meaningful when a VM is running or paused. focusLock.lock()
                     // flips SessionGate to VMView and speaks "Windows keyboard
@@ -332,7 +342,7 @@ struct AVMApp: App {
                     }
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
-                .disabled(!activity.isRunningOrPaused)
+                .disabled(!activity.isRunningOrPaused && macGuest.runningID == nil)
 
                 Button("Speak Status") {
                     AVMLog.write("AVM: Speak Status menu — posting request to ContentView.")

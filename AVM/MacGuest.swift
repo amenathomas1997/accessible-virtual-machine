@@ -17,8 +17,13 @@
 //                    VZVirtualMachineView), with sound, the shared folder
 //                    and a clean shutdown when the window closes.
 //
-// THE KEYBOARD: while the machine's window is in front, its keys go to
-// macOS in the machine. Command-Tab still switches apps on the Mac. The
+// THE KEYBOARD (same model as Windows, 2026-10-26): Command-Shift-E
+// (Virtual Machine > Enter macOS) brings the machine's window forward and
+// gives macOS the keyboard; Control-Command-Escape gives it back to the
+// Mac and the machine keeps running. Command-Tab still switches apps. The
+// machine's screen is a picture VoiceOver can't read, so the window has a
+// bar above it that it can: where the keyboard is, a button to give macOS
+// the keyboard, and Shut Down. The
 // Mac's VoiceOver keeps the VoiceOver keys (Control-Option), so to use
 // VoiceOver inside the machine, turn the Mac's VoiceOver off with
 // Command-F5 while working there, as with Windows and JAWS or NVDA.
@@ -26,6 +31,7 @@
 // speaks, or Command-F5 once the Mac's VoiceOver is off.
 
 import AppKit
+import Combine
 import Virtualization
 
 // MARK: - Files
@@ -288,10 +294,14 @@ extension OperatingSystemVersion {
 // MARK: - Running
 
 @MainActor
-final class MacGuestRunner: NSObject, VZVirtualMachineDelegate, NSWindowDelegate {
+final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate, NSWindowDelegate {
     static let shared = MacGuestRunner()
 
-    private(set) var runningID: UUID?
+    @Published private(set) var runningID: UUID?
+    @Published private(set) var keyboardInGuest = false
+    private var machineView: VZVirtualMachineView?
+    private var statusLabel: NSTextField?
+    private var keyMonitor: Any?
     private var machine: VZVirtualMachine?
     private var window: NSWindow?
     private var name = "macOS"
@@ -324,7 +334,7 @@ final class MacGuestRunner: NSObject, VZVirtualMachineDelegate, NSWindowDelegate
                 switch result {
                 case .success:
                     AVMLog.write("AVM: MacGuest — \(config.name) started.")
-                    Announcer.shared.announce("\(config.name) is running. Its window has the keyboard; Command-Tab returns to your Mac's apps. To use VoiceOver inside it, turn your Mac's VoiceOver off with Command-F5 while you work there.", tone: .success)
+                    self.enter(spoken: "\(config.name) is running and has the keyboard. Control-Command-Escape returns to your Mac; Command-Shift-E comes back. To use VoiceOver inside it, turn your Mac's VoiceOver off with Command-F5 while you work there.")
                 case .failure(let error):
                     self.ended(spoken: "\(config.name) could not start. Reason: \(error.localizedDescription)", tone: .failure)
                 }
@@ -352,23 +362,111 @@ final class MacGuestRunner: NSObject, VZVirtualMachineDelegate, NSWindowDelegate
         }
     }
 
+    // MARK: Keyboard
+
+    /// Gives macOS the keyboard: its window in front, its screen first
+    /// responder. Command-Shift-E.
+    func enter(spoken: String? = nil) {
+        guard let window, let machineView else {
+            NSSound.beep()
+            return
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(machineView)
+        setKeyboard(inGuest: true)
+        Announcer.shared.announce(spoken ?? "\(name) has the keyboard. Control-Command-Escape returns to your Mac.", tone: .info)
+        AVMLog.write("AVM: MacGuest — keyboard to macOS.")
+    }
+
+    /// Gives the keyboard back to the Mac; the machine keeps running.
+    /// Control-Command-Escape.
+    func leave() {
+        guard window != nil else { return }
+        window?.makeFirstResponder(nil)
+        setKeyboard(inGuest: false)
+        if let main = NSApp.windows.first(where: { $0 !== window && $0.isVisible && $0.canBecomeMain }) {
+            main.makeKeyAndOrderFront(nil)
+        }
+        Announcer.shared.announce("Keyboard back on your Mac. \(name) keeps running; Command-Shift-E returns to it.", tone: .info)
+        AVMLog.write("AVM: MacGuest — keyboard to the Mac.")
+    }
+
+    private func setKeyboard(inGuest: Bool) {
+        keyboardInGuest = inGuest
+        statusLabel?.stringValue = inGuest
+            ? "Keyboard: \(name). Control-Command-Escape returns to your Mac."
+            : "Keyboard: your Mac. Command-Shift-E, or the button, gives it to \(name)."
+    }
+
     private func showWindow(for machine: VZVirtualMachine, title: String) {
         let view = VZVirtualMachineView()
         view.virtualMachine = machine
         view.capturesSystemKeys = false        // Command-Tab stays the Mac's
         if #available(macOS 14.0, *) { view.automaticallyReconfiguresDisplay = true }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
+        view.setAccessibilityElement(true)
+        view.setAccessibilityRole(.group)
+        view.setAccessibilityLabel("\(title) screen")
+        view.setAccessibilityHelp("macOS's screen. When it has the keyboard, keys go to macOS; Control-Command-Escape returns to your Mac.")
+        view.translatesAutoresizingMaskIntoConstraints = false
+
+        // The bar VoiceOver can read, above the screen.
+        let status = NSTextField(labelWithString: "")
+        status.setAccessibilityLabel("Keyboard status")
+        let give = NSButton(title: "Give \(title) the Keyboard", target: self, action: #selector(giveKeyboard))
+        let shut = NSButton(title: "Shut Down", target: self, action: #selector(shutDownPressed))
+        let bar = NSStackView(views: [status, NSView(), give, shut])
+        bar.orientation = .horizontal
+        bar.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+        bar.setAccessibilityElement(true)
+        bar.setAccessibilityRole(.group)
+        bar.setAccessibilityLabel("\(title) controls")
+        bar.translatesAutoresizingMaskIntoConstraints = false
+
+        let content = NSView()
+        content.addSubview(bar)
+        content.addSubview(view)
+        NSLayoutConstraint.activate([
+            bar.topAnchor.constraint(equalTo: content.topAnchor),
+            bar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            view.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            view.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ])
+
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 840),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = title
-        window.contentView = view
+        window.contentView = content
         window.delegate = self
         window.isReleasedWhenClosed = false
         window.setAccessibilityLabel("\(title), macOS virtual machine")
         window.center()
         window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(view)
         self.window = window
+        self.machineView = view
+        self.statusLabel = status
+        setKeyboard(inGuest: false)
+
+        // Control-Command-Escape, before the machine's screen sees it.
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.window === self.window, event.keyCode == 53,
+                  event.modifierFlags.intersection([.control, .command, .option, .shift]) == [.control, .command] else { return event }
+            self.leave()
+            return nil
+        }
+    }
+
+    @objc private func giveKeyboard() { enter() }
+    @objc private func shutDownPressed() { shutDown() }
+
+    nonisolated func windowDidResignKey(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            if keyboardInGuest { setKeyboard(inGuest: false) }
+        }
     }
 
     // Closing the window shuts the machine down, asking first.
@@ -401,10 +499,15 @@ final class MacGuestRunner: NSObject, VZVirtualMachineDelegate, NSWindowDelegate
 
     private func ended(spoken: String, tone: Announcer.Tone) {
         AVMLog.write("AVM: MacGuest — \(spoken)")
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
         window?.delegate = nil
         window?.close()
         window = nil
         machine = nil
+        machineView = nil
+        statusLabel = nil
+        keyboardInGuest = false
         runningID = nil
         Announcer.shared.announce(spoken, tone: tone)
     }
