@@ -8,13 +8,18 @@
 // JAWS's license doesn't allow redistribution, and downloading fresh means
 // every new VM gets the current version.
 //
-// WHICH VERSION: the newest one in winget's public package manifests
-// (github.com/microsoft/winget-pkgs), which list each release's download
-// link and SHA-256. If the manifests can't be read, AVM falls back to the
-// version pinned below. Either way:
+// WHICH VERSION, newest source first:
+//   - NVDA: NV Access's own update feed, the one NVDA's built-in updater
+//     reads, with the release's SHA-1. winget's manifests can lag a
+//     release behind: a VM installed with NVDA 2026.2 asked to update to
+//     2026.3 at its first sign-in (2026-10-26).
+//   - Both: the newest release in winget's public package manifests
+//     (github.com/microsoft/winget-pkgs), with its SHA-256.
+//   - Both: the version pinned below, if neither can be read.
+// Whichever it is:
 //   - the link must be on the maker's own host (ScreenReader.vendorHost);
-//     anything else is refused, so a bad manifest can't point elsewhere;
-//   - the file must match the SHA-256 before it is used.
+//     anything else is refused, so a bad feed can't point elsewhere;
+//   - the file must match the published checksum before it is used.
 // Downloads are kept in Application Support, so a second VM reuses them.
 //
 // JAWS without a license runs in 40-minute demo mode; activation can't be
@@ -27,7 +32,14 @@ nonisolated struct ScreenReaderInstaller: Sendable, Equatable {
     let reader: ScreenReader
     let version: String
     let url: URL
-    let sha256: String
+    let checksum: Checksum
+}
+
+/// A published checksum, uppercase hex. NV Access publishes SHA-1 (what
+/// NVDA's own updater checks); winget and the pinned versions use SHA-256.
+nonisolated enum Checksum: Sendable, Equatable {
+    case sha256(String)
+    case sha1(String)
 }
 
 nonisolated enum ScreenReaderInstallerError: LocalizedError, Sendable {
@@ -50,11 +62,11 @@ nonisolated enum ScreenReaderInstallers {
         .nvda: ScreenReaderInstaller(
             reader: .nvda, version: "2026.2",
             url: URL(string: "https://download.nvaccess.org/releases/2026.2/nvda_2026.2.exe")!,
-            sha256: "F3F8D29974A88D687B3C4809BE192219EC579C5BDABCDA5AAF53635288BCA824"),
+            checksum: .sha256("F3F8D29974A88D687B3C4809BE192219EC579C5BDABCDA5AAF53635288BCA824")),
         .jaws: ScreenReaderInstaller(
             reader: .jaws, version: "2026.2609.84.400",
             url: URL(string: "https://software.vfo.digital/JAWS/2026/2026.2609.84.400/6824AC12-A96A-43F1-A5C5-D33CFC10B790/J2026.2609.84.400-Offline-arm64.exe")!,
-            sha256: "C73C2A2A5A057CF0383E8409EF6AE1B00E8FB8B78B58036E4457DAAE095C73D5"),
+            checksum: .sha256("C73C2A2A5A057CF0383E8409EF6AE1B00E8FB8B78B58036E4457DAAE095C73D5")),
     ]
 
     // MARK: Finding the newest version
@@ -62,8 +74,21 @@ nonisolated enum ScreenReaderInstallers {
     private static let api = "https://api.github.com/repos/microsoft/winget-pkgs/contents/"
     private static let raw = "https://raw.githubusercontent.com/microsoft/winget-pkgs/master/"
 
-    /// The newest release winget lists, or the pinned one.
+    private static let nvAccessFeed = "https://api.nvaccess.org/nvdaUpdateCheck?versionType=stable"
+
+    /// The newest release: NV Access's feed (NVDA), then winget, then pinned.
     static func latest(_ reader: ScreenReader) async -> ScreenReaderInstaller {
+        if reader == .nvda {
+            do {
+                let found = try nvAccessRelease(text: try await text(nvAccessFeed))
+                if found.url.host == reader.vendorHost, found.url.scheme == "https" {
+                    return found
+                }
+                AVMLog.write("AVM: ScreenReaders — NV Access's feed link isn't on \(reader.vendorHost); trying winget.")
+            } catch {
+                AVMLog.write("AVM: ScreenReaders — couldn't read NV Access's update feed (\(error.localizedDescription)); trying winget.")
+            }
+        }
         do {
             let found = try await lookUp(reader)
             guard found.url.host == reader.vendorHost, found.url.scheme == "https" else {
@@ -107,6 +132,24 @@ nonisolated enum ScreenReaderInstallers {
         return newest
     }
 
+    /// NV Access's update feed: "key: value" lines, among them version,
+    /// launcherUrl and launcherHash (SHA-1).
+    static func nvAccessRelease(text: String) throws -> ScreenReaderInstaller {
+        var fields: [String: String] = [:]
+        for line in text.components(separatedBy: .newlines) {
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            fields[line[..<colon].trimmingCharacters(in: .whitespaces)] =
+                line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+        }
+        guard let version = fields["version"], !version.isEmpty,
+              let link = fields["launcherUrl"].flatMap(URL.init(string:)),
+              let hash = fields["launcherHash"],
+              hash.range(of: "^[0-9a-fA-F]{40}$", options: .regularExpression) != nil else {
+            throw ScreenReaderInstallerError.download("NV Access's update feed didn't list a release")
+        }
+        return ScreenReaderInstaller(reader: .nvda, version: version, url: link, checksum: .sha1(hash.uppercased()))
+    }
+
     /// InstallerUrl and InstallerSha256 of the entry for `architecture`.
     static func installer(_ reader: ScreenReader, version: String, yaml: String, architecture: String) throws -> ScreenReaderInstaller {
         var blocks: [[String: String]] = []
@@ -127,7 +170,7 @@ nonisolated enum ScreenReaderInstallers {
               let sha = block["InstallerSha256"], sha.count == 64 else {
             throw ScreenReaderInstallerError.download("winget's \(reader.displayName) manifest has no \(architecture) installer")
         }
-        return ScreenReaderInstaller(reader: reader, version: version, url: link, sha256: sha.uppercased())
+        return ScreenReaderInstaller(reader: reader, version: version, url: link, checksum: .sha256(sha.uppercased()))
     }
 
     // MARK: Downloading
@@ -143,7 +186,7 @@ nonisolated enum ScreenReaderInstallers {
         for reader in readers {
             let installer = await latest(reader)
             let file = cache.appendingPathComponent("\(reader.rawValue)-\(installer.version).exe")
-            if let existing = try? sha256(of: file), existing == installer.sha256 {
+            if (try? matches(file, installer.checksum)) == true {
                 AVMLog.write("AVM: ScreenReaders — reusing \(reader.displayName) \(installer.version).")
                 got[reader] = file
                 continue
@@ -151,18 +194,28 @@ nonisolated enum ScreenReaderInstallers {
             await say("Downloading \(reader.displayName) \(installer.version) from its maker.", false)
             do {
                 try await download(installer, to: file, say: say)
-                guard try sha256(of: file) == installer.sha256 else {
+                guard try matches(file, installer.checksum) else {
                     try? FileManager.default.removeItem(at: file)
                     throw ScreenReaderInstallerError.checksum(reader.displayName)
                 }
                 AVMLog.write("AVM: ScreenReaders — downloaded and checked \(reader.displayName) \(installer.version).")
                 got[reader] = file
+                removeOlderCopies(of: reader, keeping: file, in: cache)
             } catch {
                 AVMLog.write("AVM: ScreenReaders — \(reader.displayName) failed: \(error.localizedDescription)")
                 await say("\(reader.displayName) couldn't be downloaded, so it won't be installed this time. Reason: \(error.localizedDescription) Windows still has Narrator.", true)
             }
         }
         return got
+    }
+
+    /// A newer version replaces the saved one; JAWS alone is 1.5 GB.
+    private static func removeOlderCopies(of reader: ScreenReader, keeping file: URL, in cache: URL) {
+        let fm = FileManager.default
+        for name in (try? fm.contentsOfDirectory(atPath: cache.path)) ?? []
+        where name.hasPrefix("\(reader.rawValue)-") && name != file.lastPathComponent {
+            try? fm.removeItem(at: cache.appendingPathComponent(name))
+        }
     }
 
     private static func download(_ installer: ScreenReaderInstaller, to file: URL,
@@ -202,10 +255,21 @@ nonisolated enum ScreenReaderInstallers {
         try FileManager.default.moveItem(at: part, to: file)
     }
 
+    static func matches(_ file: URL, _ checksum: Checksum) throws -> Bool {
+        switch checksum {
+        case .sha256(let expected): return try digest(of: file, SHA256()) == expected
+        case .sha1(let expected): return try digest(of: file, Insecure.SHA1()) == expected
+        }
+    }
+
     static func sha256(of file: URL) throws -> String {
+        try digest(of: file, SHA256())
+    }
+
+    private static func digest<H: HashFunction>(of file: URL, _ hasher: H) throws -> String {
+        var hasher = hasher
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
-        var hasher = SHA256()
         while let chunk = try handle.read(upToCount: 8 << 20), !chunk.isEmpty {
             hasher.update(data: chunk)
         }

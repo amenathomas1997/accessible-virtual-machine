@@ -282,7 +282,24 @@ final class ScreenReaderInstallerTests: XCTestCase {
     func testPicksTheARMInstaller() throws {
         let found = try ScreenReaderInstallers.installer(.jaws, version: "1", yaml: manifest, architecture: "arm64")
         XCTAssertEqual(found.url.lastPathComponent, "arm64.exe")
-        XCTAssertEqual(found.sha256, "C73C2A2A5A057CF0383E8409EF6AE1B00E8FB8B78B58036E4457DAAE095C73D5")
+        XCTAssertEqual(found.checksum, .sha256("C73C2A2A5A057CF0383E8409EF6AE1B00E8FB8B78B58036E4457DAAE095C73D5"))
+    }
+
+    /// NV Access's feed is newer than winget's list: 2026.3 was out while
+    /// winget still listed 2026.2.
+    func testReadsNVAccessUpdateFeed() throws {
+        let feed = """
+        apiCompatTo: 2026.1.0
+        apiVersion: 2026.3.0
+        launcherHash: c5e02b5b12da149d92b8802172e6d683e7c77175
+        launcherUrl: https://download.nvaccess.org/releases/2026.3/nvda_2026.3.exe
+        version: 2026.3
+        """
+        let found = try ScreenReaderInstallers.nvAccessRelease(text: feed)
+        XCTAssertEqual(found.version, "2026.3")
+        XCTAssertEqual(found.url.host, ScreenReader.nvda.vendorHost)
+        XCTAssertEqual(found.checksum, .sha1("C5E02B5B12DA149D92B8802172E6D683E7C77175"))
+        XCTAssertThrowsError(try ScreenReaderInstallers.nvAccessRelease(text: "version: 2026.3"))
     }
 
     func testAMissingArchitectureIsAnError() {
@@ -294,7 +311,7 @@ final class ScreenReaderInstallerTests: XCTestCase {
             let pinned = ScreenReaderInstallers.pinned[reader]
             XCTAssertEqual(pinned?.url.host, reader.vendorHost)
             XCTAssertEqual(pinned?.url.scheme, "https")
-            XCTAssertEqual(pinned?.sha256.count, 64)
+            if case .sha256(let hash) = pinned?.checksum { XCTAssertEqual(hash.count, 64) } else { XCTFail("pinned versions use SHA-256") }
         }
     }
 
