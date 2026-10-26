@@ -120,18 +120,18 @@ apart, turn off Share the clipboard in that machine's Settings.
 
 ## Screen readers from the first sign-in
 
-When you make a Windows machine, AVM can install NVDA and JAWS for ARM
-during Windows setup, so a screen reader is talking the moment you first
-sign in. NVDA is chosen by default. JAWS is your choice, because it
+When you make a Windows machine, AVM can install NVDA and JAWS for ARM,
+so a screen reader is talking the moment you first sign in. JAWS installs
+during Windows setup; NVDA installs at your first sign-in, as you, which
+is what its installer needs. Narrator speaks through setup itself. NVDA is chosen by default. JAWS is your choice, because it
 needs your own license. Without one it runs for 40 minutes at a time;
 activate it in Windows. If you choose both, NVDA starts at sign-in.
-Narrator still speaks through setup itself.
 
-AVM doesn't ship either one. It downloads each from its maker: the
-newest version listed in winget's public package list, or a known
-version if that list can't be reached. A download is used only if it
-comes from the maker's own server and matches its published SHA-256
-checksum. AVM keeps the downloads, so your next machine doesn't download
+AVM doesn't ship either one. It downloads each from its maker: NVDA's
+newest release from NV Access's own update feed, JAWS's from winget's
+public package list, or a known version if those can't be reached. A
+download is used only if it comes from the maker's own server and
+matches the checksum its maker publishes. AVM keeps the downloads, so your next machine doesn't download
 them again. If a download fails, AVM says so and Windows installs
 without that screen reader.
 
