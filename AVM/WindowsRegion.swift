@@ -25,38 +25,45 @@ nonisolated struct WindowsRegion: Sendable, Equatable {
     /// Windows keyboard IDs for macOS keyboard layouts. Mac layouts that
     /// Windows has no Mac twin for map to the PC layout of the same name,
     /// as Windows' own Boot Camp does.
-    static let keyboards: [String: String] = [
-        "com.apple.keylayout.US": "0409:00000409",
-        "com.apple.keylayout.ABC": "0409:00000409",
-        "com.apple.keylayout.USExtended": "0409:00000409",
-        "com.apple.keylayout.USInternational-PC": "0409:00020409",
-        "com.apple.keylayout.Dvorak": "0409:00010409",
-        "com.apple.keylayout.British": "0809:00000809",
-        "com.apple.keylayout.British-PC": "0809:00000809",
-        "com.apple.keylayout.Irish": "1809:00001809",
-        "com.apple.keylayout.Canadian": "1009:00000409",
-        "com.apple.keylayout.Canadian-CSA": "0c0c:00011009",
-        "com.apple.keylayout.French": "040c:0000040c",
-        "com.apple.keylayout.French-PC": "040c:0000040c",
-        "com.apple.keylayout.Belgian": "080c:0000080c",
-        "com.apple.keylayout.German": "0407:00000407",
-        "com.apple.keylayout.SwissGerman": "0807:00000807",
-        "com.apple.keylayout.SwissFrench": "100c:0000100c",
-        "com.apple.keylayout.Austrian": "0c07:00000407",
-        "com.apple.keylayout.Spanish": "0c0a:0000040a",
-        "com.apple.keylayout.Spanish-ISO": "0c0a:0000040a",
-        "com.apple.keylayout.LatinAmerican": "080a:0000080a",
-        "com.apple.keylayout.Italian": "0410:00000410",
-        "com.apple.keylayout.Italian-Pro": "0410:00000410",
-        "com.apple.keylayout.Portuguese": "0816:00000816",
-        "com.apple.keylayout.Brazilian": "0416:00000416",
-        "com.apple.keylayout.Brazilian-ABNT2": "0416:00000416",
-        "com.apple.keylayout.Dutch": "0413:00020409",
-        "com.apple.keylayout.Danish": "0406:00000406",
-        "com.apple.keylayout.Swedish": "041d:0000041d",
-        "com.apple.keylayout.Swedish-Pro": "041d:0000041d",
-        "com.apple.keylayout.Norwegian": "0414:00000414",
-        "com.apple.keylayout.Finnish": "040b:0000041d",
+    struct Keyboard: Sendable, Equatable {
+        /// Windows' language:layout pair, as InputLocale takes it.
+        let id: String
+        /// The layout's name in Windows, for the wizard.
+        let name: String
+    }
+
+    static let keyboards: [String: Keyboard] = [
+        "com.apple.keylayout.US": Keyboard(id: "0409:00000409", name: "U.S."),
+        "com.apple.keylayout.ABC": Keyboard(id: "0409:00000409", name: "U.S."),
+        "com.apple.keylayout.USExtended": Keyboard(id: "0409:00000409", name: "U.S."),
+        "com.apple.keylayout.USInternational-PC": Keyboard(id: "0409:00020409", name: "U.S. International"),
+        "com.apple.keylayout.Dvorak": Keyboard(id: "0409:00010409", name: "U.S. Dvorak"),
+        "com.apple.keylayout.British": Keyboard(id: "0809:00000809", name: "British"),
+        "com.apple.keylayout.British-PC": Keyboard(id: "0809:00000809", name: "British"),
+        "com.apple.keylayout.Irish": Keyboard(id: "1809:00001809", name: "Irish"),
+        "com.apple.keylayout.Canadian": Keyboard(id: "1009:00000409", name: "Canadian English"),
+        "com.apple.keylayout.Canadian-CSA": Keyboard(id: "0c0c:00011009", name: "Canadian Multilingual"),
+        "com.apple.keylayout.French": Keyboard(id: "040c:0000040c", name: "French"),
+        "com.apple.keylayout.French-PC": Keyboard(id: "040c:0000040c", name: "French"),
+        "com.apple.keylayout.Belgian": Keyboard(id: "080c:0000080c", name: "Belgian French"),
+        "com.apple.keylayout.German": Keyboard(id: "0407:00000407", name: "German"),
+        "com.apple.keylayout.SwissGerman": Keyboard(id: "0807:00000807", name: "Swiss German"),
+        "com.apple.keylayout.SwissFrench": Keyboard(id: "100c:0000100c", name: "Swiss French"),
+        "com.apple.keylayout.Austrian": Keyboard(id: "0c07:00000407", name: "German (Austria)"),
+        "com.apple.keylayout.Spanish": Keyboard(id: "0c0a:0000040a", name: "Spanish"),
+        "com.apple.keylayout.Spanish-ISO": Keyboard(id: "0c0a:0000040a", name: "Spanish"),
+        "com.apple.keylayout.LatinAmerican": Keyboard(id: "080a:0000080a", name: "Latin American"),
+        "com.apple.keylayout.Italian": Keyboard(id: "0410:00000410", name: "Italian"),
+        "com.apple.keylayout.Italian-Pro": Keyboard(id: "0410:00000410", name: "Italian"),
+        "com.apple.keylayout.Portuguese": Keyboard(id: "0816:00000816", name: "Portuguese"),
+        "com.apple.keylayout.Brazilian": Keyboard(id: "0416:00000416", name: "Portuguese (Brazil ABNT)"),
+        "com.apple.keylayout.Brazilian-ABNT2": Keyboard(id: "0416:00000416", name: "Portuguese (Brazil ABNT)"),
+        "com.apple.keylayout.Dutch": Keyboard(id: "0413:00020409", name: "U.S. International (Dutch)"),
+        "com.apple.keylayout.Danish": Keyboard(id: "0406:00000406", name: "Danish"),
+        "com.apple.keylayout.Swedish": Keyboard(id: "041d:0000041d", name: "Swedish"),
+        "com.apple.keylayout.Swedish-Pro": Keyboard(id: "041d:0000041d", name: "Swedish"),
+        "com.apple.keylayout.Norwegian": Keyboard(id: "0414:00000414", name: "Norwegian"),
+        "com.apple.keylayout.Finnish": Keyboard(id: "040b:0000041d", name: "Finnish"),
     ]
 
     /// "en_US" or "en-US" to "en-US"; anything else to nil.
@@ -71,6 +78,12 @@ nonisolated struct WindowsRegion: Sendable, Equatable {
         return "\(parts[0])-\(parts[1])"
     }
 
+    /// Each Windows layout once, by name, for the wizard's picker.
+    static let windowsKeyboards: [Keyboard] = {
+        var seen = Set<String>()
+        return keyboards.values.sorted { $0.name < $1.name }.filter { seen.insert($0.id).inserted }
+    }()
+
     /// The Mac's own region and keyboard. Main actor: Text Input Sources.
     @MainActor
     static func current() -> WindowsRegion {
@@ -79,7 +92,7 @@ nonisolated struct WindowsRegion: Sendable, Equatable {
         if let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
            let raw = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) {
             let id = Unmanaged<CFString>.fromOpaque(raw).takeUnretainedValue() as String
-            region.inputLocale = keyboards[id]
+            region.inputLocale = keyboards[id]?.id
         }
         return region
     }

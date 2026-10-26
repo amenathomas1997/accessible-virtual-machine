@@ -37,6 +37,7 @@ let package = Package(
                 "AVMUSBHelper/StreamSocketCheck.swift",
                 "AVM/ScreenReaderInstallers.swift",
                 "AVM/WindowsRegion.swift",
+                "AVM/WindowsSetupAnswers.swift",
             ],
             swiftSettings: appSettings
         ),

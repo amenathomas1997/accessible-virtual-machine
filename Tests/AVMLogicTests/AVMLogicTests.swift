@@ -343,8 +343,10 @@ final class WindowsRegionTests: XCTestCase {
 
     func testEveryKeyboardIsAWindowsLayoutPair() {
         for (mac, windows) in WindowsRegion.keyboards {
-            XCTAssertNotNil(windows.range(of: "^[0-9a-f]{4}:[0-9a-f]{8}$", options: .regularExpression), mac)
+            XCTAssertNotNil(windows.id.range(of: "^[0-9a-f]{4}:[0-9a-f]{8}$", options: .regularExpression), mac)
+            XCTAssertFalse(windows.name.isEmpty, mac)
         }
+        XCTAssertEqual(Set(WindowsRegion.windowsKeyboards.map(\.id)).count, WindowsRegion.windowsKeyboards.count)
     }
 
     func testOnlyCertainSettingsAreWritten() {
@@ -361,5 +363,83 @@ final class WindowsRegionTests: XCTestCase {
         let text = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(text.contains("<!--AVM_INTERNATIONAL-->"))
         XCTAssertTrue(text.contains("<HideEULAPage>true</HideEULAPage>"))
+    }
+}
+
+// MARK: - The wizard's answer file
+
+final class WindowsSetupAnswersTests: XCTestCase {
+    /// Windows' documented form: base64 of UTF-16LE password + "Password".
+    func testPasswordEncodingMatchesWindows() {
+        XCTAssertEqual(WindowsSetupAnswers.encode(password: ""), "UABhAHMAcwB3AG8AcgBkAA==")
+        XCTAssertEqual(Data(base64Encoded: WindowsSetupAnswers.encode(password: "ab"))?.count, 20)
+    }
+
+    func testComputerNames() {
+        XCTAssertNil(WindowsSetupAnswers.problem(withComputerName: "Amenas-PC"))
+        XCTAssertNotNil(WindowsSetupAnswers.problem(withComputerName: "1234"))
+        XCTAssertNotNil(WindowsSetupAnswers.problem(withComputerName: "sixteen-letters1"))
+        XCTAssertNotNil(WindowsSetupAnswers.problem(withComputerName: "my pc"))
+        XCTAssertEqual(WindowsSetupAnswers.suggestedComputerName(from: "Amena's PC"), "Amenas-PC")
+        XCTAssertEqual(WindowsSetupAnswers.suggestedComputerName(from: "Windows 11 ARM test machine"), "Windows-11-ARM")
+        XCTAssertEqual(WindowsSetupAnswers.suggestedComputerName(from: "ʼʼʼ"), "AVM-PC")
+    }
+
+    func testUserNames() {
+        XCTAssertNil(WindowsSetupAnswers.problem(withUserName: "amena", computerName: "Amenas-PC"))
+        XCTAssertNotNil(WindowsSetupAnswers.problem(withUserName: "Administrator", computerName: nil))
+        XCTAssertNotNil(WindowsSetupAnswers.problem(withUserName: "a@b", computerName: nil))
+        XCTAssertNotNil(WindowsSetupAnswers.problem(withUserName: "amenas-pc", computerName: "Amenas-PC"))
+    }
+
+    func testTimeZonesComeFromICU() {
+        XCTAssertEqual(WindowsSetupAnswers.windowsTimeZone(for: "America/Chicago"), "Central Standard Time")
+        XCTAssertNil(WindowsSetupAnswers.windowsTimeZone(for: "Not/AZone"))
+        XCTAssertTrue(WindowsSetupAnswers.allWindowsTimeZones.contains("GMT Standard Time"))
+    }
+
+    /// Every marker filled, the result well-formed, and a name with XML
+    /// characters in it written safely.
+    func testTheFilledAnswerFileIsValidXML() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../Resources/autounattend.xml").standardizedFileURL
+        var text = try String(contentsOf: url, encoding: .utf8)
+        let answers = WindowsSetupAnswers(
+            locale: "en-GB", inputLocale: "0809:00000809", computerName: "Amenas-PC",
+            timeZone: "GMT Standard Time", privacy: .recommended,
+            localAccount: .init(userName: "amena", displayName: "Amena <\"&'> T", encodedPassword: WindowsSetupAnswers.encode(password: "pw"))
+        )
+        for (marker, section) in answers.answerFileSections {
+            XCTAssertTrue(text.contains(marker), marker)
+            text = text.replacingOccurrences(of: marker, with: section)
+        }
+        XCTAssertTrue(XMLParser(data: Data(text.utf8)).parse())
+        for expected in ["<ComputerName>Amenas-PC</ComputerName>", "<TimeZone>GMT Standard Time</TimeZone>",
+                         "<ProtectYourPC>1</ProtectYourPC>", "<HideOnlineAccountScreens>true</HideOnlineAccountScreens>",
+                         "<LogonCount>1</LogonCount>", "Amena &lt;&quot;&amp;&apos;&gt; T", "<UserLocale>en-GB</UserLocale>"] {
+            XCTAssertTrue(text.contains(expected), expected)
+        }
+        // A Microsoft account and nothing else answered: still valid.
+        var plain = try String(contentsOf: url, encoding: .utf8)
+        for (marker, section) in WindowsSetupAnswers().answerFileSections {
+            plain = plain.replacingOccurrences(of: marker, with: section)
+        }
+        XCTAssertTrue(XMLParser(data: Data(plain.utf8)).parse())
+        XCTAssertFalse(plain.contains("<UserAccounts>"))
+    }
+
+    func testSavedAnswersAreOwnerOnlyAndForgetThePassword() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        var answers = WindowsSetupAnswers()
+        answers.localAccount = .init(userName: "amena", displayName: "Amena", encodedPassword: "x")
+        try answers.save(inVMDirectory: dir)
+        let mode = try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent(WindowsSetupAnswers.fileName).path)[.posixPermissions] as? Int
+        XCTAssertEqual(mode, 0o600)
+        XCTAssertEqual(WindowsSetupAnswers.load(fromVMDirectory: dir), answers)
+        WindowsSetupAnswers.forgetPassword(inVMDirectory: dir)
+        XCTAssertNil(WindowsSetupAnswers.load(fromVMDirectory: dir)?.localAccount?.encodedPassword)
+        XCTAssertEqual(WindowsSetupAnswers.load(fromVMDirectory: dir)?.localAccount?.userName, "amena")
     }
 }
