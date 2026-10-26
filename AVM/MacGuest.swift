@@ -374,6 +374,11 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(machineView)
+        // While macOS has the keyboard, system shortcuts are its own (as on
+        // a real Mac), Command-F5 among them: the Mac would otherwise take
+        // Command-F5 for its own VoiceOver. Control-Command-Escape still
+        // comes back first (the key monitor sees it before the screen).
+        machineView.capturesSystemKeys = true
         setKeyboard(inGuest: true)
         Announcer.shared.announce(spoken ?? "\(name) has the keyboard. Control-Command-Escape returns to your Mac.", tone: .info)
         AVMLog.write("AVM: MacGuest — keyboard to macOS.")
@@ -383,6 +388,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     /// Control-Command-Escape.
     func leave() {
         guard window != nil else { return }
+        machineView?.capturesSystemKeys = false
         window?.makeFirstResponder(nil)
         setKeyboard(inGuest: false)
         if let main = NSApp.windows.first(where: { $0 !== window && $0.isVisible && $0.canBecomeMain }) {
@@ -390,6 +396,25 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         }
         Announcer.shared.announce("Keyboard back on your Mac. \(name) keeps running; Command-Shift-E returns to it.", tone: .info)
         AVMLog.write("AVM: MacGuest — keyboard to the Mac.")
+    }
+
+    /// Command-F5 into macOS, handed straight to the machine's screen so
+    /// the Mac can't take it: turns VoiceOver in macOS on or off, whether
+    /// or not the Mac's own VoiceOver is on (2026-10-26: the Mac caught
+    /// Command-F5 typed into the window).
+    func toggleGuestVoiceOver() {
+        guard let window, let machineView else { NSSound.beep(); return }
+        let f5: UInt16 = 96
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            guard let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: .command,
+                                               timestamp: ProcessInfo.processInfo.systemUptime,
+                                               windowNumber: window.windowNumber, context: nil,
+                                               characters: "", charactersIgnoringModifiers: "",
+                                               isARepeat: false, keyCode: f5) else { continue }
+            if type == .keyDown { machineView.keyDown(with: event) } else { machineView.keyUp(with: event) }
+        }
+        AVMLog.write("AVM: MacGuest — sent Command-F5 to macOS.")
+        Announcer.shared.announce("Sent Command-F5 to \(name), which turns its VoiceOver on or off. If your Mac's VoiceOver is on too, turn it off with Command-F5 while you work in \(name).", tone: .info)
     }
 
     private func setKeyboard(inGuest: Bool) {
@@ -414,8 +439,10 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         let status = NSTextField(labelWithString: "")
         status.setAccessibilityLabel("Keyboard status")
         let give = NSButton(title: "Give \(title) the Keyboard", target: self, action: #selector(giveKeyboard))
+        let voiceOver = NSButton(title: "Turn VoiceOver On or Off in \(title)", target: self, action: #selector(voiceOverPressed))
+        voiceOver.setAccessibilityHelp("Sends Command-F5 into \(title), so its own VoiceOver starts or stops. Your Mac doesn't catch it.")
         let shut = NSButton(title: "Shut Down", target: self, action: #selector(shutDownPressed))
-        let bar = NSStackView(views: [status, NSView(), give, shut])
+        let bar = NSStackView(views: [status, NSView(), give, voiceOver, shut])
         bar.orientation = .horizontal
         bar.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
         bar.setAccessibilityElement(true)
@@ -461,11 +488,15 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     }
 
     @objc private func giveKeyboard() { enter() }
+    @objc private func voiceOverPressed() { toggleGuestVoiceOver() }
     @objc private func shutDownPressed() { shutDown() }
 
     nonisolated func windowDidResignKey(_ notification: Notification) {
         MainActor.assumeIsolated {
-            if keyboardInGuest { setKeyboard(inGuest: false) }
+            if keyboardInGuest {
+                machineView?.capturesSystemKeys = false
+                setKeyboard(inGuest: false)
+            }
         }
     }
 

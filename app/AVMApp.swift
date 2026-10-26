@@ -344,6 +344,15 @@ struct AVMApp: App {
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(!activity.isRunningOrPaused && macGuest.runningID == nil)
 
+                // VoiceOver inside a macOS machine (2026-10-26): Command-F5
+                // typed in its window is the Mac's own, so this sends it in.
+                if macGuest.runningID != nil {
+                    Button("Turn VoiceOver On or Off in macOS") {
+                        macGuest.toggleGuestVoiceOver()
+                    }
+                    .keyboardShortcut("v", modifiers: [.command, .shift, .option])
+                }
+
                 Button("Speak Status") {
                     AVMLog.write("AVM: Speak Status menu — posting request to ContentView.")
                     NotificationCenter.default.post(name: .avmSpeakStatusFromMenu, object: nil)
