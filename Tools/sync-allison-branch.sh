@@ -66,6 +66,9 @@ echo "== Taking this fork's $SOURCE ($(git rev-parse --short "$SRC_SHA"))"
 git read-tree -u --reset "$SRC_SHA"
 
 echo "== Putting back Allison's identity"
+# This script is this fork's own tool (it names the fork's identity to
+# find it), so her branch doesn't carry it.
+git rm -q --cached "Tools/$(basename "$0")" && rm -f "Tools/$(basename "$0")"
 if [ -f Resources/com.fullcircleat.AVM.usbhelper.plist ]; then
     git mv -f Resources/com.fullcircleat.AVM.usbhelper.plist Resources/com.alllisonmeloy.AVM.usbhelper.plist
 fi
