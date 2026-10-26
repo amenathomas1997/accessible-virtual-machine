@@ -126,6 +126,7 @@ struct SettingsView: View {
     @State private var sharedFolderPath: String?
     @State private var sharedFolderReadOnly = false
     @State private var brailleFollowsBack = true
+    @State private var lowAudioLatency = false
     @State private var restorePoints: [RestorePoint] = []
     @State private var restorePointsBusy = false
     @State private var restorePointsLoaded = false
@@ -237,6 +238,20 @@ struct SettingsView: View {
             if configuration.guestOS == .windows {
                 sharedFolderSection
             }
+
+            // Sound (2026-10-26)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Sound")
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                Toggle("Shorter speech delay (experimental)", isOn: $lowAudioLatency)
+                    .accessibilityHint("Keeps less sound waiting, so speech from \(guest) follows your keys more closely")
+                Text("Keeps speech from falling behind during long sessions. If sound crackles, turn it off. Takes effect the next time \(guest) starts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal)
 
             // Secure Boot (Windows only)
             if configuration.guestOS == .windows {
@@ -593,6 +608,7 @@ struct SettingsView: View {
         sharedFolderPath = saved.sharedFolderPath
         sharedFolderReadOnly = saved.sharedFolderIsReadOnly
         brailleFollowsBack = saved.brailleFollowsBack
+        lowAudioLatency = saved.usesLowAudioLatency
     }
 
     // MARK: - Save Settings
@@ -679,6 +695,7 @@ struct SettingsView: View {
             updated.sharedFolderPath = sharedFolderPath
             updated.sharedFolderReadOnly = sharedFolderReadOnly ? true : nil
             updated.brailleFollowThrough = brailleFollowsBack ? nil : "ask"
+            updated.lowAudioLatency = lowAudioLatency ? true : nil
             updated.usbMode = usbMode.rawValue
             updated.usbRememberedDevices = rememberedDevices.isEmpty ? nil : rememberedDevices
             vmStore.save(updated)
