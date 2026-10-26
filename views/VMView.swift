@@ -1175,6 +1175,10 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         // VM is restarted. The teardown rules in this file keep AVM's main
         // thread (and QMP-based Stop) alive when that happens.
         conn.audioEnabled = true
+        // The shorter audio path, if chosen (2026-10-26, experimental; see
+        // SpiceAudioPipeline). Read when playback starts, so set it first.
+        let savedForAudio = VMSession.current.flatMap { session in VMStore.shared?.configurations.first { $0.id == session.configuration.id } }
+        SpiceAudioPipeline.apply(lowLatency: savedForAudio?.usesLowAudioLatency ?? false)
         self.connection = conn
 
         guard conn.connect() else {
@@ -1954,11 +1958,28 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         // Clipboard sharing (2026-10-25): the delegate is weak in CocoaSpice,
         // so the shared instance keeps it alive.
         connection.session.pasteboardDelegate = AVMPasteboard.shared
+        // Shared folder (2026-10-26). Always set: CocoaSpice's own default
+        // is ~/Documents/Public, read and write.
+        let id = VMSession.current?.configuration.id
+        let saved = id.flatMap { id in VMStore.shared?.configurations.first { $0.id == id } }
+        if let folder = saved?.sharedFolderURL {
+            connection.session.setSharedDirectory(folder.path, readOnly: saved?.sharedFolderIsReadOnly ?? false)
+        } else {
+            connection.session.setSharedDirectory(Self.emptyShare.path, readOnly: true)
+        }
         Task { @MainActor in
             AVMPasteboard.shared.refreshEnabled()
             AVMPasteboard.shared.macPasteboardMayHaveChanged()
         }
     }
+    /// An empty, read-only folder to share when none is chosen, in place
+    /// of CocoaSpice's ~/Documents/Public.
+    private static let emptyShare: URL = {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("avm-no-shared-folder", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }()
+
     func spiceDisconnected(_ connection: CSConnection) {
         avmPublicLog("SPICE disconnected.")
     }

@@ -46,6 +46,7 @@ IDENTITY="${AVM_SIGN_IDENTITY:-}"
 TEAM_ID="${AVM_TEAM_ID:-}"
 NOTARY_PROFILE="${AVM_NOTARY_PROFILE:-}"
 SKIP_NOTARIZE=0
+SIGN_FOR_UPDATES=1
 SPEAK=1
 # Work happens outside the repository: a folder synced by iCloud Drive or
 # another File Provider (Documents and Desktop often are) keeps adding
@@ -67,6 +68,8 @@ Options:
   --team TEAMID           Team ID. Default: read from the identity's name.
   --notary-profile NAME   notarytool keychain profile (or $AVM_NOTARY_PROFILE).
   --skip-notarize         Sign only. The DMG then opens only on this Mac.
+  --no-update-signing     Don't sign the Sparkle zip or write the update feed
+                          entry (a test build that won't be published).
   --no-speech             Don't speak the result at the end.
 
 Work files (archive, logs) go to $AVM_BUILD_DIR, default
@@ -82,6 +85,7 @@ while [ $# -gt 0 ]; do
         --team)           TEAM_ID="$2"; shift 2 ;;
         --notary-profile) NOTARY_PROFILE="$2"; shift 2 ;;
         --skip-notarize)  SKIP_NOTARIZE=1; shift ;;
+        --no-update-signing) SIGN_FOR_UPDATES=0; shift ;;
         --no-speech)      SPEAK=0; shift ;;
         -h|--help)        usage; exit 0 ;;
         *) echo "Unknown option: $1"; usage; exit 64 ;;
@@ -246,12 +250,13 @@ xattr -cr "$APP"
 
 step "Signing every binary with Developer ID"
 
-# QEMU gets the app's entitlements, as in the build phase, plus allow-jit.
+# QEMU gets the release entitlements (no library-validation exception,
+# 2026-10-26), as the app does, plus allow-jit.
 # Hardened runtime is new for QEMU here (notarization requires it on every
 # executable); allow-jit keeps QEMU's TCG code buffer working under it, so
 # a fallback from HVF can't crash at the first translated block.
 QEMU_ENTITLEMENTS="$BUILD_DIR/qemu.entitlements"
-cp "$REPO_ROOT/AVM/AVM.entitlements" "$QEMU_ENTITLEMENTS"
+cp "$REPO_ROOT/AVM/AVM-Release.entitlements" "$QEMU_ENTITLEMENTS"
 /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.allow-jit bool true" "$QEMU_ENTITLEMENTS" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Set :com.apple.security.cs.allow-jit true" "$QEMU_ENTITLEMENTS"
 
@@ -416,9 +421,35 @@ step "Making the Sparkle update zip"
 ZIP="$OUT_DIR/AVM-$VERSION.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 info "$ZIP"
+# Signed with this fork's update key (2026-10-26): Sparkle's EdDSA key in
+# the login keychain, account fullcircleat-avm, whose public half is
+# SUPublicEDKey in AVM/Info.plist. The first time, macOS asks to let
+# sign_update use the key; choose Always Allow. The result is the update
+# feed entry for this release, which Tools/publish-release.sh adds to
+# appcast.xml when the release is published.
+SPARKLE_ACCOUNT="${AVM_SPARKLE_ACCOUNT:-fullcircleat-avm}"
+REPO_SLUG="${AVM_REPO:-amenathomas1997/accessible-virtual-machine}"
 SIGN_UPDATE="$(find "$BUILD_DIR/DerivedData/SourcePackages/artifacts" -path '*Sparkle/bin/sign_update' -type f 2>/dev/null | sed -n 1p || true)"
-if [ -n "$SIGN_UPDATE" ]; then
-    info "For appcast.xml, sign it with the update key: \"$SIGN_UPDATE\" \"$ZIP\""
+if [ "$SIGN_FOR_UPDATES" = "0" ]; then
+    info "Not signing for updates (--no-update-signing); this build can't be published."
+elif [ -z "$SIGN_UPDATE" ]; then
+    fail "Sparkle's sign_update tool was not found in the build." "Check that the archive step resolved the Sparkle package."
+else
+info "Signing the update zip with the update key ($SPARKLE_ACCOUNT). If macOS asks, choose Always Allow."
+SIGNATURE="$("$SIGN_UPDATE" --account "$SPARKLE_ACCOUNT" "$ZIP")" || \
+    fail "sign_update could not sign the zip." "Check the key: run generate_keys --account $SPARKLE_ACCOUNT, and allow keychain access."
+ITEM="$OUT_DIR/appcast-item.xml"
+cat > "$ITEM" <<ITEMXML
+        <item>
+            <title>Version $VERSION</title>
+            <sparkle:version>$BUILD_NUMBER</sparkle:version>
+            <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <pubDate>$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")</pubDate>
+            <enclosure url="https://github.com/$REPO_SLUG/releases/download/v$VERSION/AVM-$VERSION.zip" $SIGNATURE type="application/octet-stream" />
+        </item>
+ITEMXML
+info "Update feed entry: $ITEM"
 fi
 
 # MARK: - Done
@@ -431,4 +462,5 @@ CURRENT_STEP="done"
 echo
 echo "== Done. AVM $VERSION installer:"
 echo "   $DMG"
+echo "   To publish it as an update: Tools/publish-release.sh"
 speak "AVM $VERSION installer is ready."

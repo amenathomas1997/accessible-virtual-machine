@@ -813,7 +813,28 @@ final class VMManager: ObservableObject {
             self?.appendConsole("AVM: \(progress.visible)\n")
         }
 
-        let input = PipelineInput(
+        // Screen readers first (2026-10-26), so Windows talks from its first
+        // sign-in. A failed download is spoken and skipped: Narrator is
+        // still there, and the install shouldn't wait on a vendor's server.
+        var readerFiles: [String: URL] = [:]
+        if !configuration.windowsScreenReaders.isEmpty,
+           let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let cache = support
+                .appendingPathComponent(AVMPaths.supportFolderName, isDirectory: true)
+                .appendingPathComponent("screen-readers", isDirectory: true)
+            let got = await ScreenReaderInstallers.fetchAll(configuration.windowsScreenReaders, into: cache) { [weak self] message, isProblem in
+                await MainActor.run {
+                    self?.installProgress = message
+                    self?.appendConsole("AVM: \(message)\n")
+                    Announcer.shared.announce(message, tone: isProblem ? .failure : .info)
+                }
+            }
+            for (reader, file) in got {
+                readerFiles[reader.mediaFileName] = file
+            }
+        }
+
+        var input = PipelineInput(
             vmID: configuration.id,
             sourceISOPath: iso,
             runtimeDir: runtimeDir,
@@ -829,6 +850,7 @@ final class VMManager: ObservableObject {
                 return await self.handleInstallWarning(reason)
             }
         )
+        input.screenReaderInstallers = readerFiles
 
         do {
             let output = try await pipeline.run(input)
@@ -1065,6 +1087,10 @@ final class VMManager: ObservableObject {
         // in-app console — it is unsanitized (home paths) and noisy for
         // testers. The sanitized copy lives in the diagnostic log (line above).
         appendConsole("AVM: QEMU arguments recorded in the diagnostic log.\n")
+
+        // Local Network permission first (2026-10-26), so macOS asks while
+        // the Mac has the keyboard, not in the middle of Windows Setup.
+        _ = await LocalNetworkAccess.ensure(guest: configuration.guestOS.displayName)
 
         avmLog("startVM: launching QEMU child process")
         try launchQEMU(executableURL: qemuURL, arguments: args)
@@ -2032,6 +2058,17 @@ final class VMManager: ObservableObject {
             "-chardev", "spicevmc,id=vdagent,name=vdagent",
             "-device", "virtserialport,chardev=vdagent,name=com.redhat.spice.0"
         ]
+        // Shared folder (2026-10-26): the SPICE WebDAV channel, only when a
+        // folder is chosen. CocoaSpice shares ~/Documents/Public on any
+        // WebDAV channel unless told otherwise, so no channel, no sharing;
+        // VMView sets the chosen folder when SPICE connects.
+        if let shared = configuration.sharedFolderURL {
+            args += [
+                "-chardev", "spiceport,id=webdav0,name=org.spice-space.webdav.0",
+                "-device", "virtserialport,chardev=webdav0,name=org.spice-space.webdav.0"
+            ]
+            avmLog("buildQEMUArguments: sharing a folder (\(configuration.sharedFolderIsReadOnly ? "read only" : "read and write")): \(shared.path)")
+        }
 
         args += ["-chardev", "socket,id=char-qmp,path=\(qmpSocketPath),server=on,wait=off"]
         args += ["-qmp", "chardev:char-qmp"]
@@ -2780,7 +2817,7 @@ final class VMManager: ObservableObject {
     /// that VM ever starting, and a folder named "x,readonly=on" would
     /// quietly change the drive's options.
     static func qemuOptionValue(_ path: String) -> String {
-        path.replacingOccurrences(of: ",", with: ",,")
+        QEMUOption.value(path)
     }
 
     static func usbRedirSocketName(port: Int) -> String {

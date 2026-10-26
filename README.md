@@ -118,6 +118,45 @@ text, rich text and pictures, through the SPICE agent AVM installs in
 Windows. AVM never records what is copied. To keep the two clipboards
 apart, turn off Share the clipboard in that machine's Settings.
 
+## Screen readers from the first sign-in
+
+When you make a Windows machine, AVM can install NVDA and JAWS for ARM,
+so a screen reader is talking the moment you first sign in. JAWS installs
+during Windows setup; NVDA installs at your first sign-in, as you, which
+is what its installer needs. Narrator speaks through setup itself. NVDA is chosen by default. JAWS is your choice, because it
+needs your own license. Without one it runs for 40 minutes at a time;
+activate it in Windows. If you choose both, NVDA starts at sign-in.
+
+AVM doesn't ship either one. It downloads each from its maker: NVDA's
+newest release from NV Access's own update feed, JAWS's from winget's
+public package list, or a known version if those can't be reached. A
+download is used only if it comes from the maker's own server and
+matches the checksum its maker publishes. AVM keeps the downloads, so your next machine doesn't download
+them again. If a download fails, AVM says so and Windows installs
+without that screen reader.
+
+## Sharing a folder with Windows
+
+In a Windows machine's Settings, choose Choose Folder to Share. Windows
+shows that Mac folder in File Explorer as a network drive. You can let
+Windows only read it. The change takes effect the next time the machine
+starts. AVM installs the service that does this, spice-webdavd, during
+Windows setup. A Windows installed by an older AVM needs it installed
+from spice-space.org first.
+
+## When the Mac sleeps
+
+Before the Mac sleeps, AVM pauses a running machine. When the Mac wakes,
+AVM resumes it and tells you. A machine you paused yourself stays
+paused. Windows' clock may take a minute to catch up.
+
+## Sound
+
+If speech from Windows starts to lag behind your keys during a long
+session, turn on Shorter speech delay in the machine's Settings. It
+keeps less sound waiting on the Mac: 70 ms instead of 220 ms on the
+Mac's side. It's experimental, so turn it off again if sound crackles.
+
 ## Restore points
 
 A restore point saves a virtual machine as it is, so you can put it back
@@ -204,6 +243,28 @@ It also makes the zip that Sparkle updates use. Both files land in
 `--skip-notarize` makes a DMG that opens only on your own Mac. The
 script checks the sysroot and its xorriso version first, prints one
 plain-text line per step, and says out loud whether the build worked.
+
+## Tests
+
+`swift test` runs the logic tests: password hashing, the log sanitizer,
+saved settings, the Ubuntu account checks, the root USB helper's socket
+check, and the screen reader download checks. They need no sysroot, so
+they run on any Mac with Xcode. GitHub Actions runs them on every push,
+along with checks of the build scripts and the update feed. If you
+build in a folder under ~/Documents, add
+`--scratch-path ~/Library/Caches/AVM-build/swiftpm`: file syncing adds
+file attributes there that stop the tests from being signed.
+
+## Publishing an update
+
+This fork has its own update feed and signing key. The app checks
+`appcast.xml` in this repository, and accepts only updates signed with
+the key stored in the Mac's keychain as `fullcircleat-avm`.
+`Tools/build-installer.sh` signs the update zip with it, and
+`Tools/publish-release.sh` puts the DMG and zip on a GitHub release and
+adds the update to the feed. Back up the private key:
+`generate_keys --account fullcircleat-avm -x <file>`, kept somewhere
+safe. Without it, no future update can reach anyone who has the app.
 
 ## Measuring speech latency
 

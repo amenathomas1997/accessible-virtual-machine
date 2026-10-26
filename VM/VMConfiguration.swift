@@ -39,8 +39,11 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
 
     // MARK: - Shared folder
 
-    /// Host path exposed to the guest via VirtFS / WebDAV.
+    /// A Mac folder the guest sees as a network drive, over SPICE WebDAV
+    /// (2026-10-26). nil shares nothing. Read it through sharedFolderURL.
     var sharedFolderPath: String?
+    /// true: the guest can read the shared folder but not change it.
+    var sharedFolderReadOnly: Bool?
 
     // MARK: - USB plug and play (increment 2b)
 
@@ -97,6 +100,29 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
     /// two clipboards apart. Read it through sharesClipboard.
     var shareClipboard: Bool?
 
+    // MARK: - Braille display follow-through (2026-10-26)
+
+    /// What happens when a braille display comes back within a minute of
+    /// leaving Windows. "send" (or nil): it follows the user's earlier choice
+    /// back to Windows, as a Monarch needs when it switches modes. "ask":
+    /// AVM asks, as for any braille display, because unplugging it to take
+    /// it back from Windows looks the same. Read it through
+    /// brailleFollowsBack.
+    var brailleFollowThrough: String?
+
+    // MARK: - Sound (2026-10-26)
+
+    /// true: the experimental shorter audio path (SpiceAudioPipeline).
+    /// Read it through usesLowAudioLatency.
+    var lowAudioLatency: Bool?
+
+    // MARK: - Screen readers in Windows (2026-10-26)
+
+    /// Screen readers AVM installs during Windows setup: ScreenReader raw
+    /// values. nil or empty means none, Narrator only, as before. Read it
+    /// through windowsScreenReaders.
+    var windowsScreenReaderNames: [String]?
+
     // MARK: - Defaults
 
     init(
@@ -114,7 +140,8 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
         windowsEditionName: String? = nil,
         storageFolderPath: String? = nil,
         secureBoot: Bool? = nil,
-        shareClipboard: Bool? = nil
+        shareClipboard: Bool? = nil,
+        windowsScreenReaderNames: [String]? = nil
     ) {
         self.id = id
         self.name = name
@@ -131,12 +158,29 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
         self.storageFolderPath = storageFolderPath
         self.secureBoot = secureBoot
         self.shareClipboard = shareClipboard
+        self.windowsScreenReaderNames = windowsScreenReaderNames
     }
 }
 
 extension VMConfiguration {
     var usesSecureBoot: Bool { secureBoot == true }
     var sharesClipboard: Bool { shareClipboard ?? true }
+    var brailleFollowsBack: Bool { brailleFollowThrough != "ask" }
+    /// The shared folder, if one is chosen and is a folder right now (an
+    /// unplugged drive shares nothing rather than failing the start).
+    var sharedFolderURL: URL? {
+        guard let path = sharedFolderPath, !path.isEmpty else { return nil }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+    var sharedFolderIsReadOnly: Bool { sharedFolderReadOnly == true }
+    var usesLowAudioLatency: Bool { lowAudioLatency == true }
+    /// Known screen readers only, in a fixed order; unknown words ignored.
+    var windowsScreenReaders: [ScreenReader] {
+        let chosen = Set(windowsScreenReaderNames ?? [])
+        return ScreenReader.allCases.filter { chosen.contains($0.rawValue) }
+    }
 }
 
 // MARK: - Storage location
@@ -320,5 +364,81 @@ struct RememberedUSBDevice: Codable, Hashable, Identifiable {
         self.vendorID == vendorID
             && self.productID == productID
             && self.serialNumber == serialNumber
+    }
+}
+
+// MARK: - Screen readers (2026-10-26)
+
+/// Screen readers AVM can install in Windows during setup. Raw values are
+/// the words windowsScreenReaderNames stores.
+nonisolated enum ScreenReader: String, CaseIterable, Identifiable, Sendable {
+    case nvda
+    case jaws
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .nvda: return "NVDA"
+        case .jaws: return "JAWS"
+        }
+    }
+
+    /// Its name on the install media: short and upper case, so every
+    /// namespace on the rebuilt ISO carries it unchanged.
+    var mediaFileName: String {
+        switch self {
+        case .nvda: return "NVDA.EXE"
+        case .jaws: return "JAWS.EXE"
+        }
+    }
+
+    /// The only host its installer may come from. A download link
+    /// anywhere else is refused, even if a manifest names it.
+    var vendorHost: String {
+        switch self {
+        case .nvda: return "download.nvaccess.org"
+        case .jaws: return "software.vfo.digital"
+        }
+    }
+}
+
+// MARK: - QEMU option values (2026-10-25)
+
+/// A value for a comma-separated QEMU option: QEMU reads a comma as the
+/// start of the next option and escapes a literal one by doubling it.
+/// Used by VMManager.qemuOptionValue for every file path it passes.
+nonisolated enum QEMUOption {
+    static func value(_ path: String) -> String {
+        path.replacingOccurrences(of: ",", with: ",,")
+    }
+}
+
+/// The guest's sound on the Mac (2026-10-26). spice-gtk plays it through a
+/// GStreamer pipeline with no ceiling on buffering: about a second can
+/// pile up in its queues, plus 200 ms in the Mac output's ring buffer, and
+/// over a long session the guest's and the Mac's audio clocks drift apart,
+/// so speech can end up audibly late. spice-gtk lets the app replace the
+/// pipeline (the SPICE_GST_AUDIOSINK environment variable, read in-process
+/// when playback starts). This one is the same chain with ceilings: at
+/// most 50 ms queued and a 50 ms output buffer, dropping the oldest audio
+/// rather than falling behind. The guest always sends 48 kHz stereo here:
+/// this spice-server is built with Opus, and Opus playback is 48 kHz.
+/// Experimental: a busy Mac may crackle. Measure with
+/// Tools/measure-speech-latency.sh, on and off.
+nonisolated enum SpiceAudioPipeline {
+    static let environmentName = "SPICE_GST_AUDIOSINK"
+    static let lowLatency =
+        #"appsrc is-live=1 do-timestamp=0 format=time caps="audio/x-raw,format=S16LE,channels=2,rate=48000,layout=interleaved" name="appsrc" max-bytes=19200 leaky-type=downstream ! "#
+        + "queue max-size-buffers=0 max-size-bytes=0 max-size-time=50000000 leaky=downstream ! "
+        + #"audioconvert ! audioresample ! osxaudiosink name="audiosink" buffer-time=50000 latency-time=10000"#
+
+    /// Sets or clears the variable for the next SPICE connection.
+    static func apply(lowLatency on: Bool) {
+        if on {
+            setenv(environmentName, lowLatency, 1)
+        } else {
+            unsetenv(environmentName)
+        }
     }
 }
