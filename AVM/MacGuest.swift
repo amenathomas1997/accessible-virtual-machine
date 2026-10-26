@@ -459,6 +459,36 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         AVMLog.write("AVM: MacGuest — keyboard to the Mac.")
     }
 
+    /// Every key to macOS for 10 seconds, Command-F5 included, then back to
+    /// normal by itself (2026-10-26). Command-F5 is the one way to start
+    /// macOS's VoiceOver from any screen, and the Mac keeps it unless the
+    /// machine's view captures system keys. Capturing ALSO blocks
+    /// Control-Command-Escape (the 2026-10-26 trap, see enter()), so it is
+    /// only ever on for a fixed time, ended by a timer AVM keeps, never by a
+    /// key. Virtual Machine > Pass Command-F5 to macOS, Command-Option-Shift-V.
+    private var systemKeysGeneration = 0
+    func passSystemKeysBriefly() {
+        guard machineView != nil else { NSSound.beep(); return }
+        if !keyboardInGuest { enter() }
+        systemKeysGeneration += 1
+        let generation = systemKeysGeneration
+        Announcer.shared.announce("For 10 seconds, every key goes to \(guestName), Command-F5 too. Press Command-F5 now to start its VoiceOver.", tone: .info)
+        whenModifiersReleased { [weak self] in
+            guard let self, self.keyboardInGuest, generation == self.systemKeysGeneration else { return }
+            self.machineView?.capturesSystemKeys = true
+            AVMLog.write("AVM: MacGuest — system keys to macOS for 10 seconds.")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, generation == self.systemKeysGeneration else { return }
+                    guard self.machineView?.capturesSystemKeys == true else { return }
+                    self.machineView?.capturesSystemKeys = false
+                    AVMLog.write("AVM: MacGuest — system keys back to the Mac.")
+                    Announcer.shared.announce("Command-F5 and Control-Command-Escape are your Mac's again.", tone: .info)
+                }
+            }
+        }
+    }
+
     /// Runs `action` once no modifier key is held, checking every 20 ms,
     /// for at most 3 seconds.
     private func whenModifiersReleased(_ action: @escaping @MainActor () -> Void) {
@@ -519,7 +549,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             MacVoiceOver.restoreAfterGuest()
         }
         if keyboardInGuest && !inGuest {
-            AVMLog.write("AVM: MacGuest — while macOS had the keyboard: \(keysToMacOS) key presses reached AVM in the machine's window instead of macOS (0 is right), \(keysElsewhere) went to another window.")
+            AVMLog.write("AVM: MacGuest — while macOS had the keyboard: \(keysToMacOS) key presses went to the machine's window, \(keysElsewhere) to another window.")
         }
         if inGuest {
             keysToMacOS = 0
@@ -594,14 +624,10 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         // Command-F5 and Command-Tab are the Mac's own: macOS lets no app see
         // them without capturing the keyboard, and capturing it disables the
         // way out (see enter()).
-        // MEASURED 2026-10-26 (keyboard audit): while the machine's screen is
-        // first responder, Apple's view takes keys before AppKit's local
-        // monitors, so this monitor sees none of them (0 counted across two
-        // minutes of typing in Setup Assistant, the Mac's VoiceOver off).
-        // The Carbon hotkey is therefore the real way back; this monitor
-        // catches the chord, and counts keys, only when keys reach AppKit
-        // instead, which means macOS isn't getting them: the counts and the
-        // "a key to the machine's window" lines below are that warning.
+        // MEASURED 2026-10-26: keys reach this monitor on their way to the
+        // machine's screen (17 counted in one stretch, Return working); in
+        // an earlier stretch, with the Mac's VoiceOver on, none did. Counted
+        // either way, never identified.
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self, self.keyboardInGuest, let screen = self.machineView else { return event }
             guard event.window === self.window else {

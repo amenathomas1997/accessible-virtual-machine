@@ -344,6 +344,16 @@ struct AVMApp: App {
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(!activity.isRunningOrPaused && macGuest.runningID == nil)
 
+                // macOS's VoiceOver from any screen (2026-10-26): Command-F5
+                // reaches the macOS machine for 10 seconds. MacGuest.swift.
+                if macGuest.runningID != nil {
+                    Button("Pass Command-F5 to macOS") {
+                        AVMLog.write("AVM: Pass Command-F5 menu — system keys to the macOS machine for 10 seconds.")
+                        macGuest.passSystemKeysBriefly()
+                    }
+                    .keyboardShortcut("v", modifiers: [.command, .option, .shift])
+                }
+
                 Button("Speak Status") {
                     AVMLog.write("AVM: Speak Status menu — posting request to ContentView.")
                     NotificationCenter.default.post(name: .avmSpeakStatusFromMenu, object: nil)
