@@ -113,7 +113,7 @@ for path in pathlib.Path(".").rglob("*.md"):
     new = re.sub(r"<!-- fork-only -->.*?<!-- /fork-only -->", "", new, flags=re.S)
     new = re.sub(r"^<!-- upstream-only\n(.*?)\n-->\n", r"\1\n", new, flags=re.S | re.M)
     if new != text:
-        path.write_text(new)
+        path.write_text(re.sub(r"\n{3,}", "\n\n", new))
 PY
 
 echo "== Checking"
