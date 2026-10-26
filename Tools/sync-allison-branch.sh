@@ -141,6 +141,6 @@ if [ "$PUSH" = "1" ]; then
     git push -q origin "HEAD:refs/heads/$TARGET"
     echo "== Pushed to origin/$TARGET; the pull request to Allison updates itself."
 else
-    git -C "$REPO_ROOT" update-ref "refs/heads/$TARGET" HEAD
+    git -C "$REPO_ROOT" update-ref "refs/heads/$TARGET" "$(git rev-parse HEAD)"
     echo "== Not pushed. Local branch $TARGET updated; review it, then run with --push."
 fi
