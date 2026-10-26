@@ -551,11 +551,13 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                 self.leave()
                 return nil
             }
-            // EVERY key straight to macOS (2026-10-26: Escape didn't reach
-            // VoiceOver in macOS). Left to AppKit, Escape becomes "cancel"
-            // and other keys can be taken by the window or AVM's menus on
-            // the way; handed to the machine's screen directly, nothing
-            // in between sees them.
+            // MEASURED 2026-10-26: this branch doesn't run. While the
+            // machine's screen is first responder, Apple's view takes keys
+            // below AppKit (its EventTap service), so this monitor sees none
+            // (the log's count was 0 with Escape reaching VoiceOver in
+            // macOS). It stays as a safety net in case Apple's routing
+            // changes. The way back that does work is the system-wide
+            // Control-Command-Escape hotkey (registerEscapeHotKey).
             switch event.type {
             case .keyDown: screen.keyDown(with: event); self.keysToMacOS += 1
             case .keyUp: screen.keyUp(with: event)
