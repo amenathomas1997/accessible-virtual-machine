@@ -550,14 +550,14 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
 
         // THE ONE KEYBOARD RULE (2026-10-26, after "switching is unclear and
         // keystrokes don't work consistently"): keys reach macOS only after
-        // Enter (Command-Shift-E or the button), and then every key does,
-        // Command shortcuts included, so AVM's menus can't take Command-Q or
-        // Command-W from macOS. One chord is AVM's: Control-Command-Escape,
-        // back to the Mac.
+        // Enter (Command-Shift-E or the button), and then go to it the
+        // normal way. One chord is AVM's: Control-Command-Escape, back to
+        // the Mac. (Command shortcuts that are AVM menu items, like
+        // Command-Q, are AVM's; quitting asks first while macOS runs.)
         // Command-F5 and Command-Tab are the Mac's own: macOS lets no app see
         // them without capturing the keyboard, and capturing it disables the
         // way out (see enter()).
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self, self.keyboardInGuest, let screen = self.machineView else { return event }
             guard event.window === self.window else {
                 // A key typed while AVM thinks macOS has the keyboard, but
@@ -570,19 +570,14 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                 self.leave()
                 return nil
             }
-            // MEASURED 2026-10-26: this branch doesn't run. While the
-            // machine's screen is first responder, Apple's view takes keys
-            // below AppKit (its EventTap service), so this monitor sees none
-            // (the log's count was 0 with Escape reaching VoiceOver in
-            // macOS). It stays as a safety net in case Apple's routing
-            // changes. The way back that does work is the system-wide
-            // Control-Command-Escape hotkey (registerEscapeHotKey).
-            switch event.type {
-            case .keyDown: screen.keyDown(with: event); self.keysToMacOS += 1
-            case .keyUp: screen.keyUp(with: event)
-            default: screen.flagsChanged(with: event)
-            }
-            return nil
+            // Let every other key go the normal way, to the machine's screen
+            // as first responder. MEASURED 2026-10-26: handing keys to the
+            // screen from here (screen.keyDown(with:)) made the Mac thunk
+            // and macOS never got them; Return and Escape in Setup
+            // Assistant failed that way once the Mac's VoiceOver was off
+            // and keys came through AppKit. Counted, never identified.
+            if event.type == .keyDown { self.keysToMacOS += 1 }
+            return event
         }
     }
 

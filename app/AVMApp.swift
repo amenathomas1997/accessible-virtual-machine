@@ -612,6 +612,17 @@ enum QuitCoordinator {
     static var closingWindow = false
 
     static func shouldTerminate() -> NSApplication.TerminateReply {
+        // A macOS machine runs inside AVM itself (2026-10-26): quitting
+        // ends it at once, so ask.
+        if MacGuestRunner.shared.runningID != nil {
+            let alert = NSAlert()
+            alert.messageText = "macOS is still running. Quit AVM?"
+            alert.informativeText = "Quitting turns the macOS machine off at once, like pulling the plug; unsaved work in it is lost. To shut it down properly first, choose Cancel, then Shut Down in its window."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Quit Now")
+            return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+        }
         let vmActive = vmIsActive
         let hasUSB = !USBRedirectController.shared.portByDevice.isEmpty
         guard vmActive || hasUSB else { return .terminateNow }
