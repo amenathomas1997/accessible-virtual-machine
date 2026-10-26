@@ -109,7 +109,18 @@ enum MacGuestConfiguration {
         graphics.displays = [VZMacGraphicsDisplayConfiguration(widthInPixels: 1920, heightInPixels: 1200, pixelsPerInch: 144)]
         vz.graphicsDevices = [graphics]
 
-        vz.keyboards = [VZUSBKeyboardConfiguration()]
+        // A Mac keyboard, not a generic USB one (2026-10-26, "Return and
+        // Escape still thunk" with keys reaching the machine's screen and
+        // no modifier held): macOS meeting an unknown USB keyboard opens
+        // Keyboard Setup Assistant ("your keyboard can't be identified"),
+        // a window that sits over Setup Assistant, takes Return and Escape,
+        // and that VoiceOver users can't see. Apple's Mac keyboard device
+        // (macOS 14 and later) is one macOS knows, so it never asks.
+        if #available(macOS 14.0, *) {
+            vz.keyboards = [VZMacKeyboardConfiguration()]
+        } else {
+            vz.keyboards = [VZUSBKeyboardConfiguration()]
+        }
         vz.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
 
         // Sound out only: VoiceOver's speech in the machine comes out of the
