@@ -375,10 +375,13 @@ the opposite of what you expected.
 
 ## 9. Screen readers in Windows
 
-Most people's journey looks the same: use Narrator to get through Windows
-setup, because it is built in and needs no download. Then install JAWS or
-NVDA once Windows is yours. Both work in AVM. Use whichever screen reader
-you use.
+Narrator gets you through Windows setup, because it is built in. When
+you make the machine, AVM can also install NVDA, JAWS for ARM, or both,
+so one of them is talking when you first sign in. NVDA is on by default.
+JAWS needs your own license; without one it runs for 40 minutes at a
+time. If you choose both, NVDA starts at sign-in, and you can start JAWS
+yourself. You can also install either one yourself later. Use whichever
+screen reader you use.
 
 ### Narrator
 
@@ -523,6 +526,19 @@ dashboard's Start buttons work too.
 
 ---
 
+### Sharing a folder
+
+To open a Mac folder in Windows, open the machine's Settings and choose
+Choose Folder to Share. The next time Windows starts, the folder is a
+network drive in File Explorer. Turn on the read-only option if Windows
+should only read it.
+
+### When the Mac sleeps
+
+If the Mac sleeps with Windows running, AVM pauses Windows first and
+resumes it when the Mac wakes, and tells you. Give Windows' clock a
+minute to catch up.
+
 ## 12. Sounds and announcements
 
 AVM speaks in the Mac's system voice and plays three sounds:
@@ -555,6 +571,12 @@ Announcements you may hear, and what they mean:
   the virtual machine is stuck during installation. See section 13.
 
 ---
+
+### If speech lags behind your keys
+
+Turn on Shorter speech delay in the machine's Settings, then start the
+machine again. It keeps less sound waiting on the Mac. It is
+experimental: if the sound crackles, turn it off, and please tell us.
 
 ## 13. When something seems wrong
 
