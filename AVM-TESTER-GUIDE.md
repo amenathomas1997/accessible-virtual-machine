@@ -10,8 +10,8 @@ the first people to run it anywhere else. Everything you notice is worth
 reporting, especially anything that happens silently.
 
 AVM is free software under the GNU General Public License, version 2. The
-project lives at https://github.com/amenathomas1997/accessible-virtual-machine, a fork of Allison Meloy's
-original at https://github.com/allisonfm85/accessible-virtual-machine
+project lives at https://github.com/amenathomas1997/accessible-virtual-machine<!-- fork-only -->, a fork of Allison Meloy's
+original at https://github.com/allisonfm85/accessible-virtual-machine<!-- /fork-only -->
 
 ---
 

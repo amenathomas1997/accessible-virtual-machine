@@ -3,7 +3,7 @@
 # AVM — Accessible Virtual Machine
 #
 # Publishes the release Tools/build-installer.sh made (2026-10-26): a
-# GitHub release v<version> on this fork with the DMG and the Sparkle zip,
+# GitHub release v<version> in this repository with the DMG and the Sparkle zip,
 # then the update feed entry added to appcast.xml, committed and pushed,
 # so installed copies of AVM are offered the update. Asks before it
 # publishes anything.

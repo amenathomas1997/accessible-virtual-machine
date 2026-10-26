@@ -10,11 +10,13 @@ speaking from the first boot (tester guide, section 16).
 AVM is currently in early testing. It is distributed to testers as a
 notarized DMG.
 
+<!-- fork-only -->
 **About this repository.** This is a fork of Allison Meloy's AVM,
 [allisonfm85/accessible-virtual-machine](https://github.com/allisonfm85/accessible-virtual-machine),
 maintained by Amena Thomas (Full Circle AT LLC). It carries its own
 builds, issues and updates. AVM was designed and built by Allison; this
 fork adds to it under the same license, GPL version 2.
+<!-- /fork-only -->
 
 ## For testers
 
@@ -257,6 +259,7 @@ file attributes there that stop the tests from being signed.
 
 ## Publishing an update
 
+<!-- fork-only -->
 This fork has its own update feed and signing key. The app checks
 `appcast.xml` in this repository, and accepts only updates signed with
 the key stored in the Mac's keychain as `fullcircleat-avm`.
@@ -265,6 +268,18 @@ the key stored in the Mac's keychain as `fullcircleat-avm`.
 adds the update to the feed. Back up the private key:
 `generate_keys --account fullcircleat-avm -x <file>`, kept somewhere
 safe. Without it, no future update can reach anyone who has the app.
+<!-- /fork-only -->
+<!-- upstream-only
+The app checks `appcast.xml` in this repository, and accepts only
+updates signed with the Sparkle key whose public half is
+`SUPublicEDKey` in `AVM/Info.plist`. `Tools/build-installer.sh` signs
+the update zip with that key from the Mac's keychain (Sparkle's default
+account; set `AVM_SPARKLE_ACCOUNT` for another), and
+`Tools/publish-release.sh` puts the DMG and zip on a GitHub release and
+adds the update to the feed. Back up the private key:
+`generate_keys -x <file>`, kept somewhere
+safe. Without it, no future update can reach anyone who has the app.
+-->
 
 ## Measuring speech latency
 

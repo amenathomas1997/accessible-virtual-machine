@@ -421,7 +421,7 @@ step "Making the Sparkle update zip"
 ZIP="$OUT_DIR/AVM-$VERSION.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 info "$ZIP"
-# Signed with this fork's update key (2026-10-26): Sparkle's EdDSA key in
+# Signed with the update key (2026-10-26): Sparkle's EdDSA key in
 # the login keychain, account fullcircleat-avm, whose public half is
 # SUPublicEDKey in AVM/Info.plist. The first time, macOS asks to let
 # sign_update use the key; choose Always Allow. The result is the update
