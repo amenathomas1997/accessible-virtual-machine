@@ -219,7 +219,7 @@
         <RunSynchronousCommand wcm:action="add">
           <Order>12</Order>
           <Description>AVM: report: shared-folder service</Description>
-          <Path>cmd /c sc query spice-webdavd &gt;nul &amp;&amp; for %d in (C D E F G H I J K L) do @if exist %d:\AVMDONE.TAG echo webdavd-installed&gt;&gt;%d:\AVMSTATUS.TXT</Path>
+          <Path>cmd /c sc query spicewebdavd &gt;nul &amp;&amp; for %d in (C D E F G H I J K L) do @if exist %d:\AVMDONE.TAG echo webdavd-installed&gt;&gt;%d:\AVMSTATUS.TXT</Path>
         </RunSynchronousCommand>
         <RunSynchronousCommand wcm:action="add">
           <Order>13</Order>
