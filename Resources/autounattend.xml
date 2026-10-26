@@ -182,6 +182,11 @@
     </component>
   </settings>
   <settings pass="oobeSystem">
+    <!-- AVM REGION (2026-10-26). Stage 4 replaces the marker below with the
+         Mac's region and keyboard (WindowsRegion.swift), so OOBE skips its
+         region and keyboard pages; only settings AVM is sure of are written,
+         and with none the marker simply goes. -->
+    <!--AVM_INTERNATIONAL-->
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <!-- At the first sign-in: install NVDA as the signed-in user (an
            administrator, the case NVDA's silent installer is built for),
@@ -207,6 +212,16 @@
           <CommandLine>cmd /c rmdir /s /q "%SystemRoot%\Setup\AVM"</CommandLine>
         </SynchronousCommand>
       </FirstLogonCommands>
+      <!-- Fewer Narrator-only screens (2026-10-26): no license page (the
+           license is accepted by installing, as on any OEM PC), no Wi-Fi
+           page (the VM's network is wired), and "Choose privacy settings"
+           answered with the most private choice, 3: no optional data and
+           no tailored experiences. The Microsoft account page stays. -->
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
     </component>
   </settings>
 </unattend>

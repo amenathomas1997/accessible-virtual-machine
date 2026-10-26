@@ -378,6 +378,9 @@ nonisolated struct PipelineInput {
     /// download. Stage 3 copies them into AVMSR\ at the media's root, and
     /// the answer file's specialize pass installs whatever it finds there.
     var screenReaderInstallers: [String: URL] = [:]
+    /// The Mac's region and keyboard for OOBE (WindowsRegion.swift); nil or
+    /// empty leaves Windows to ask, as before.
+    var region: WindowsRegion?
 }
 
 /// The verified artifacts the pipeline produces, living in the VM runtime dir.
@@ -1300,6 +1303,7 @@ nonisolated final class WindowsInstallPipeline {
         let filled = template
             .replacingOccurrences(of: editionToken, with: resolved.name)
             .replacingOccurrences(of: productKeyToken, with: resolved.key)
+            .replacingOccurrences(of: "<!--AVM_INTERNATIONAL-->", with: input.region?.answerFileComponent ?? "")
 
         // --- Write the filled XML to scratch. ---
         let filledXMLURL = scratch.appendingPathComponent("autounattend-filled.xml")

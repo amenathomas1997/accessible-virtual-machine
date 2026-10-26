@@ -330,3 +330,36 @@ final class ScreenReaderInstallerTests: XCTestCase {
                        "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD")
     }
 }
+
+// MARK: - Windows setup skips the region and keyboard pages
+
+final class WindowsRegionTests: XCTestCase {
+    func testMacLocalesBecomeWindowsLocales() {
+        XCTAssertEqual(WindowsRegion.windowsLocale(fromMac: "en_US"), "en-US")
+        XCTAssertEqual(WindowsRegion.windowsLocale(fromMac: "en_GB@rg=gbzzzz"), "en-GB")
+        XCTAssertNil(WindowsRegion.windowsLocale(fromMac: "en"), "no country: let Windows ask")
+        XCTAssertNil(WindowsRegion.windowsLocale(fromMac: "zh-Hans_CN"), "a script code: let Windows ask")
+    }
+
+    func testEveryKeyboardIsAWindowsLayoutPair() {
+        for (mac, windows) in WindowsRegion.keyboards {
+            XCTAssertNotNil(windows.range(of: "^[0-9a-f]{4}:[0-9a-f]{8}$", options: .regularExpression), mac)
+        }
+    }
+
+    func testOnlyCertainSettingsAreWritten() {
+        XCTAssertEqual(WindowsRegion().answerFileComponent, "", "nothing known: the marker just goes")
+        let keyboardOnly = WindowsRegion(locale: nil, inputLocale: "0809:00000809").answerFileComponent
+        XCTAssertTrue(keyboardOnly.contains("<InputLocale>0809:00000809</InputLocale>"))
+        XCTAssertFalse(keyboardOnly.contains("UserLocale"))
+    }
+
+    /// The marker Stage 4 replaces must stay in the answer file.
+    func testTheAnswerFileKeepsItsRegionMarker() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../Resources/autounattend.xml").standardizedFileURL
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(text.contains("<!--AVM_INTERNATIONAL-->"))
+        XCTAssertTrue(text.contains("<HideEULAPage>true</HideEULAPage>"))
+    }
+}

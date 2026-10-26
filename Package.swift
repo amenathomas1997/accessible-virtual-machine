@@ -36,6 +36,7 @@ let package = Package(
                 "VM/UbuntuInstallPipeline.swift",
                 "AVMUSBHelper/StreamSocketCheck.swift",
                 "AVM/ScreenReaderInstallers.swift",
+                "AVM/WindowsRegion.swift",
             ],
             swiftSettings: appSettings
         ),
