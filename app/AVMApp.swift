@@ -500,6 +500,9 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
         NSLog("AVM: AppDelegate — applicationWillTerminate; restoring Caps Lock if applied.")
         MainActor.assumeIsolated {
             CapsLockRemapper.shared.restoreForTermination()
+            // The Mac's VoiceOver back on if AVM turned it off for a macOS
+            // machine (2026-10-26, MacVoiceOver in MacGuest.swift).
+            MacVoiceOver.restoreAfterGuest()
             // The focus lock's own teardown (2026-10-25): its hot key, its
             // focus enforcement, and the presentation options it sets.
             // cleanup() existed with no callers; this is the place the
