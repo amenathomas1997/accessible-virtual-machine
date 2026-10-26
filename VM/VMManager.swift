@@ -2780,7 +2780,7 @@ final class VMManager: ObservableObject {
     /// that VM ever starting, and a folder named "x,readonly=on" would
     /// quietly change the drive's options.
     static func qemuOptionValue(_ path: String) -> String {
-        path.replacingOccurrences(of: ",", with: ",,")
+        QEMUOption.value(path)
     }
 
     static func usbRedirSocketName(port: Int) -> String {

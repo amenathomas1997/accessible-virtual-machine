@@ -1,0 +1,55 @@
+# ci.yml
+# AVM — Accessible Virtual Machine
+#
+# Runs on every push and pull request (2026-10-26):
+#   - the logic tests (Package.swift: password hashing, the log
+#     sanitizer, saved configurations, Ubuntu account checks, the root USB
+#     helper's socket check);
+#   - a syntax and lint pass over the build scripts;
+#   - well-formedness of the update feed and Info.plist.
+# The app itself needs the UTM sysroot (Tools/build-sysroot.sh, about an
+# hour), so it is built on a Mac, not here.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  logic-tests:
+    name: Logic tests
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Run the logic tests
+        run: swift test
+
+  scripts-and-files:
+    name: Scripts and files
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: |
+          for f in Tools/*.sh; do
+            bash -n "$f" && echo "ok: $f"
+          done
+      - name: ShellCheck (errors only)
+        run: |
+          brew install shellcheck >/dev/null
+          shellcheck -S error Tools/*.sh
+      - name: Update feed and Info.plist are well formed
+        run: |
+          xmllint --noout appcast.xml
+          plutil -lint AVM/Info.plist
+      - name: Sysroot patches are named for a UTM patch
+        run: |
+          for p in Tools/sysroot-patches/*.patch; do
+            case "$(basename "$p")" in
+              *+*.patch) echo "ok: $p" ;;
+              *) echo "::error file=$p::name must be <UTM patch name>+<what it does>.patch"; exit 1 ;;
+            esac
+          done
