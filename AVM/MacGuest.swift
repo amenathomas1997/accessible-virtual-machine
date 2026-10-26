@@ -403,7 +403,18 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         registerEscapeHotKey()
         // "Entering macOS", the same words every time, as for Windows; the
         // keys to know are added the first time only.
-        Announcer.shared.announce(hintGiven ? "Entering \(guestName)" : "Entering \(guestName). Control-Command-Escape returns to your Mac.", tone: .info)
+        // Both VoiceOvers at once (2026-10-26, "random VoiceOver dings"):
+        // the Mac's VoiceOver takes its Control-Option chords, but the
+        // machine still sees the Control and Option presses alone, and
+        // macOS's VoiceOver dings at the half-chords. Said every time the
+        // Mac's VoiceOver is on as macOS takes the keyboard.
+        let macVoiceOverOn = NSWorkspace.shared.isVoiceOverEnabled
+        var entering = hintGiven ? "Entering \(guestName)" : "Entering \(guestName). Control-Command-Escape returns to your Mac."
+        if macVoiceOverOn {
+            entering += " Your Mac's VoiceOver is on; turn it off with Command-F5 while you work in \(guestName), or the two VoiceOvers share your keys."
+        }
+        AVMLog.write("AVM: MacGuest — entering with the Mac's VoiceOver \(macVoiceOverOn ? "on" : "off").")
+        Announcer.shared.announce(entering, tone: .info)
         hintGiven = true
         AVMLog.write("AVM: MacGuest — keyboard to macOS.")
     }
