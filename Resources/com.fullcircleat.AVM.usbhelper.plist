@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.alllisonmeloy.AVM.usbhelper</string>
+	<string>com.fullcircleat.AVM.usbhelper</string>
 	<key>BundleProgram</key>
 	<string>Contents/MacOS/AVMUSBHelper</string>
 	<key>MachServices</key>
 	<dict>
-		<key>com.alllisonmeloy.AVM.usbhelper</key>
+		<key>com.fullcircleat.AVM.usbhelper</key>
 		<true/>
 	</dict>
 	<key>AssociatedBundleIdentifiers</key>
 	<array>
-		<string>com.alllisonmeloy.AVM</string>
+		<string>com.fullcircleat.AVM</string>
 	</array>
 	<key>ProcessType</key>
 	<string>Interactive</string>

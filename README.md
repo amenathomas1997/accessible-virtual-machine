@@ -10,6 +10,12 @@ speaking from the first boot (tester guide, section 16).
 AVM is currently in early testing. It is distributed to testers as a
 notarized DMG.
 
+**About this repository.** This is a fork of Allison Meloy's AVM,
+[allisonfm85/accessible-virtual-machine](https://github.com/allisonfm85/accessible-virtual-machine),
+maintained by Amena Thomas (Full Circle AT LLC). It carries its own
+builds, issues and updates. AVM was designed and built by Allison; this
+fork adds to it under the same license, GPL version 2.
+
 ## For testers
 
 Start with the tester guide: [AVM-TESTER-GUIDE.md](AVM-TESTER-GUIDE.md).
@@ -83,6 +89,46 @@ When Windows starts, AVM sends the devices you've chosen to remember for Windows
 
 **USB flash drives don't work yet.** macOS 27 blocks AVM from sending a USB storage device to Windows. I'm working with Apple on a fix.
 
+## Keeping a virtual machine on an external drive
+
+In the Setup Wizard, under Where to Store It, choose Choose a Folder or
+Drive, then pick the drive. AVM keeps everything for that machine there,
+in a folder named AVM Virtual Machines. The dashboard says which drive
+each machine is on. If the drive isn't connected, the dashboard says so,
+and Start and Delete refuse until you connect it, so a machine is never
+quietly recreated on your Mac or forgotten while its files are on the
+drive. While Windows installs, AVM still needs about 8 gigabytes free on
+the Mac itself for a short while.
+
+## Secure Boot
+
+New Windows machines have Secure Boot, with Microsoft's keys, so Windows
+Update offers Insider preview builds. For an older machine, stop it, open
+Settings, and turn on Secure Boot. AVM asks first, keeps a copy of the
+old firmware settings, and puts them back if you turn Secure Boot off.
+If BitLocker is on, Windows may ask for its recovery key after the switch.
+The firmware is UTM's Secure Boot build of edk2; its licences ship with
+it, in edk2-licenses.txt.
+
+## Copying between the Mac and Windows
+
+Copy something on the Mac, enter Windows, and paste: it's there. What you
+copy in Windows is ready to paste on the Mac straight away. This works for
+text, rich text and pictures, through the SPICE agent AVM installs in
+Windows. AVM never records what is copied. To keep the two clipboards
+apart, turn off Share the clipboard in that machine's Settings.
+
+## Restore points
+
+A restore point saves a virtual machine as it is, so you can put it back
+later: before a big Windows update, or before trying Insider builds. Shut
+the machine down, open its Settings, and choose Save a Restore Point. To
+go back, choose Restore beside the one you want; AVM asks first, because
+everything since then is lost. A restore point keeps the disk, the
+firmware settings and the TPM, so BitLocker and Windows Hello still match
+afterwards. Each one takes more disk space as Windows changes after it,
+so delete the ones you no longer need.
+
 ## Braille displays
 
 When you plug in a USB device while Windows is running, AVM checks whether it's a braille display before doing anything with it. A braille display is never sent to Windows without asking, even when "Always use in Windows" is chosen in Settings. If you check "Remember my choice for this device," AVM will use your choice from then on.
@@ -124,7 +170,9 @@ prebuilt sysroot, with one local patch (a GStreamer osxaudio deadlock
 fix, backported from upstream). The staging steps live in
 the Run Script build phase inside
 `AVM.xcodeproj/project.pbxproj`. The SPICE display layer comes from a
-pinned fork of CocoaSpice: https://github.com/allisonfm85/CocoaSpice
+pinned fork of CocoaSpice: https://github.com/amenathomas1997/CocoaSpice
+(a copy of Allison's, https://github.com/allisonfm85/CocoaSpice, at the
+same commit, so builds don't depend on another account).
 
 ## Building from source
 
@@ -137,6 +185,35 @@ override the setting, either in Xcode's build settings or on the
 command line with `xcodebuild AVM_SYSROOT=/your/path`.
 The bundled xorriso must be 1.5.8.pl02 or later — earlier versions
 produce install ISOs the Windows boot loader cannot read.
+
+To build the sysroot from source instead, run `Tools/build-sysroot.sh`.
+It runs UTM's own dependency build at a pinned UTM commit, without the
+GPU libraries AVM doesn't use. It applies the osxaudio deadlock fix in
+`Tools/sysroot-patches` and adds xorriso 1.5.8.pl02, wimlib and mtools.
+It then checks the result against every framework and library the Xcode
+project links. It builds into the default `AVM_SYSROOT` location, so
+Xcode finds it with no changes. It takes most of an hour and about 20
+GB of disk space.
+
+To make the installer, run `Tools/build-installer.sh`. It archives the
+Release build, signs every bundled binary with your Developer ID
+Application identity, and makes a DMG, which it notarizes and staples.
+It also makes the zip that Sparkle updates use. Both files land in
+`build/installer`. Notarizing needs a notarytool keychain profile;
+`Tools/build-installer.sh --help` explains how to make one, and
+`--skip-notarize` makes a DMG that opens only on your own Mac. The
+script checks the sysroot and its xorriso version first, prints one
+plain-text line per step, and says out loud whether the build worked.
+
+## Measuring speech latency
+
+`Tools/measure-speech-latency.sh` measures how long a screen reader in a
+virtual machine takes to start speaking after a key press. It presses a
+key the way a person would and listens to the Mac's output, so it
+measures any VM app the same way: run it once with AVM and once with
+Parallels on the same Mac to compare. Run it with `--help` for the setup
+it needs; the first run asks for Accessibility and audio recording
+permission.
 
 ## Privacy
 

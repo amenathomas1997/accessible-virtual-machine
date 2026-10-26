@@ -4,17 +4,10 @@
         <title>AVM Updates</title>
         <description>Update feed for AVM, the Accessible Virtual Machine. Entries are added here with each release.</description>
         <language>en</language>
-        <item>
-            <title>Version 0.1.3</title>
-            <sparkle:version>4</sparkle:version>
-            <sparkle:shortVersionString>0.1.3</sparkle:shortVersionString>
-            <enclosure url="https://github.com/allisonfm85/accessible-virtual-machine/releases/download/v0.1.3/AVM-0.1.3.zip" sparkle:edSignature="iNzd6HWFmVhbdjlN1w4XKRoEb0wnamTUdKNDZZa8ZbCWTJ1GGZw6v+JiJcLqhPhxKdzp2ZRjGuiUdifByIaLAg==" length="53650608" type="application/octet-stream" />
-        </item>
-        <item>
-            <title>Version 0.1.2</title>
-            <sparkle:version>3</sparkle:version>
-            <sparkle:shortVersionString>0.1.2</sparkle:shortVersionString>
-            <enclosure url="https://github.com/allisonfm85/accessible-virtual-machine/releases/download/v0.1.2/AVM-0.1.2.zip" sparkle:edSignature="Nn18+msnEEQC4ReXbQX65xuNzrkqU1NE8eu5pFDvDZfWt6L9xx2WhCI/j4Yhsf3jkNDottXHBJj3N3fj/Q53BA==" length="53429850" type="application/octet-stream" />
-        </item>
+        <!-- Releases of this fork are added here, newest first. Each needs an
+             enclosure signed with this fork's own EdDSA key (Sparkle's
+             sign_update), matching SUPublicEDKey in AVM/Info.plist. The
+             original project's releases are not listed: they are built for
+             its own app and could not be installed over this one. -->
     </channel>
 </rss>

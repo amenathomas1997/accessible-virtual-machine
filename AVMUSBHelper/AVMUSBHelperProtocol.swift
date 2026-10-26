@@ -25,14 +25,14 @@ import Foundation
 nonisolated public enum AVMUSBHelperNames {
     /// launchd label and Mach service name. Three L's on purpose,
     /// same as the bundle identifier. Don't fix it.
-    public static let machServiceName = "com.alllisonmeloy.AVM.usbhelper"
+    public static let machServiceName = "com.fullcircleat.AVM.usbhelper"
 
     /// The plist AVM registers with SMAppService.daemon(plistName:).
     /// Lives at AVM.app/Contents/Library/LaunchDaemons/.
-    public static let launchdPlistName = "com.alllisonmeloy.AVM.usbhelper.plist"
+    public static let launchdPlistName = "com.fullcircleat.AVM.usbhelper.plist"
 
     /// The bundle identifier of the app that is allowed to talk to the helper.
-    public static let clientBundleIdentifier = "com.alllisonmeloy.AVM"
+    public static let clientBundleIdentifier = "com.fullcircleat.AVM"
 }
 
 // MARK: - Device identity

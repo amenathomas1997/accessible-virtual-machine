@@ -16,7 +16,7 @@ its start is tied to a named item below, regardless of what else
 comes up.
 
 Have a request or want to influence priorities? Open an issue:
-https://github.com/allisonfm85/accessible-virtual-machine/issues
+https://github.com/amenathomas1997/accessible-virtual-machine/issues
 
 ## 1. Guest display scaling and mouse input — in progress
 
