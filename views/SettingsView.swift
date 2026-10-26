@@ -123,6 +123,7 @@ struct SettingsView: View {
     @State private var rememberedDevices: [RememberedUSBDevice] = []
     @State private var secureBoot = false
     @State private var shareClipboard = true
+    @State private var brailleFollowsBack = true
     @State private var restorePoints: [RestorePoint] = []
     @State private var restorePointsBusy = false
     @State private var restorePointsLoaded = false
@@ -479,6 +480,21 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            // Braille follow-through (2026-10-26). Same short-label pattern
+            // as the picker above.
+            Text("When a braille display comes back within a minute of leaving \(guest):")
+                .fixedSize(horizontal: false, vertical: true)
+            Picker("Braille display comes back", selection: $brailleFollowsBack) {
+                Text("Send it back to \(guest)").tag(true)
+                Text("Ask first").tag(false)
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+            Text("Some displays, such as the Monarch, disconnect for a moment when they switch modes; Send it back keeps them in \(guest). Choose Ask first if you unplug your display to bring it back to the Mac.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             Text("Remembered devices")
                 .font(.subheadline)
                 .accessibilityAddTraits(.isHeader)
@@ -523,6 +539,7 @@ struct SettingsView: View {
         rememberedDevices = saved.usbRememberedDevices ?? []
         secureBoot = saved.usesSecureBoot
         shareClipboard = saved.sharesClipboard
+        brailleFollowsBack = saved.brailleFollowsBack
     }
 
     // MARK: - Save Settings
@@ -606,6 +623,7 @@ struct SettingsView: View {
                 updated.diskSizeGB = growTo
             }
             updated.shareClipboard = shareClipboard ? nil : false
+            updated.brailleFollowThrough = brailleFollowsBack ? nil : "ask"
             updated.usbMode = usbMode.rawValue
             updated.usbRememberedDevices = rememberedDevices.isEmpty ? nil : rememberedDevices
             vmStore.save(updated)
