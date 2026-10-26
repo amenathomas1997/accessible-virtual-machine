@@ -46,9 +46,14 @@ final class WindowsISODownloader: ObservableObject {
     /// Microsoft's published SHA-256 per language label ("English",
     /// "English International"), read from the page. Empty if unread.
     private var publishedHashes: [String: String] = [:]
-    /// Files already in the folder when watching began; never mistaken for
-    /// the new download.
-    private var existing: Set<String> = []
+    /// Files already in the watched folders when watching began, by path,
+    /// with what they were then; never mistaken for the new download. By
+    /// identity, not name (2026-10-26): Microsoft's file name is the same
+    /// every time, and a fresh download replacing an earlier one with that
+    /// name used to be ignored.
+    private var existing: [String: FileIdentity] = [:]
+    /// The last thing logged per path, so the log says what was seen.
+    private var logged: Set<String> = []
     private var watchTask: Task<Void, Never>?
     private var lastSpokenGB = 0
 
@@ -75,7 +80,7 @@ final class WindowsISODownloader: ObservableObject {
         bytesSoFar = 0
         phase = .watching
         NSWorkspace.shared.open(Self.pageURL)
-        AVMLog.write("ISOAssistant: opened Microsoft's page; watching the chosen folder")
+        AVMLog.write("ISOAssistant: opened Microsoft's page; watching \(watchedFolders.map(\.path).joined(separator: ", "))")
         Announcer.shared.announce(
             "Microsoft's download page is open in your browser. Choose Windows 11 multi-edition ISO for Arm64, then your language, then the 64-bit download. Section 2 of the tester guide walks through the page. AVM is watching \(folder.lastPathComponent) and tells you how the download is going.",
             tone: .info
@@ -116,8 +121,40 @@ final class WindowsISODownloader: ObservableObject {
 
     // MARK: Watching
 
+    /// The chosen folder first, then the usual places a browser saves to
+    /// (2026-10-26): a browser set to save somewhere else was never seen.
+    private var watchedFolders: [URL] {
+        let fm = FileManager.default
+        var folders = [folder]
+        for place in [FileManager.SearchPathDirectory.downloadsDirectory, .desktopDirectory, .documentDirectory] {
+            if let url = fm.urls(for: place, in: .userDomainMask).first,
+               !folders.contains(where: { $0.standardizedFileURL == url.standardizedFileURL }) {
+                folders.append(url)
+            }
+        }
+        return folders
+    }
+
+    struct FileIdentity: Equatable {
+        let inode: UInt64
+        let modified: Date?
+    }
+
+    private static func identity(of url: URL) -> FileIdentity? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
+        return FileIdentity(inode: (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0,
+                            modified: attributes[.modificationDate] as? Date)
+    }
+
     private func snapshotExisting() {
-        existing = Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+        existing = [:]
+        logged = []
+        for dir in watchedFolders {
+            for name in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] {
+                let url = dir.appendingPathComponent(name)
+                if let id = Self.identity(of: url) { existing[url.path] = id }
+            }
+        }
     }
 
     /// Polls every two seconds. A finished ISO is one that has not grown
@@ -156,10 +193,23 @@ final class WindowsISODownloader: ObservableObject {
         }
     }
 
+    /// Files that weren't there when watching began, or have changed since:
+    /// a new inode (replaced) or a new modification date (rewritten).
     private func newEntries() -> [URL] {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        return names.filter { !existing.contains($0) && !$0.hasPrefix(".") }
-            .map { folder.appendingPathComponent($0) }
+        var found: [URL] = []
+        for dir in watchedFolders {
+            for name in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] where !name.hasPrefix(".") {
+                let url = dir.appendingPathComponent(name)
+                guard Self.isPartial(url) || url.pathExtension.lowercased() == "iso" else { continue }
+                if let before = existing[url.path], before == Self.identity(of: url) { continue }
+                if !logged.contains(url.path) {
+                    logged.insert(url.path)
+                    AVMLog.write("ISOAssistant: saw \(Self.isPartial(url) ? "a download in progress" : "an ISO"): \(url.path)")
+                }
+                found.append(url)
+            }
+        }
+        return found
     }
 
     /// Chrome .crdownload, Firefox .part, Safari .download (a bundle).
@@ -195,6 +245,7 @@ final class WindowsISODownloader: ObservableObject {
     // MARK: Verifying
 
     private func verify(_ iso: URL) async {
+        AVMLog.write("ISOAssistant: \(iso.lastPathComponent) stopped growing; checking it")
         phase = .verifying
         Announcer.shared.announce("The download has finished. Checking the file. This takes about a minute.", tone: .info)
         let hashes = publishedHashes
