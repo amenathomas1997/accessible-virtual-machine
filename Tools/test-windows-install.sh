@@ -13,8 +13,9 @@
 #   3. presses Enter at "Press any key to boot from CD", then waits;
 #   4. reads AVMSTATUS.TXT, the report the answer file writes on the
 #      UNATTEND volume, until the first sign-in has finished;
-#   5. says what was installed and what wasn't. If Windows stops on a
-#      screen instead, it saves a screenshot of it (screen.png).
+#   5. says what was installed and what wasn't. It saves a screenshot
+#      (screen.png) every 10 minutes, and when it gives up, so a stuck
+#      screen can be seen at once.
 # It takes 30 to 90 minutes and about 25 GB of disk space while it runs.
 # The test machine is deleted afterwards unless it failed or --keep.
 #
@@ -85,6 +86,25 @@ while True:
     line = f.readline()
     if not line or "return" in line or "error" in line:
         print(line.strip()); break
+PY
+}
+
+screenshot() {
+    # This QEMU has no PNG support: take QEMU's PPM and write a PNG.
+    python3 -I - "$QMP" "$WORK/screen.png" <<'PY' >/dev/null 2>&1 || true
+import json, os, socket, struct, sys, zlib
+qmp, out = sys.argv[1], sys.argv[2]
+ppm = out + ".ppm"
+s = socket.socket(socket.AF_UNIX); s.settimeout(20); s.connect(qmp); f = s.makefile("rw")
+f.readline(); f.write('{"execute":"qmp_capabilities"}\n'); f.flush(); f.readline()
+f.write(json.dumps({"execute": "screendump", "arguments": {"filename": ppm}}) + "\n"); f.flush(); f.readline()
+data = open(ppm, "rb").read()
+magic, size, maxval, pixels = data.split(b"\n", 3)
+w, h = map(int, size.split())
+raw = b"".join(b"\x00" + pixels[y * w * 3:(y + 1) * w * 3] for y in range(h))
+def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+open(out, "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
+os.remove(ppm)
 PY
 }
 
@@ -182,8 +202,10 @@ while :; do
         LAST="$NOW"
     fi
     echo "$REPORT" | grep -q "first-sign-in-done" && break
+    # A fresh look every 10 minutes: an error dialog shows at once.
+    [ $((ELAPSED % 10)) -eq 0 ] && [ "$ELAPSED" -gt 0 ] && screenshot
     if [ "$ELAPSED" -ge "$MINUTES" ]; then
-        qmp screendump "{\"filename\":\"$WORK/screen.png\",\"format\":\"png\"}" >/dev/null 2>&1 || true
+        screenshot
         echo "$REPORT"
         if echo "$REPORT" | grep -q "specialize-done"; then
             fail "Windows finished setup's own steps but never reached the first sign-in." "It's probably waiting on a setup screen: see $WORK/screen.png."
@@ -223,6 +245,6 @@ if [ "$MISSING" = "0" ]; then
     echo; echo "PASSED in $ELAPSED minutes."
     command -v say >/dev/null && say "The install test passed." || true
 else
-    qmp screendump "{\"filename\":\"$WORK/screen.png\",\"format\":\"png\"}" >/dev/null 2>&1 || true
+    screenshot
     fail "Windows installed, but something above is missing." "See $WORK/screen.png."
 fi
