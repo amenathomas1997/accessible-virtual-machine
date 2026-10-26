@@ -45,6 +45,8 @@ final class WindowsKeyboard {
         Task { @MainActor in
             if case .failure(let error) = await USBHelperClient.shared.holdKeyboard(keyboardID) {
                 AVMLog.write("AVM: WindowsKeyboard — the helper couldn't hold it: \(error)")
+                // Only if no newer start has replaced this one meanwhile.
+                guard self.keyboardID == keyboardID else { return }
                 Announcer.shared.announce("\(keyboardName) can't be used for Windows. Reason: \(Self.reason(error)) It still types on the Mac.", tone: .failure)
                 self.keyboardID = nil
             }
@@ -55,8 +57,32 @@ final class WindowsKeyboard {
         guard keyboardID != nil else { return }
         releaseAllKeys()
         keyboardID = nil
+        retriedAfterHelperLoss = false
         AVMLog.write("AVM: WindowsKeyboard — giving the keyboard back to the Mac.")
         Task { await USBHelperClient.shared.releaseKeyboard() }
+    }
+
+    /// AVM's helper stopped while holding the keyboard: keys still down are
+    /// let go in Windows, and AVM asks for the keyboard once more.
+    private var retriedAfterHelperLoss = false
+    func helperLost() {
+        guard let id = keyboardID else { return }
+        releaseAllKeys()
+        keyboardID = nil
+        AVMLog.write("AVM: WindowsKeyboard — the helper stopped while holding the keyboard.")
+        guard !retriedAfterHelperLoss else {
+            Announcer.shared.announce("\(keyboardName) types on the Mac again: AVM's helper stopped. Restart the machine to try again.", tone: .failure)
+            return
+        }
+        retriedAfterHelperLoss = true
+        let name = keyboardName
+        Announcer.shared.announce("\(keyboardName) types on the Mac for a moment: AVM's helper restarted. Asking for it again.", tone: .info)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.send != nil, self.keyboardID == nil else { return }
+                self.start(keyboardID: id, name: name)
+            }
+        }
     }
 
     func key(usage: Int, pressed down: Bool) {

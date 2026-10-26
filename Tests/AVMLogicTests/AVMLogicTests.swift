@@ -597,6 +597,10 @@ final class HIDKeyMapTests: XCTestCase {
         XCTAssertEqual(HIDKeyMap.scancode(forUsage: 0x62), 0x52)        // keypad 0, also Insert with Num Lock off
         XCTAssertEqual(HIDKeyMap.scancode(forUsage: 0xE3), 0x15B)       // left Windows (Command on a Mac keyboard)
         XCTAssertNil(HIDKeyMap.scancode(forUsage: 0x01))                // rollover error
+        XCTAssertEqual(HIDKeyMap.scancode(forUsage: 0x7F), 0x120)       // Mute
+        XCTAssertEqual(HIDKeyMap.scancode(forUsage: 0x80), 0x130)       // Volume Up
+        XCTAssertEqual(HIDKeyMap.scancode(forUsage: 0x81), 0x12E)       // Volume Down
+        XCTAssertEqual(HIDKeyMap.scancode(forUsage: 0x85), 0x7E)        // keypad comma
     }
 
     /// Two keys never send the same scancode, except the two backslash

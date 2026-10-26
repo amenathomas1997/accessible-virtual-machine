@@ -510,7 +510,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             MacVoiceOver.restoreAfterGuest()
         }
         if keyboardInGuest && !inGuest {
-            AVMLog.write("AVM: MacGuest — while macOS had the keyboard: \(keysToMacOS) key presses went to it, \(keysElsewhere) went to another window.")
+            AVMLog.write("AVM: MacGuest — while macOS had the keyboard: \(keysToMacOS) key presses reached AVM in the machine's window instead of macOS (0 is right), \(keysElsewhere) went to another window.")
         }
         if inGuest {
             keysToMacOS = 0
@@ -585,6 +585,14 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         // Command-F5 and Command-Tab are the Mac's own: macOS lets no app see
         // them without capturing the keyboard, and capturing it disables the
         // way out (see enter()).
+        // MEASURED 2026-10-26 (keyboard audit): while the machine's screen is
+        // first responder, Apple's view takes keys before AppKit's local
+        // monitors, so this monitor sees none of them (0 counted across two
+        // minutes of typing in Setup Assistant, the Mac's VoiceOver off).
+        // The Carbon hotkey is therefore the real way back; this monitor
+        // catches the chord, and counts keys, only when keys reach AppKit
+        // instead, which means macOS isn't getting them: the counts and the
+        // "a key to the machine's window" lines below are that warning.
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self, self.keyboardInGuest, let screen = self.machineView else { return event }
             guard event.window === self.window else {
@@ -709,7 +717,23 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
 enum MacVoiceOver {
     enum Result { case wasOff, turnedOff, refused(String) }
 
-    private static var turnedOffByAVM = false
+    /// Kept on disk, not just in memory (2026-10-26, keyboard audit): if
+    /// AVM crashes or is force-quit while macOS has the keyboard,
+    /// applicationWillTerminate never runs, and the Mac would stay without
+    /// its screen reader. recoverAtLaunch turns it back on next time.
+    private static let flagKey = "AVMMacVoiceOverTurnedOff"
+    private static var turnedOffByAVM: Bool {
+        get { UserDefaults.standard.bool(forKey: flagKey) }
+        set { UserDefaults.standard.set(newValue, forKey: flagKey) }
+    }
+
+    /// At launch: VoiceOver back on if a previous AVM turned it off and
+    /// didn't live to turn it back on. Touches nothing otherwise.
+    static func recoverAtLaunch() {
+        guard turnedOffByAVM else { return }
+        AVMLog.write("AVM: MacVoiceOver — AVM ended while the Mac's VoiceOver was off for macOS; turning it back on.")
+        restoreAfterGuest()
+    }
 
     static func turnOffForGuest() -> Result {
         guard NSWorkspace.shared.isVoiceOverEnabled else {
@@ -734,6 +758,13 @@ enum MacVoiceOver {
     static func restoreAfterGuest() {
         guard turnedOffByAVM else { return }
         turnedOffByAVM = false
+        // Already back on (Command-F5 while in macOS): opening VoiceOver.app
+        // again would toggle nothing, but say so in the log rather than
+        // claim AVM turned it on.
+        if NSWorkspace.shared.isVoiceOverEnabled {
+            AVMLog.write("AVM: MacVoiceOver — already back on.")
+            return
+        }
         let app = URL(fileURLWithPath: "/System/Library/CoreServices/VoiceOver.app")
         NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration()) { _, error in
             AVMLog.write("AVM: MacVoiceOver — \(error == nil ? "turned back on" : "couldn't turn it back on: \(error!.localizedDescription)").")

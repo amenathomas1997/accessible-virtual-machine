@@ -430,7 +430,7 @@ class FocusLockManager: ObservableObject {
             eventKind: UInt32(kEventHotKeyPressed)
         )
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(
+        let installed = InstallEventHandler(
             GetApplicationEventTarget(),
             { _, _, userData -> OSStatus in
                 guard let userData = userData else {
@@ -451,8 +451,7 @@ class FocusLockManager: ObservableObject {
             selfPtr,
             &eventHandlerRef
         )
-        AVMLog.write("AVM: FocusLock — Carbon hotkey registered (Control-Command-Escape).")
-        RegisterEventHotKey(
+        let registered = RegisterEventHotKey(
             hotkeyKeyCode,
             hotkeyModifiers,
             hotkeyID,
@@ -460,6 +459,16 @@ class FocusLockManager: ObservableObject {
             0,
             &hotKeyRef
         )
+        // Checked, not assumed (2026-10-26, keyboard audit): the line used
+        // to say "registered" before the call and ignore its result. If the
+        // chord is taken, the in-window Control-Command-Escape (the capture
+        // view's own check) is the way back, and the user hears so.
+        if installed == noErr && registered == noErr {
+            AVMLog.write("AVM: FocusLock — Carbon hotkey registered (Control-Command-Escape).")
+        } else {
+            AVMLog.write("AVM: FocusLock — Carbon hotkey NOT registered (handler \(installed), hotkey \(registered)).")
+            Announcer.shared.announce("AVM couldn't reserve Control-Command-Escape; it still returns to your Mac while the machine's window is in front.", tone: .failure)
+        }
     }
 
     private func unregisterHotKey() {
