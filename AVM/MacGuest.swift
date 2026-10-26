@@ -310,6 +310,11 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     /// The first "Entering macOS" of a run adds the key back; later ones
     /// are just the two words.
     private var hintGiven = false
+    /// How many keys went to macOS, and how many were typed into another
+    /// window while macOS should have had them, per stretch in macOS:
+    /// counts only, for the log; which keys is never kept.
+    private var keysToMacOS = 0
+    private var keysElsewhere = 0
     /// Spoken as "Entering macOS" whatever the machine is called.
     private let guestName = "macOS"
     private var keyMonitor: Any?
@@ -389,6 +394,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(machineView)
+        AVMLog.write("AVM: MacGuest — machine's screen is \(window.firstResponder === machineView ? "" : "NOT ")first responder; window is \(window.isKeyWindow ? "" : "NOT ")key.")
         // NEVER capturesSystemKeys = true here (2026-10-26, a user stuck in
         // macOS): Apple's capture takes the keyboard below AVM's key monitor
         // AND its system-wide hotkey, so Control-Command-Escape stopped
@@ -456,6 +462,13 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     }
 
     private func setKeyboard(inGuest: Bool) {
+        if keyboardInGuest && !inGuest {
+            AVMLog.write("AVM: MacGuest — while macOS had the keyboard: \(keysToMacOS) key presses went to it, \(keysElsewhere) went to another window.")
+        }
+        if inGuest {
+            keysToMacOS = 0
+            keysElsewhere = 0
+        }
         keyboardInGuest = inGuest
         statusLabel?.stringValue = inGuest
             ? "Keyboard: \(name). Every key goes to \(name) except Command-Tab and Command-F5, which stay your Mac's. Control-Command-Escape returns to your Mac."
@@ -525,19 +538,30 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         // Command-F5 and Command-Tab are the Mac's own: macOS lets no app see
         // them without capturing the keyboard, and capturing it disables the
         // way out (see enter()).
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
-            guard let self, event.window === self.window, self.keyboardInGuest, let screen = self.machineView else { return event }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
+            guard let self, self.keyboardInGuest, let screen = self.machineView else { return event }
+            guard event.window === self.window else {
+                // A key typed while AVM thinks macOS has the keyboard, but
+                // into another window: counted, never identified.
+                if event.type == .keyDown { self.keysElsewhere += 1 }
+                return event
+            }
             let mods = event.modifierFlags.intersection([.control, .command, .option, .shift])
             if event.type == .keyDown, event.keyCode == 53, mods == [.control, .command] {
                 self.leave()
                 return nil
             }
-            if mods.contains(.command) {
-                // Straight to macOS, past AVM's menus.
-                if event.type == .keyDown { screen.keyDown(with: event) } else { screen.keyUp(with: event) }
-                return nil
+            // EVERY key straight to macOS (2026-10-26: Escape didn't reach
+            // VoiceOver in macOS). Left to AppKit, Escape becomes "cancel"
+            // and other keys can be taken by the window or AVM's menus on
+            // the way; handed to the machine's screen directly, nothing
+            // in between sees them.
+            switch event.type {
+            case .keyDown: screen.keyDown(with: event); self.keysToMacOS += 1
+            case .keyUp: screen.keyUp(with: event)
+            default: screen.flagsChanged(with: event)
             }
-            return event
+            return nil
         }
     }
 
