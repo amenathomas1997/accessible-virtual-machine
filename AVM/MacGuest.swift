@@ -459,34 +459,45 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         AVMLog.write("AVM: MacGuest — keyboard to the Mac.")
     }
 
-    /// Every key to macOS for 10 seconds, Command-F5 included, then back to
-    /// normal by itself (2026-10-26). Command-F5 is the one way to start
-    /// macOS's VoiceOver from any screen, and the Mac keeps it unless the
-    /// machine's view captures system keys. Capturing ALSO blocks
-    /// Control-Command-Escape (the 2026-10-26 trap, see enter()), so it is
-    /// only ever on for a fixed time, ended by a timer AVM keeps, never by a
-    /// key. Virtual Machine > Pass Command-F5 to macOS, Command-Option-Shift-V.
+    /// The next Command-F5 goes to macOS, to start its VoiceOver from any
+    /// screen (2026-10-26). The Mac keeps Command-F5 unless the machine's
+    /// view captures system keys, so AVM captures them until that one
+    /// Command-F5 has gone through, then stops; and after 30 seconds
+    /// whatever happens. MEASURED: a fixed 10 seconds was too short (the
+    /// spoken instruction took half, and the Command-F5 came after, turning
+    /// the Mac's VoiceOver on instead). While capturing, keys still reach
+    /// the key monitor, so Control-Command-Escape still returns to the Mac
+    /// (the 2026-10-26 trap was with keys not reaching it; the timer stays
+    /// as the backstop). Virtual Machine > Pass Command-F5 to macOS,
+    /// Command-Option-Shift-V.
     private var systemKeysGeneration = 0
+    private var passingCommandF5 = false
     func passSystemKeysBriefly() {
         guard machineView != nil else { NSSound.beep(); return }
         if !keyboardInGuest { enter() }
         systemKeysGeneration += 1
         let generation = systemKeysGeneration
-        Announcer.shared.announce("For 10 seconds, every key goes to \(guestName), Command-F5 too. Press Command-F5 now to start its VoiceOver.", tone: .info)
+        Announcer.shared.announce("Press Command-F5 now. It goes to \(guestName).", tone: .info)
         whenModifiersReleased { [weak self] in
             guard let self, self.keyboardInGuest, generation == self.systemKeysGeneration else { return }
             self.machineView?.capturesSystemKeys = true
-            AVMLog.write("AVM: MacGuest — system keys to macOS for 10 seconds.")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            self.passingCommandF5 = true
+            AVMLog.write("AVM: MacGuest — the next Command-F5 goes to macOS (30 seconds at most).")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
                 MainActor.assumeIsolated {
-                    guard let self, generation == self.systemKeysGeneration else { return }
-                    guard self.machineView?.capturesSystemKeys == true else { return }
-                    self.machineView?.capturesSystemKeys = false
-                    AVMLog.write("AVM: MacGuest — system keys back to the Mac.")
-                    Announcer.shared.announce("Command-F5 and Control-Command-Escape are your Mac's again.", tone: .info)
+                    guard let self, generation == self.systemKeysGeneration, self.passingCommandF5 else { return }
+                    self.endPassingCommandF5(said: "No Command-F5 in 30 seconds; Command-F5 is your Mac's again.")
                 }
             }
         }
+    }
+
+    private func endPassingCommandF5(said: String?) {
+        guard passingCommandF5 else { return }
+        passingCommandF5 = false
+        machineView?.capturesSystemKeys = false
+        AVMLog.write("AVM: MacGuest — system keys back to the Mac.")
+        if let said { Announcer.shared.announce(said, tone: .info) }
     }
 
     /// Runs `action` once no modifier key is held, checking every 20 ms,
@@ -535,6 +546,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
 
     /// Back to the Mac's own shortcuts, and the hotkey off.
     private func releaseFullControl() {
+        passingCommandF5 = false
         machineView?.capturesSystemKeys = false
         if let hotKeyRef { UnregisterEventHotKey(hotKeyRef) }
         hotKeyRef = nil
@@ -640,6 +652,14 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             if event.type == .keyDown, event.keyCode == 53, mods == [.control, .command] {
                 self.leave()
                 return nil
+            }
+            // The one Command-F5 being passed to macOS: it goes through,
+            // then the Mac gets its system keys back once it's let go.
+            if self.passingCommandF5, event.keyCode == UInt16(kVK_F5), mods.contains(.command) {
+                AVMLog.write("AVM: MacGuest — Command-F5 went to macOS.")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    MainActor.assumeIsolated { self?.endPassingCommandF5(said: nil) }
+                }
             }
             // Let every other key go the normal way, to the machine's screen
             // as first responder. MEASURED 2026-10-26: handing keys to the
