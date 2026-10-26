@@ -302,6 +302,11 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     private var machineView: VZVirtualMachineView?
     private var statusLabel: NSTextField?
     private weak var giveButton: NSButton?
+    /// The first "Entering macOS" of a run adds the key back; later ones
+    /// are just the two words.
+    private var hintGiven = false
+    /// Spoken as "Entering macOS" whatever the machine is called.
+    private let guestName = "macOS"
     private var keyMonitor: Any?
     private var machine: VZVirtualMachine?
     private var window: NSWindow?
@@ -335,7 +340,8 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                 switch result {
                 case .success:
                     AVMLog.write("AVM: MacGuest — \(config.name) started.")
-                    self.enter(spoken: "\(config.name) is running and has the keyboard. Control-Command-Escape returns to your Mac; Command-Shift-E comes back. To use VoiceOver inside it, turn your Mac's VoiceOver off with Command-F5 while you work there.")
+                    Announcer.shared.announce("\(config.name) is running.", tone: .success)
+                    self.enter()
                 case .failure(let error):
                     self.ended(spoken: "\(config.name) could not start. Reason: \(error.localizedDescription)", tone: .failure)
                 }
@@ -378,7 +384,10 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(machineView)
-        Announcer.shared.announce(spoken ?? "\(name) has the keyboard. Control-Command-Escape returns to your Mac.", tone: .info)
+        // "Entering macOS", the same words every time, as for Windows; the
+        // keys to know are added the first time only.
+        Announcer.shared.announce(hintGiven ? "Entering \(guestName)" : "Entering \(guestName). Control-Command-Escape returns to your Mac.", tone: .info)
+        hintGiven = true
         AVMLog.write("AVM: MacGuest — keyboard to macOS.")
     }
 
@@ -392,7 +401,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         if let main = NSApp.windows.first(where: { $0 !== window && $0.isVisible && $0.canBecomeMain }) {
             main.makeKeyAndOrderFront(nil)
         }
-        Announcer.shared.announce("Keyboard back on your Mac. \(name) keeps running; Command-Shift-E returns to it.", tone: .info)
+        Announcer.shared.announce("Entering Mac", tone: .info)
         AVMLog.write("AVM: MacGuest — keyboard to the Mac.")
     }
 
@@ -517,7 +526,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             guard keyboardInGuest else { return }
             setKeyboard(inGuest: false)
             window?.makeFirstResponder(giveButton)
-            Announcer.shared.announce("Keyboard back on your Mac. Command-Shift-E returns to \(name).", tone: .info)
+            Announcer.shared.announce("Entering Mac", tone: .info)
             AVMLog.write("AVM: MacGuest — keyboard to the Mac (window left).")
         }
     }
@@ -571,6 +580,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         machineView = nil
         statusLabel = nil
         keyboardInGuest = false
+        hintGiven = false
         runningID = nil
         Announcer.shared.announce(spoken, tone: tone)
     }

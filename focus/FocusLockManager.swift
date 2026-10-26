@@ -25,8 +25,8 @@ import Carbon.HIToolbox
 ///   remap that lets guest screen readers use Caps Lock as their modifier.
 ///   See CapsLockRemapper.swift for the root cause and the full rationale.
 ///   Here, only the placement matters, and it is deliberate on both sides:
-///     - lock() APPLIES the remap BEFORE announcing "Windows keyboard on".
-///     - unlock() RESTORES it BEFORE announcing "Mac keyboard on".
+///     - lock() APPLIES the remap BEFORE announcing "Entering Windows".
+///     - unlock() RESTORES it BEFORE announcing "Entering Mac".
 ///   Both orderings exist for the same reason: a .failure announcement
 ///   INTERRUPTS and FLUSHES the Announcer queue, so a remap failure that
 ///   spoke AFTER the mode-transition announcement would cut that
@@ -91,7 +91,8 @@ import Carbon.HIToolbox
 ///       in place at lock time enters the same debounced path.
 ///
 /// AUDIBLE MODE TRANSITIONS (added 2026-07-19):
-///   lock/unlock announce "Windows keyboard on" / "Mac keyboard on" via
+///   lock/unlock announce "Entering Windows" / "Entering Mac" (2026-10-26,
+///   the same words for every guest, at the user's request) via
 ///   Announcer (.info — Tink, neutral by design). Reclaims themselves are
 ///   SILENT: with VO-cursor sync on, every arrow press triggers one, and
 ///   per-reclaim speech would make VO navigation unbearable.
@@ -245,7 +246,7 @@ class FocusLockManager: ObservableObject {
         guestName = VMManager.currentGuestName
         // Copied on the Mac before entering? Offer it to the guest now.
         AVMPasteboard.shared.macPasteboardMayHaveChanged()
-        Announcer.shared.announce("\(guestName) keyboard on", tone: .info)
+        Announcer.shared.announce("Entering \(guestName)", tone: .info)
         AVMLog.write("AVM: FocusLock.lock() — NOW LOCKED (isLocked=true).")
     }
 
@@ -265,7 +266,7 @@ class FocusLockManager: ObservableObject {
         // Caps Lock back to normal Mac behavior BEFORE the transition
         // announcement, for the same queue-flush reason as lock().
         CapsLockRemapper.shared.restoreForUnlock()
-        Announcer.shared.announce("Mac keyboard on", tone: .info)
+        Announcer.shared.announce("Entering Mac", tone: .info)
         AVMLog.write("AVM: FocusLock.unlock() — NOW UNLOCKED (isLocked=false).")
     }
 
@@ -386,7 +387,7 @@ class FocusLockManager: ObservableObject {
             if voiceOverIsRunning {
                 AVMLog.write("AVM: FocusLock — key watch: window REGAINED key; announcement suppressed (VoiceOver running).")
             } else {
-                Announcer.shared.announce("Keyboard back in \(guestName)", tone: .info)
+                Announcer.shared.announce("Entering \(guestName)", tone: .info)
                 AVMLog.write("AVM: FocusLock — key watch: window REGAINED key; ANNOUNCED return.")
             }
         } else {
