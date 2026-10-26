@@ -137,6 +137,19 @@ matches the checksum its maker publishes. AVM keeps the downloads, so your next 
 them again. If a download fails, AVM says so and Windows installs
 without that screen reader.
 
+## Answers for Windows Setup
+
+The setup wizard asks what Windows Setup would otherwise ask on screens
+you can only get through with Narrator, and writes the answers into that
+machine's own answer file: region, keyboard, time zone, computer name,
+privacy settings, and the account. Each answer is filled in from your
+Mac. The account can be a Microsoft account, signed in during setup, or
+a local account from a name and password you type, which skips the
+sign-in screens and signs in once by itself. AVM keeps the password only
+in Windows' scrambled form, only until the install disc is built, and
+removes the answer file once Windows is installed. Once Windows is
+installed, AVM also deletes its copy of the install disc, about 8.5 GB.
+
 ## Sharing a folder with Windows
 
 In a Windows machine's Settings, choose Choose Folder to Share. Windows
@@ -149,8 +162,10 @@ from spice-space.org first.
 ## When the Mac sleeps
 
 Before the Mac sleeps, AVM pauses a running machine. When the Mac wakes,
-AVM resumes it and tells you. A machine you paused yourself stays
-paused. Windows' clock may take a minute to catch up.
+AVM resumes it, sets Windows' clock to the Mac's through the QEMU guest
+agent it installs with Windows, and tells you. A machine you paused
+yourself stays paused. Windows installed by an older AVM has no guest
+agent, so its clock catches up at its next time sync.
 
 ## Sound
 
@@ -256,6 +271,29 @@ along with checks of the build scripts and the update feed. If you
 build in a folder under ~/Documents, add
 `--scratch-path ~/Library/Caches/AVM-build/swiftpm`: file syncing adds
 file attributes there that stop the tests from being signed.
+
+## Testing a Windows install
+
+`Tools/test-windows-install.sh` runs a complete Windows install with no
+one at the screen: it builds fresh install media with AVM's own pipeline
+(`AVM --build-install-media`), boots a Secure Boot machine with a TPM
+the way AVM does, and reads the report the answer file writes
+(`AVMSTATUS.TXT` on the UNATTEND volume) until the first sign-in is done.
+It then says which of JAWS, NVDA, the SPICE agent, the shared-folder
+service and the guest agent installed. If Windows stops on a screen, it
+saves a screenshot of it. It takes 30 to 90 minutes; `--help` lists the
+options.
+
+<!-- fork-only -->
+## Keeping the original project's branch in step
+
+`Tools/sync-allison-branch.sh` rebuilds `for-allison`, the branch offered
+to Allison's repository, from this fork's `main`, with her app's
+identity, update feed, key and version numbers in place of this fork's.
+Text between `fork-only` markers in the docs is left out of her branch.
+Run it without options to review the result, and with `--push` to update
+her pull request.
+<!-- /fork-only -->
 
 ## Publishing an update
 
