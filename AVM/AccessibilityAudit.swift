@@ -297,10 +297,8 @@ private final class Auditor {
             AnyView(view.environmentObject(store).environmentObject(focus))
         }
         // Section 5 of AVM-TESTER-GUIDE.md: the app title at level one,
-        // each machine's name at level two, Status at level three. The
-        // guide calls the title "AVM"; the dashboard shows "Accessible
-        // Virtual Machine", so any level-one heading counts.
-        var dashboard = [ExpectedHeading(text: "", level: 1, source: "guide section 5: the app title, a level-one heading")]
+        // each machine's name at level two, Status at level three.
+        var dashboard = [ExpectedHeading(text: "Accessible Virtual Machine", level: 1, source: "guide section 5: the app title, a level-one heading")]
         for config in store.configurations {
             dashboard.append(ExpectedHeading(text: config.name, level: 2, source: "guide section 5: each machine's name, a level-two heading"))
         }
