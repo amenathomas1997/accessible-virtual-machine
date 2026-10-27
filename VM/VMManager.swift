@@ -2102,7 +2102,11 @@ final class VMManager: ObservableObject {
         let accelerated = configuration.uses3D && Self.supports3D && !attachInstallMedia
         args += [
             "-spice",
-            "unix=on,addr=\(spiceSocketPath),disable-ticketing=on,agent-mouse=on" + (accelerated ? ",gl=es" : "")
+            // gl is ALWAYS given, off when not 3D: a QEMU built with OpenGL
+            // (UTM's spice-display.c) reads it with no check for absence and
+            // crashed at start without it (2026-10-27, AVM 0.3.0: exit 11 in
+            // qemu_spice_display_early_init, every machine without 3D).
+            "unix=on,addr=\(spiceSocketPath),disable-ticketing=on,agent-mouse=on,gl=\(accelerated ? "es" : "off")"
         ]
 
         // DISPLAY: ramfb + virtio-gpu-pci TOGETHER, ramfb FIRST, ALL PHASES.
