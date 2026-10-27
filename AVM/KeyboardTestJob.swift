@@ -4,7 +4,7 @@
 // The keyboard, tested into a real Windows (2026-10-26), for
 // Tools/test-windows-install.sh --keyboard:
 //
-//   AVM.app/Contents/MacOS/AVM --test-keyboard --spice <spice.sock>
+//   AVM.app/Contents/MacOS/AVM --test-keyboard --spice <spice.sock> [--qmp <qmp.sock>]
 //
 // It connects to a running Windows machine's SPICE socket the way the
 // machine's window does (CocoaSpice), and types a fixed sequence through
@@ -25,6 +25,38 @@ import CocoaSpiceNoUsb
 enum KeyboardTestJob {
 
     static let flag = "--test-keyboard"
+    /// QEMU's control socket: Pause goes that way, as in the app
+    /// (VMView's WindowsKeyboard.sendPause).
+    private static var qmpPath: String?
+
+    /// One QMP command on a fresh connection: greeting, capabilities, the
+    /// command. Enough for a test; the app uses VMManager's connection.
+    private static func qmp(_ command: String) {
+        guard let qmpPath else { print("   (no --qmp; Pause not sent)"); return }
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return }
+        defer { close(fd) }
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        _ = withUnsafeMutableBytes(of: &addr.sun_path) { raw in
+            qmpPath.utf8CString.withUnsafeBytes { raw.copyMemory(from: UnsafeRawBufferPointer(rebasing: $0.prefix(raw.count - 1))) }
+        }
+        let connected = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard connected == 0 else { print("   (QMP connect failed)"); return }
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        _ = read(fd, &buffer, buffer.count)                                  // greeting
+        for line in [#"{"execute":"qmp_capabilities"}"#, command] {
+            let bytes = Array((line + "\n").utf8)
+            _ = write(fd, bytes, bytes.count)
+            _ = read(fd, &buffer, buffer.count)
+        }
+    }
+
+    private static func pause(down: Bool) {
+        qmp(#"{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":\#(down),"key":{"type":"qcode","data":"pause"}}}]}}"#)
+    }
 
     static func runIfAsked(arguments: [String] = CommandLine.arguments) {
         guard arguments.contains(flag) else { return }
@@ -33,6 +65,9 @@ enum KeyboardTestJob {
             exit(64)
         }
         let socket = URL(fileURLWithPath: arguments[i + 1])
+        if let q = arguments.firstIndex(of: "--qmp"), arguments.indices.contains(q + 1) {
+            qmpPath = arguments[q + 1]
+        }
         let client = Client()
         guard client.connect(socket) else {
             print("FAILED: couldn't connect to \(socket.path)")
@@ -46,6 +81,11 @@ enum KeyboardTestJob {
             print("FAILED: the machine's keyboard channel didn't open in 30 seconds.")
             exit(1)
         }
+        // CocoaSpice says the channel is available just BEFORE it connects
+        // it (CSConnection.m: spiceInputAvailable, then
+        // spice_channel_connect); keys sent at once were all dropped
+        // (2026-10-26). A person never types that fast after a start.
+        RunLoop.main.run(until: Date().addingTimeInterval(5))
         type(into: input)
         print("SENT")
         exit(0)
@@ -90,7 +130,7 @@ enum KeyboardTestJob {
             switch translator.translate(usage: usage, pressed: down) {
             case .key(let code, let isDown): send(input, Int(code), down: isDown)
             case .pause(let isDown):
-                input.sendPause(isDown ? .press : .release)
+                pause(down: isDown)
                 RunLoop.main.run(until: Date().addingTimeInterval(0.15))
             case nil: break
             }

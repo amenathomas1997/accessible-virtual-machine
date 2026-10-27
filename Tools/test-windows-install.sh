@@ -123,6 +123,18 @@ status() {
 }
 
 cleanup() {
+    # A machine that's kept is shut down properly first (2026-10-26: two
+    # power cuts in a row left one that Windows couldn't repair).
+    if [ "$KEEP" = "1" ] || [ "$RESULT" != "0" ]; then
+        if [ -n "$QEMU_PID" ] && kill -0 "$QEMU_PID" 2>/dev/null && [ -S "$WORK/qga.sock" ]; then
+            python3 -I - "$WORK/qga.sock" <<'PY' >/dev/null 2>&1 || true
+import socket, sys
+s = socket.socket(socket.AF_UNIX); s.settimeout(5); s.connect(sys.argv[1])
+s.sendall(b'{"execute":"guest-shutdown","arguments":{"mode":"powerdown"}}\n')
+PY
+            for _ in $(seq 1 24); do kill -0 "$QEMU_PID" 2>/dev/null || break; sleep 5; done
+        fi
+    fi
     [ -n "$QEMU_PID" ] && kill -0 "$QEMU_PID" 2>/dev/null && { qmp quit >/dev/null 2>&1 || kill "$QEMU_PID" 2>/dev/null || true; }
     [ -n "$TPM_PID" ] && kill "$TPM_PID" 2>/dev/null || true
     if [ "$RESULT" = "0" ] && [ "$KEEP" = "0" ]; then
@@ -271,7 +283,9 @@ fi
 # in this test machine only) runs in the signed-in user's session through
 # a scheduled task for the Interactive group, so no password is needed;
 # AVM types through its own keyboard path; then the watcher's log is
-# compared with what should have arrived.
+# compared with what should have arrived. The watcher runs elevated
+# (MEASURED 2026-10-26: unelevated, Windows hid from it every key that
+# went to NVDA's welcome dialog, which runs with UI Access).
 if [ "$KEYBOARD" = "1" ] && [ "$MISSING" = "0" ]; then
     step "Typing into Windows through AVM's keyboard path"
     QGA="$WORK/qga.sock"
@@ -322,19 +336,26 @@ def read(path):
     return out.decode("utf-8", errors="replace")
 action = sys.argv[2]
 if action == "setup":
-    run("cmd.exe", ["/c", "mkdir C:\\avmkeys"])
+    # NVDA closed for the check (MEASURED 2026-10-26): its welcome dialog
+    # runs with UI Access, and keys going to it are hidden from any key
+    # watcher, elevated or not. NVDA isn't part of the key path checked.
+    run("taskkill.exe", ["/im", "nvda.exe", "/f"])
+    run("cmd.exe", ["/c", "mkdir C:\\avmkeys & del /q C:\\avmkeys\\keys.log C:\\avmkeys\\watcher-*.txt"])
     write("C:\\avmkeys\\hook.ps1", open(sys.argv[3]).read())
     write("C:\\avmkeys\\task.xml", open(sys.argv[4]).read())
     print(run("schtasks.exe", ["/create", "/xml", "C:\\avmkeys\\task.xml", "/tn", "AVMKeys", "/f"]))
     print(run("schtasks.exe", ["/run", "/tn", "AVMKeys"]))
 elif action == "read":
-    print(read("C:\\avmkeys\\keys.log"))
+    # Through type, which reads a file another program is still writing
+    # (2026-10-26: the agent's own file open was refused while the watcher
+    # held it, so "ready" was never seen).
+    print(run("cmd.exe", ["/c", "type C:\\avmkeys\\keys.log"]))
 elif action == "diagnose":
     print(run("schtasks.exe", ["/query", "/tn", "AVMKeys", "/v", "/fo", "list"]))
     print(run("cmd.exe", ["/c", "query user"]))
     # The watcher run here, as SYSTEM, only to see whether it compiles.
     print(run("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-              "try { $src = (Get-Content C:\\avmkeys\\hook.ps1 -Raw); $src = $src -replace '180\\)', '3)' -replace 'keys.log', 'compile-check.log'; Invoke-Expression $src; 'compiled and ran' } catch { 'ERROR: ' + $_ }"]))
+              "try { $src = (Get-Content C:\\avmkeys\\hook.ps1 -Raw); $src = $src -replace '900\\)', '3)' -replace 'keys.log', 'compile-check.log'; Invoke-Expression $src; 'compiled and ran' } catch { 'ERROR: ' + $_ }"]))
     print(read("C:\\avmkeys\\compile-check.log"))
     print(run("cmd.exe", ["/c", "dir C:\\avmkeys & type C:\\avmkeys\\watcher-*.txt & icacls C:\\avmkeys"]))
 PY
@@ -355,7 +376,8 @@ public static class AVMKeys {
   static Proc keep; static StreamWriter log;
   static string Fore() { uint pid; GetWindowThreadProcessId(GetForegroundWindow(), out pid); try { return Process.GetProcessById((int)pid).ProcessName; } catch { return "unknown"; } }
   public static void Run(string path, int seconds) {
-    log = new StreamWriter(path, false); log.AutoFlush = true;
+    // Shared for reading, so the test can read it while it's written.
+    log = new StreamWriter(new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete)); log.AutoFlush = true;
     keep = (n, w, l) => { if (n >= 0) { int vk = Marshal.ReadInt32(l); int flags = Marshal.ReadInt32(l, 8); log.WriteLine("key " + vk.ToString("X2") + " " + ((flags & 0x80) != 0 ? "up" : "down")); } return CallNextHookEx(IntPtr.Zero, n, w, l); };
     SetWindowsHookEx(13, keep, GetModuleHandle(null), 0);
     log.WriteLine("ready");
@@ -366,28 +388,30 @@ public static class AVMKeys {
 }
 "@
 Add-Type -TypeDefinition $src -ReferencedAssemblies System.Windows.Forms
-[AVMKeys]::Run("C:\avmkeys\keys.log", 180)
+[AVMKeys]::Run("C:\avmkeys\keys.log", 900)
 PS
     cat > "$WORK/task.xml" <<'XML'
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <Principals><Principal id="Author"><GroupId>S-1-5-4</GroupId><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
-  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT10M</ExecutionTimeLimit><Enabled>true</Enabled></Settings>
+  <Principals><Principal id="Author"><GroupId>S-1-5-4</GroupId><RunLevel>HighestAvailable</RunLevel></Principal></Principals>
+  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT20M</ExecutionTimeLimit><Enabled>true</Enabled></Settings>
   <Actions Context="Author"><Exec><Command>powershell.exe</Command><Arguments>-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\avmkeys\hook.ps1</Arguments></Exec></Actions>
 </Task>
 XML
     python3 -I "$WORK/qga.py" "$QGA" setup "$WORK/hook.ps1" "$WORK/task.xml" | sed 's/^/   /' | grep -v '^   $' || true
     READY=0
-    for _ in $(seq 1 60); do
+    # MEASURED 2026-10-26: the watcher's first start in a new Windows
+    # takes about three minutes (it compiles its C# on the way).
+    for _ in $(seq 1 96); do
         python3 -I "$WORK/qga.py" "$QGA" read | grep -q "^ready" && { READY=1; break; }
-        sleep 3
+        sleep 5
     done
     if [ "$READY" = "0" ]; then
         info "NO   the key watcher didn't start in Windows. What Windows says:"
         python3 -I "$WORK/qga.py" "$QGA" diagnose 2>&1 | grep -v '^\s*$' | sed 's/^/      /' | head -60
         MISSING=1
     else
-        "$APP/Contents/MacOS/AVM" --test-keyboard --spice "$WORK/spice.sock" 2>&1 | grep -v "^2026-" | sed 's/^/   /'
+        "$APP/Contents/MacOS/AVM" --test-keyboard --spice "$WORK/spice.sock" --qmp "$QMP" 2>&1 | grep -v "^2026-" | sed 's/^/   /'
         sleep 2
         python3 -I "$WORK/qga.py" "$QGA" read > "$WORK/keys.log"
         if python3 -I - "$WORK/keys.log" <<'PY'
