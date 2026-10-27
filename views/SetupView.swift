@@ -125,6 +125,28 @@ struct SetupView: View {
     }
 
     @State private var installerKind: InstallerKind = .none
+
+    /// The installer a screen opens with (2026-10-26). Always .none in the
+    /// app; the accessibility audit (AccessibilityAudit.swift) also opens
+    /// the wizard as it is once a Windows or an Ubuntu ISO is chosen, so
+    /// the sections that only appear then are checked too. The file is
+    /// never read: the kind is given, as identifyInstaller would find it.
+    enum AuditInstaller { case none, windows, ubuntu }
+
+    init(auditInstaller: AuditInstaller = .none) {
+        switch auditInstaller {
+        case .none:
+            break
+        case .windows:
+            _installerURL = State(initialValue: URL(fileURLWithPath: "/Audit/Win11_25H2_English_Arm64.iso"))
+            _installerKind = State(initialValue: .windows)
+        case .ubuntu:
+            _installerURL = State(initialValue: URL(fileURLWithPath: "/Audit/ubuntu-26.04-desktop-arm64.iso"))
+            _installerKind = State(initialValue: .ubuntu(UbuntuISOInfo(
+                discInfo: "Ubuntu 26.04 LTS - Release arm64", version: "26.04", isARM64: true, isDesktop: true)))
+        }
+    }
+
     @State private var ubuntuRealName: String = NSFullUserName()
     @State private var ubuntuUserName: String = UbuntuAccount.suggestedUserName()
     @State private var ubuntuPassword: String = ""
