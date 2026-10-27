@@ -19,11 +19,13 @@
 # It takes 30 to 90 minutes and about 25 GB of disk space while it runs.
 # The test machine is deleted afterwards unless it failed or --keep.
 #
-#   Tools/test-windows-install.sh [--iso PATH] [--app PATH] [--minutes N] [--keep] [--keyboard]
+#   Tools/test-windows-install.sh [--iso PATH] [--app PATH] [--minutes N] [--keep] [--keyboard] [--reuse FOLDER]
 #
 # --iso      a Windows 11 ARM64 ISO (default: the newest *arm64*.iso in Downloads)
 # --app      the AVM.app to test (default: the Debug build in ~/Library/Caches/AVM-build)
 # --minutes  how long to wait before giving up (default 150)
+# --reuse    start a test machine a failed run kept, instead of installing
+#            (with --keyboard: try the keyboard check again in minutes)
 # --keyboard after the install, types a fixed set of keys into Windows
 #            through AVM's own keyboard path (AVM --test-keyboard) and
 #            checks what Windows received: both Shifts released, Delete,
@@ -36,6 +38,7 @@ APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/AVM.app"
 MINUTES=150
 KEEP=0
 KEYBOARD=0
+REUSE=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --iso) ISO="$2"; shift 2 ;;
@@ -43,6 +46,7 @@ while [ $# -gt 0 ]; do
         --minutes) MINUTES="$2"; shift 2 ;;
         --keep) KEEP=1; shift ;;
         --keyboard) KEYBOARD=1; shift ;;
+        --reuse) REUSE="$2"; shift 2 ;;
         -h|--help) sed -n 2,29p "$0"; exit 0 ;;
         *) echo "Unknown option $1. Run with --help."; exit 64 ;;
     esac
@@ -67,7 +71,7 @@ for f in qemu-img swtpm mtools edk2-aarch64-secure-code.fd edk2-arm-secure-vars.
     [ -e "$R/$f" ] || fail "$f is missing from $APP."
 done
 
-WORK="$HOME/Library/Caches/AVM-build/install-test-$(date +%Y%m%d-%H%M%S)"
+WORK="${REUSE:-$HOME/Library/Caches/AVM-build/install-test-$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$WORK/tpm"
 chmod 700 "$WORK"
 QMP="$WORK/qmp.sock"
@@ -129,6 +133,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if [ -z "$REUSE" ]; then
 step "Building install media with AVM's pipeline"
 info "ISO: $ISO"
 # Setup answers for an unattended run: a local account, so Windows signs
@@ -151,6 +156,8 @@ chmod 600 "$WORK/windows-setup.json"
 step "Making the test machine"
 "$R/qemu-img" create -q -f qcow2 "$WORK/disk.qcow2" 64G
 "$R/qemu-img" convert -O raw "$R/edk2-arm-secure-vars.fd" "$WORK/nvram.fd"
+fi
+rm -f "$QMP" "$WORK/qga.sock" "$WORK/spice.sock" "$WORK/tpm.sock"
 "$R/swtpm" socket --tpmstate "dir=$WORK/tpm" --ctrl "type=unixio,path=$WORK/tpm.sock" --tpm2 --log level=0 &
 TPM_PID=$!
 sleep 1
@@ -191,11 +198,13 @@ step "Starting Windows Setup (no window)"
 QEMU_PID=$!
 for _ in $(seq 1 20); do [ -S "$QMP" ] && break; sleep 0.5; done
 [ -S "$QMP" ] || fail "QEMU didn't start." "See $WORK/qemu.log."
+if [ -z "$REUSE" ]; then
 for _ in $(seq 1 60); do
     qmp send-key '{"keys":[{"type":"qcode","data":"ret"}]}' >/dev/null 2>&1 || true
     sleep 0.4
 done
 info "Pressed Enter to boot the installer."
+fi
 
 step "Waiting for Windows (checking every minute, up to $MINUTES minutes)"
 START=$(date +%s)
@@ -234,6 +243,17 @@ for item in vdagent-installed webdavd-installed qemu-ga-installed jaws-installed
         MISSING=1
     fi
 done
+if [ -n "$REUSE" ]; then
+    # A kept machine is still starting: give its agent up to 5 minutes.
+    for _ in $(seq 1 60); do
+        python3 -I - "$WORK/qga.sock" <<'PY' 2>/dev/null && break
+import socket, sys
+s = socket.socket(socket.AF_UNIX); s.settimeout(5); s.connect(sys.argv[1])
+s.sendall(b'{"execute":"guest-ping"}\n'); sys.exit(0 if b"return" in s.recv(4096) else 1)
+PY
+        sleep 5
+    done
+fi
 if python3 -I - "$WORK/qga.sock" <<'PY'
 import json, socket, sys
 s = socket.socket(socket.AF_UNIX); s.settimeout(10); s.connect(sys.argv[1])
@@ -255,6 +275,15 @@ fi
 if [ "$KEYBOARD" = "1" ] && [ "$MISSING" = "0" ]; then
     step "Typing into Windows through AVM's keyboard path"
     QGA="$WORK/qga.sock"
+    for _ in $(seq 1 60); do
+        python3 -I - "$QGA" <<'PY' 2>/dev/null && break
+import socket, sys
+s = socket.socket(socket.AF_UNIX); s.settimeout(5); s.connect(sys.argv[1])
+s.sendall(b'{"execute":"guest-ping"}\n'); sys.exit(0 if b"return" in s.recv(4096) else 1)
+PY
+        sleep 5
+    done
+    [ -n "$REUSE" ] && sleep 60   # the sign-in, after the agent
     cat > "$WORK/qga.py" <<'PY'
 import base64, json, socket, sys, time
 sock = sys.argv[1]
@@ -272,7 +301,8 @@ def run(path, args):
     pid = call("guest-exec", {"path": path, "arg": args, "capture-output": True})["pid"]
     for _ in range(60):
         st = call("guest-exec-status", {"pid": pid})
-        if st.get("exited"): return base64.b64decode(st.get("out-data", "")).decode(errors="replace")
+        if st.get("exited"):
+            return (base64.b64decode(st.get("out-data", "")) + base64.b64decode(st.get("err-data", ""))).decode(errors="replace")
         time.sleep(1)
     return ""
 def write(path, text):
@@ -299,9 +329,20 @@ if action == "setup":
     print(run("schtasks.exe", ["/run", "/tn", "AVMKeys"]))
 elif action == "read":
     print(read("C:\\avmkeys\\keys.log"))
+elif action == "diagnose":
+    print(run("schtasks.exe", ["/query", "/tn", "AVMKeys", "/v", "/fo", "list"]))
+    print(run("cmd.exe", ["/c", "query user"]))
+    # The watcher run here, as SYSTEM, only to see whether it compiles.
+    print(run("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+              "try { $src = (Get-Content C:\\avmkeys\\hook.ps1 -Raw); $src = $src -replace '180\\)', '3)' -replace 'keys.log', 'compile-check.log'; Invoke-Expression $src; 'compiled and ran' } catch { 'ERROR: ' + $_ }"]))
+    print(read("C:\\avmkeys\\compile-check.log"))
+    print(run("cmd.exe", ["/c", "dir C:\\avmkeys & type C:\\avmkeys\\watcher-*.txt & icacls C:\\avmkeys"]))
 PY
     cat > "$WORK/hook.ps1" <<'PS'
 # AVM keyboard test only: logs which keys arrive, and the foreground app.
+$diag = "C:\avmkeys\watcher-$env:USERNAME.txt"
+"started as $env:USERNAME in session $([System.Diagnostics.Process]::GetCurrentProcess().SessionId)" | Out-File $diag
+trap { "ERROR: $_" | Out-File $diag -Append; exit 1 }
 $src = @"
 using System; using System.Diagnostics; using System.IO; using System.Runtime.InteropServices; using System.Windows.Forms;
 public static class AVMKeys {
@@ -337,12 +378,13 @@ PS
 XML
     python3 -I "$WORK/qga.py" "$QGA" setup "$WORK/hook.ps1" "$WORK/task.xml" | sed 's/^/   /' | grep -v '^   $' || true
     READY=0
-    for _ in $(seq 1 30); do
+    for _ in $(seq 1 60); do
         python3 -I "$WORK/qga.py" "$QGA" read | grep -q "^ready" && { READY=1; break; }
-        sleep 2
+        sleep 3
     done
     if [ "$READY" = "0" ]; then
-        info "NO   the key watcher didn't start in Windows"
+        info "NO   the key watcher didn't start in Windows. What Windows says:"
+        python3 -I "$WORK/qga.py" "$QGA" diagnose 2>&1 | grep -v '^\s*$' | sed 's/^/      /' | head -60
         MISSING=1
     else
         "$APP/Contents/MacOS/AVM" --test-keyboard --spice "$WORK/spice.sock" 2>&1 | grep -v "^2026-" | sed 's/^/   /'
