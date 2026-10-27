@@ -19,11 +19,15 @@
 # It takes 30 to 90 minutes and about 25 GB of disk space while it runs.
 # The test machine is deleted afterwards unless it failed or --keep.
 #
-#   Tools/test-windows-install.sh [--iso PATH] [--app PATH] [--minutes N] [--keep]
+#   Tools/test-windows-install.sh [--iso PATH] [--app PATH] [--minutes N] [--keep] [--keyboard]
 #
 # --iso      a Windows 11 ARM64 ISO (default: the newest *arm64*.iso in Downloads)
 # --app      the AVM.app to test (default: the Debug build in ~/Library/Caches/AVM-build)
 # --minutes  how long to wait before giving up (default 150)
+# --keyboard after the install, types a fixed set of keys into Windows
+#            through AVM's own keyboard path (AVM --test-keyboard) and
+#            checks what Windows received: both Shifts released, Delete,
+#            Pause, and no Start menu on the way back to the Mac
 
 set -euo pipefail
 
@@ -31,12 +35,14 @@ ISO=""
 APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/AVM.app"
 MINUTES=150
 KEEP=0
+KEYBOARD=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --iso) ISO="$2"; shift 2 ;;
         --app) APP="$2"; shift 2 ;;
         --minutes) MINUTES="$2"; shift 2 ;;
         --keep) KEEP=1; shift ;;
+        --keyboard) KEYBOARD=1; shift ;;
         -h|--help) sed -n 2,29p "$0"; exit 0 ;;
         *) echo "Unknown option $1. Run with --help."; exit 64 ;;
     esac
@@ -239,6 +245,148 @@ then
 else
     info "NO   the guest agent answers"
     MISSING=1
+fi
+
+# KEYBOARD CHECK (2026-10-26): a key watcher (a low-level keyboard hook,
+# in this test machine only) runs in the signed-in user's session through
+# a scheduled task for the Interactive group, so no password is needed;
+# AVM types through its own keyboard path; then the watcher's log is
+# compared with what should have arrived.
+if [ "$KEYBOARD" = "1" ] && [ "$MISSING" = "0" ]; then
+    step "Typing into Windows through AVM's keyboard path"
+    QGA="$WORK/qga.sock"
+    cat > "$WORK/qga.py" <<'PY'
+import base64, json, socket, sys, time
+sock = sys.argv[1]
+def call(cmd, args=None):
+    s = socket.socket(socket.AF_UNIX); s.settimeout(30); s.connect(sock)
+    msg = {"execute": cmd}
+    if args is not None: msg["arguments"] = args
+    s.sendall((json.dumps(msg) + "\n").encode())
+    data = b""
+    while not data.endswith(b"\n"): data += s.recv(65536)
+    reply = json.loads(data)
+    if "error" in reply: raise SystemExit(reply["error"].get("desc", "error"))
+    return reply["return"]
+def run(path, args):
+    pid = call("guest-exec", {"path": path, "arg": args, "capture-output": True})["pid"]
+    for _ in range(60):
+        st = call("guest-exec-status", {"pid": pid})
+        if st.get("exited"): return base64.b64decode(st.get("out-data", "")).decode(errors="replace")
+        time.sleep(1)
+    return ""
+def write(path, text):
+    h = call("guest-file-open", {"path": path, "mode": "wb"})
+    data = text.encode("utf-16") if path.endswith(".xml") else text.encode("utf-8")   # schtasks wants UTF-16 XML
+    call("guest-file-write", {"handle": h, "buf-b64": base64.b64encode(data).decode()})
+    call("guest-file-close", {"handle": h})
+def read(path):
+    try: h = call("guest-file-open", {"path": path, "mode": "rb"})
+    except SystemExit: return ""
+    out = b""
+    while True:
+        r = call("guest-file-read", {"handle": h, "count": 65536})
+        out += base64.b64decode(r.get("buf-b64", ""))
+        if r.get("eof"): break
+    call("guest-file-close", {"handle": h})
+    return out.decode("utf-8", errors="replace")
+action = sys.argv[2]
+if action == "setup":
+    run("cmd.exe", ["/c", "mkdir C:\\avmkeys"])
+    write("C:\\avmkeys\\hook.ps1", open(sys.argv[3]).read())
+    write("C:\\avmkeys\\task.xml", open(sys.argv[4]).read())
+    print(run("schtasks.exe", ["/create", "/xml", "C:\\avmkeys\\task.xml", "/tn", "AVMKeys", "/f"]))
+    print(run("schtasks.exe", ["/run", "/tn", "AVMKeys"]))
+elif action == "read":
+    print(read("C:\\avmkeys\\keys.log"))
+PY
+    cat > "$WORK/hook.ps1" <<'PS'
+# AVM keyboard test only: logs which keys arrive, and the foreground app.
+$src = @"
+using System; using System.Diagnostics; using System.IO; using System.Runtime.InteropServices; using System.Windows.Forms;
+public static class AVMKeys {
+  public delegate IntPtr Proc(int n, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] static extern IntPtr SetWindowsHookEx(int id, Proc p, IntPtr h, uint t);
+  [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr h, int n, IntPtr w, IntPtr l);
+  [DllImport("kernel32.dll")] static extern IntPtr GetModuleHandle(string n);
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  static Proc keep; static StreamWriter log;
+  static string Fore() { uint pid; GetWindowThreadProcessId(GetForegroundWindow(), out pid); try { return Process.GetProcessById((int)pid).ProcessName; } catch { return "unknown"; } }
+  public static void Run(string path, int seconds) {
+    log = new StreamWriter(path, false); log.AutoFlush = true;
+    keep = (n, w, l) => { if (n >= 0) { int vk = Marshal.ReadInt32(l); int flags = Marshal.ReadInt32(l, 8); log.WriteLine("key " + vk.ToString("X2") + " " + ((flags & 0x80) != 0 ? "up" : "down")); } return CallNextHookEx(IntPtr.Zero, n, w, l); };
+    SetWindowsHookEx(13, keep, GetModuleHandle(null), 0);
+    log.WriteLine("ready");
+    var t = new Timer(); t.Interval = 400; t.Tick += (s, e) => log.WriteLine("fore " + Fore()); t.Start();
+    var stop = new Timer(); stop.Interval = seconds * 1000; stop.Tick += (s, e) => Application.Exit(); stop.Start();
+    Application.Run();
+  }
+}
+"@
+Add-Type -TypeDefinition $src -ReferencedAssemblies System.Windows.Forms
+[AVMKeys]::Run("C:\avmkeys\keys.log", 180)
+PS
+    cat > "$WORK/task.xml" <<'XML'
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Principals><Principal id="Author"><GroupId>S-1-5-4</GroupId><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT10M</ExecutionTimeLimit><Enabled>true</Enabled></Settings>
+  <Actions Context="Author"><Exec><Command>powershell.exe</Command><Arguments>-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\avmkeys\hook.ps1</Arguments></Exec></Actions>
+</Task>
+XML
+    python3 -I "$WORK/qga.py" "$QGA" setup "$WORK/hook.ps1" "$WORK/task.xml" | sed 's/^/   /' | grep -v '^   $' || true
+    READY=0
+    for _ in $(seq 1 30); do
+        python3 -I "$WORK/qga.py" "$QGA" read | grep -q "^ready" && { READY=1; break; }
+        sleep 2
+    done
+    if [ "$READY" = "0" ]; then
+        info "NO   the key watcher didn't start in Windows"
+        MISSING=1
+    else
+        "$APP/Contents/MacOS/AVM" --test-keyboard --spice "$WORK/spice.sock" 2>&1 | grep -v "^2026-" | sed 's/^/   /'
+        sleep 2
+        python3 -I "$WORK/qga.py" "$QGA" read > "$WORK/keys.log"
+        if python3 -I - "$WORK/keys.log" <<'PY'
+import sys
+lines = [l.strip() for l in open(sys.argv[1]) if l.strip()]
+keys = [l[4:] for l in lines if l.startswith("key ")]
+ok = True
+def check(name, cond):
+    global ok
+    print(("   yes  " if cond else "   NO   ") + name)
+    ok = ok and cond
+def contains(seq):
+    i = 0
+    for k in keys:
+        if i < len(seq) and k == seq[i]: i += 1
+    return i == len(seq)
+check("a letter arrives, down and up", contains(["41 down", "41 up"]))
+check("both Shifts go down and both come back up", contains(["A0 down", "A1 down", "A1 up", "A0 up"]))
+check("Fn-Backspace arrives as Delete", contains(["2E down", "2E up"]))
+check("Pause arrives", contains(["13 down", "13 up"]))
+start = ("StartMenuExperienceHost", "SearchHost", "ShellExperienceHost")
+# Control: Start opens after the Windows key alone.
+first_win_up = next((i for i, l in enumerate(lines) if l == "key 5B up"), None)
+esc = next((i for i, l in enumerate(lines) if l == "key 1B down"), None)
+seen = first_win_up is not None and esc is not None and any(l.startswith("fore ") and l[5:] in start for l in lines[first_win_up:esc])
+check("the Windows key alone opens Start (the control)", seen)
+# The way back: Control and the Windows key down, then Start must stay shut.
+back = next((i for i in range(len(lines) - 1, -1, -1) if lines[i] == "key 5B up"), None)
+last_a = max((i for i, l in enumerate(lines) if l == "key 41 down"), default=None)
+quiet = back is not None and last_a is not None and back > (esc or 0) and not any(
+    l.startswith("fore ") and l[5:] in start for l in lines[back:last_a])
+check("returning to the Mac doesn't open Start", quiet)
+last = {}
+for k in keys:
+    code, state = k.split()
+    last[code] = state
+check("nothing is left down", all(state == "up" for state in last.values()))
+sys.exit(0 if ok else 1)
+PY
+        then :; else MISSING=1; fi
+    fi
 fi
 
 ELAPSED=$(( ($(date +%s) - START) / 60 ))

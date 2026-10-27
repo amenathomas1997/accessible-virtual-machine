@@ -171,7 +171,83 @@ else
     info "The installer powered off, as AVM expects."
 fi
 
+kill "$QEMU_PID" 2>/dev/null || true
+sleep 3
+
+# THE DESKTOP AFTER THE INSTALL (2026-10-26): the installed disk started
+# again, with the guest agent's channel, and asked what a person at the
+# screen gets: the signed-in session and its kind (Wayland or X11), and
+# whether spice-vdagent (clipboard, mouse) and Orca are running.
+step "Starting the installed $GUEST and checking its desktop (up to 10 minutes)"
+rm -f "$QMP"
+"$R/qemu-system-aarch64" -L "$R" \
+    -machine virt,accel=hvf -cpu host -smp 4 -m 4096M \
+    -drive "if=pflash,format=raw,file=$R/edk2-aarch64-code.fd,readonly=on" \
+    -drive "if=pflash,format=raw,file=$WORK/nvram.fd" \
+    -device qemu-xhci,id=usb,p2=8,p3=8 \
+    -device usb-kbd,bus=usb.0,port=1 \
+    -device usb-tablet,bus=usb.0,port=2,display=gpu0 \
+    -drive "if=none,id=disk0,file=$WORK/disk.qcow2,format=qcow2,cache=writeback,discard=unmap,detect-zeroes=unmap" \
+    -device nvme,drive=disk0,serial=avmdisk0,bootindex=1 \
+    -netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
+    -spice "unix=on,addr=$WORK/spice.sock,disable-ticketing=on,agent-mouse=on" \
+    -device ramfb -device virtio-gpu-pci,id=gpu0 \
+    -audiodev none,id=noaudio -device intel-hda -device hda-duplex,audiodev=noaudio \
+    -device virtio-serial-pci \
+    -chardev spicevmc,id=vdagent,name=vdagent \
+    -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \
+    -chardev "socket,id=qga0,path=$WORK/qga.sock,server=on,wait=off" \
+    -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
+    -chardev "socket,id=char-qmp,path=$QMP,server=on,wait=off" -qmp chardev:char-qmp \
+    -rtc base=utc,clock=host \
+    -serial "file:$WORK/serial-2.log" -display none -monitor none \
+    > "$WORK/qemu-2.log" 2>&1 &
+QEMU_PID=$!
+DESKTOP=""
+for _ in $(seq 1 40); do
+    sleep 15
+    DESKTOP=$(python3 -I - "$WORK/qga.sock" <<'PY' 2>/dev/null || true
+import base64, json, socket, sys, time
+def call(cmd, args=None):
+    s = socket.socket(socket.AF_UNIX); s.settimeout(10); s.connect(sys.argv[1])
+    msg = {"execute": cmd}
+    if args: msg["arguments"] = args
+    s.sendall((json.dumps(msg) + "\n").encode())
+    data = b""
+    while not data.endswith(b"\n"): data += s.recv(65536)
+    return json.loads(data)["return"]
+script = r"""
+s=$(loginctl list-sessions --no-legend | awk '$3=="avmtest"{print $1; exit}')
+[ -n "$s" ] && echo "session $(loginctl show-session "$s" -p Type --value)" || echo "session none"
+pgrep -x spice-vdagent >/dev/null && echo "spice-vdagent running" || echo "spice-vdagent not running"
+pgrep -f "orca" >/dev/null && echo "orca running" || echo "orca not running"
+"""
+pid = call("guest-exec", {"path": "/bin/sh", "arg": ["-c", script], "capture-output": True})["pid"]
+for _ in range(20):
+    st = call("guest-exec-status", {"pid": pid})
+    if st.get("exited"): break
+    time.sleep(1)
+print(base64.b64decode(st.get("out-data", "")).decode())
+PY
+)
+    echo "$DESKTOP" | grep -q "session [a-z]" && ! echo "$DESKTOP" | grep -q "session none" && break
+done
+if [ -z "$DESKTOP" ]; then
+    screenshot
+    fail "The installed $GUEST didn't answer through the guest agent in 10 minutes." "See $WORK/screen.png."
+fi
+echo "$DESKTOP" | sed 's/^/   /'
+# MEASURED 2026-10-26, Debian 13.7: a Wayland session, with spice-vdagent
+# 0.22.1 running and talking to GNOME's compositor (its log reads Mutter's
+# monitors). Whether the clipboard then crosses isn't proven here: that
+# needs a SPICE client offering one. The agent running is the requirement.
+CLIPBOARD="no"
+echo "$DESKTOP" | grep -q "spice-vdagent running" && CLIPBOARD="yes"
+info "the clipboard agent is running: $CLIPBOARD"
+echo "$DESKTOP" | grep -q "orca running" || { screenshot; fail "Orca isn't running after sign-in."; }
+
 RESULT=0
 ELAPSED=$(( ($(date +%s) - START) / 60 ))
 echo; echo "PASSED: $GUEST installed in $ELAPSED minutes."
+[ "$CLIPBOARD" = "yes" ] || echo "   (but the clipboard agent isn't running; see above)"
 command -v say >/dev/null && say "The $GUEST install test passed." || true
