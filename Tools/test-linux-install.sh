@@ -86,6 +86,17 @@ markers() {
 }
 
 cleanup() {
+    # A kept machine is shut down properly first (2026-10-26): a power cut
+    # right after the first sign-in left Orca's new settings file empty,
+    # and Orca crashed on it at every later start.
+    if [ "$KEEP" = "1" ] && [ -n "$QEMU_PID" ] && kill -0 "$QEMU_PID" 2>/dev/null && [ -S "$WORK/qga.sock" ]; then
+        python3 -I - "$WORK/qga.sock" <<'PY' >/dev/null 2>&1 || true
+import socket, sys
+s = socket.socket(socket.AF_UNIX); s.settimeout(5); s.connect(sys.argv[1])
+s.sendall(b'{"execute":"guest-shutdown","arguments":{"mode":"powerdown"}}\n')
+PY
+        for _ in $(seq 1 24); do kill -0 "$QEMU_PID" 2>/dev/null || break; sleep 5; done
+    fi
     [ -n "$QEMU_PID" ] && kill -0 "$QEMU_PID" 2>/dev/null && kill "$QEMU_PID" 2>/dev/null || true
     if [ "$RESULT" = "0" ] && [ "$KEEP" = "0" ]; then rm -rf "$WORK"; else echo "   The test machine is kept in $WORK"; fi
 }
