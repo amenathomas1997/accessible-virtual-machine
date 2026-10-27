@@ -269,18 +269,20 @@ private func avmLog(_ msg: String) {
 @MainActor
 final class VMActivity: ObservableObject {
     static let shared = VMActivity()
-    @Published fileprivate(set) var state: VMRuntimeState = .stopped
+    @Published private(set) var state: VMRuntimeState = .stopped
     private init() {}
+
+    /// The current machine's state (MachineSessions.makeCurrent): with
+    /// several machines running, the menus act on the one in front.
+    func follow(_ state: VMRuntimeState) {
+        if self.state != state { self.state = state }
+    }
 
     var isRunning: Bool { state == .running }
     var isRunningOrPaused: Bool { state == .running || state == .paused }
-    /// No VM is starting, running, paused or stopping, so one can start.
-    var canStart: Bool {
-        switch state {
-        case .stopped, .error: return true
-        default: return false
-        }
-    }
+    /// Another machine can always start (2026-10-27, several machines at
+    /// once); starting one that's already running brings it forward.
+    var canStart: Bool { true }
 }
 
 // MARK: - VMManager
@@ -292,7 +294,9 @@ final class VMManager: ObservableObject {
 
     @Published private(set) var state: VMRuntimeState = .stopped {
         didSet {
-            VMActivity.shared.state = state
+            // Only the current machine's (MachineSessions); a manager with
+            // no session (a test job) is current while nothing else is.
+            if VMManager.shared === self || VMManager.shared == nil { VMActivity.shared.follow(state) }
             usbWatcherFollowState()
         }
     }
@@ -2289,16 +2293,18 @@ final class VMManager: ObservableObject {
             }
             if let text = String(data: data, encoding: .utf8) {
                 avmLog("QEMU stderr: \(text)")
-                Task { @MainActor in
-                    VMManager.shared?.appendConsole("QEMU: \(text)")
+                Task { @MainActor [weak self] in
+                    self?.appendConsole("QEMU: \(text)")
                 }
             }
         }
 
-        process.terminationHandler = { proc in
+        // This manager's own QEMU (2026-10-27): with several machines, the
+        // exit has to reach the manager that started it, not the current one.
+        process.terminationHandler = { [weak self] proc in
             let code = proc.terminationStatus
-            Task { @MainActor in
-                VMManager.shared?.handleQEMUProcessExit(process: proc, exitCode: code)
+            Task { @MainActor [weak self] in
+                self?.handleQEMUProcessExit(process: proc, exitCode: code)
             }
         }
 
@@ -2745,8 +2751,11 @@ final class VMManager: ObservableObject {
     /// The guest's name ("Windows" or "Ubuntu") for words spoken and shown
     /// by code that has no configuration at hand: focus lock, USB, menus.
     /// Windows when no VM has started, as before Ubuntu support.
+    /// This machine's name, for announcements (2026-10-27).
+    var machineName: String { activeConfiguration?.name ?? GuestOS.windows.displayName }
+
     static var currentGuestName: String {
-        shared?.activeConfiguration?.guestOS.displayName ?? GuestOS.windows.displayName
+        shared?.activeConfiguration?.name ?? GuestOS.windows.displayName
     }
 
     // MARK: - QMP Connection
@@ -3252,7 +3261,10 @@ final class VMManager: ObservableObject {
         // The keyboard for Windows goes back to the Mac when the machine
         // stops (WindowsKeyboard.swift), and only then: it doesn't follow
         // the machine's window.
-        WindowsKeyboard.shared.stop()
+        // Not while another machine is still running (2026-10-27).
+        if !MachineSessions.shared.managers.contains(where: { $0 !== self && ($0.state == .running || $0.state == .paused) }) {
+            WindowsKeyboard.shared.stop()
+        }
         qmpConnected = false
         qmpReadSource?.cancel()
         qmpReadSource = nil
