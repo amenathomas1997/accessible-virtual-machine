@@ -30,6 +30,9 @@
 #            through AVM's own keyboard path (AVM --test-keyboard) and
 #            checks what Windows received: both Shifts released, Delete,
 #            Pause, and no Start menu on the way back to the Mac
+# --latency  plays Windows' sound to the Mac the way AVM does, and after
+#            the install times NVDA's "say the time" (NVDA+F12) 20 times,
+#            from the key to the first sound (Tools/audio-latency)
 
 set -euo pipefail
 
@@ -38,6 +41,7 @@ APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/AVM.app"
 MINUTES=150
 KEEP=0
 KEYBOARD=0
+LATENCY=0
 REUSE=""
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -46,8 +50,9 @@ while [ $# -gt 0 ]; do
         --minutes) MINUTES="$2"; shift 2 ;;
         --keep) KEEP=1; shift ;;
         --keyboard) KEYBOARD=1; shift ;;
+        --latency) LATENCY=1; shift ;;
         --reuse) REUSE="$2"; shift 2 ;;
-        -h|--help) sed -n 2,29p "$0"; exit 0 ;;
+        -h|--help) sed -n 2,32p "$0"; exit 0 ;;
         *) echo "Unknown option $1. Run with --help."; exit 64 ;;
     esac
 done
@@ -175,6 +180,14 @@ TPM_PID=$!
 sleep 1
 info "64 GB disk, Secure Boot, TPM 2.0, 4 cores, 8 GB of memory"
 
+# Sound: none, unless timing it; then as VMManager plays it (2026-10-27).
+AUDIODEV="none,id=snd"
+HDA="hda-duplex,audiodev=snd"
+if [ "$LATENCY" = "1" ]; then
+    AUDIODEV="coreaudio,id=snd,out.frequency=48000,out.buffer-length=2500,out.buffer-count=2,timer-period=1250"
+    HDA="hda-duplex,audiodev=snd,use-timer=off"
+fi
+
 step "Starting Windows Setup (no window)"
 "$R/qemu-system-aarch64" -L "$R" \
     -machine virt,accel=hvf -cpu host -smp 4 -m 8192M \
@@ -193,7 +206,7 @@ step "Starting Windows Setup (no window)"
     -netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
     -spice "unix=on,addr=$WORK/spice.sock,disable-ticketing=on,agent-mouse=on" \
     -device ramfb -device virtio-gpu-pci,id=gpu0 \
-    -audiodev none,id=noaudio -device intel-hda -device hda-duplex,audiodev=noaudio \
+    -audiodev "$AUDIODEV" -device intel-hda -device "$HDA" \
     -device virtio-serial-pci \
     -chardev spicevmc,id=vdagent,name=vdagent \
     -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \
@@ -457,6 +470,45 @@ check("nothing is left down", all(state == "up" for state in last.values()))
 sys.exit(0 if ok else 1)
 PY
         then :; else MISSING=1; fi
+    fi
+fi
+
+# LATENCY (2026-10-27): NVDA's "say the time", pressed through QMP, timed
+# from the key to the first sound QEMU plays (a tap on QEMU's sound alone).
+if [ "$LATENCY" = "1" ] && [ "$MISSING" = "0" ]; then
+    step "Timing NVDA's speech"
+    HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    TOOL="$HOME/Library/Caches/AVM-tools/audio-latency"
+    if [ ! -x "$TOOL" ] || [ "$HERE/audio-latency/main.swift" -nt "$TOOL" ]; then
+        mkdir -p "$(dirname "$TOOL")"
+        xcrun swiftc -O -target arm64-apple-macos14.2 "$HERE/audio-latency/main.swift" -o "$TOOL"
+    fi
+    NVDA=0
+    for _ in $(seq 1 60); do
+        python3 -I - "$WORK/qga.sock" <<'PY' 2>/dev/null && { NVDA=1; break; }
+import base64, json, socket, sys, time
+def call(cmd, args=None):
+    s = socket.socket(socket.AF_UNIX); s.settimeout(10); s.connect(sys.argv[1])
+    m = {"execute": cmd}
+    if args: m["arguments"] = args
+    s.sendall((json.dumps(m) + "\n").encode()); d = b""
+    while not d.endswith(b"\n"): d += s.recv(65536)
+    return json.loads(d)["return"]
+pid = call("guest-exec", {"path": "tasklist.exe", "arg": ["/fi", "imagename eq nvda.exe"], "capture-output": True})["pid"]
+for _ in range(20):
+    st = call("guest-exec-status", {"pid": pid})
+    if st.get("exited"): break
+    time.sleep(1)
+sys.exit(0 if b"nvda.exe" in base64.b64decode(st.get("out-data", "")) else 1)
+PY
+        sleep 5
+    done
+    if [ "$NVDA" = "0" ]; then
+        info "NO   NVDA isn't running, so there's nothing to time"
+        MISSING=1
+    else
+        sleep 30   # NVDA's welcome speech, and the first sound opens the path
+        "$TOOL" --qmp "$QMP" --pid "$QEMU_PID" --keys insert+f12 --label windows-nvda | sed 's/^/   /' || true
     fi
 fi
 
