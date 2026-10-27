@@ -18,7 +18,7 @@
 # about 15 GB while it runs. The test machine is deleted afterwards unless
 # it failed or --keep.
 #
-#   Tools/test-linux-install.sh --iso PATH [--guest debian|ubuntu|fedora] [--app PATH] [--minutes N] [--keep]
+#   Tools/test-linux-install.sh --iso PATH [--guest debian|ubuntu|fedora] [--app PATH] [--minutes N] [--keep] [--disk virtio|nvme]
 
 set -euo pipefail
 
@@ -27,6 +27,7 @@ GUEST=debian
 APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/AVM.app"
 MINUTES=120
 KEEP=0
+DISK=virtio   # the disk new machines get (2026-10-27); nvme as older ones
 LAYOUT=us
 VARIANT=""
 while [ $# -gt 0 ]; do
@@ -36,12 +37,14 @@ while [ $# -gt 0 ]; do
         --app) APP="$2"; shift 2 ;;
         --minutes) MINUTES="$2"; shift 2 ;;
         --keep) KEEP=1; shift ;;
+        --disk) DISK="$2"; shift 2 ;;
         --keyboard) LAYOUT="${2%%:*}"; [ "$2" != "$LAYOUT" ] && VARIANT="${2#*:}"; shift 2 ;;
         -h|--help) sed -n 2,22p "$0"; exit 0 ;;
         *) echo "Unknown option $1. Run with --help."; exit 64 ;;
     esac
 done
 
+case "$DISK" in nvme) DISKDEV=nvme ;; *) DISKDEV=virtio-blk-pci ;; esac
 step() { echo; echo "== $1"; }
 info() { echo "   $1"; }
 fail() {
@@ -114,7 +117,7 @@ JSON
 # system can be checked (the desktop check prints /etc/default/keyboard).
 sed -i '' -e "s/LAYOUT_HERE/$LAYOUT/" -e "s/VARIANT_HERE/${VARIANT:+,\"keyboardVariant\":\"$VARIANT\"}/" "$WORK/ubuntu-account.json"
 chmod 600 "$WORK/ubuntu-account.json"
-"$APP/Contents/MacOS/AVM" --build-install-media --guest "$GUEST" --iso "$ISO" --out "$WORK" \
+"$APP/Contents/MacOS/AVM" --build-install-media --guest "$GUEST" --disk "$DISK" --iso "$ISO" --out "$WORK" \
     || fail "AVM couldn't build the install media." "See the line above, and AVM's diagnostic log."
 [ -f "$WORK/install-avm.iso" ] && [ -f "$WORK/autounattend.img" ] || fail "AVM said it built the media, but the files aren't there."
 
@@ -136,7 +139,7 @@ step "Starting the $GUEST installer (no window)"
     -device usb-kbd,bus=usb.0,port=1 \
     -device usb-tablet,bus=usb.0,port=2,display=gpu0 \
     -drive "if=none,id=disk0,file=$WORK/disk.qcow2,format=qcow2,cache=writeback,discard=unmap,detect-zeroes=unmap" \
-    -device nvme,drive=disk0,serial=avmdisk0,bootindex=1 \
+    -device "$DISKDEV,drive=disk0,serial=avmdisk0,bootindex=1" \
     -drive "if=none,id=cdrom0,file=$WORK/install-avm.iso,media=cdrom,readonly=on" \
     -device usb-storage,drive=cdrom0,bus=usb.0,port=3,bootindex=0,removable=on \
     -drive "if=none,id=unattend,file=$WORK/autounattend.img,format=raw,cache=writeback" \
@@ -206,7 +209,7 @@ rm -f "$QMP"
     -device usb-kbd,bus=usb.0,port=1 \
     -device usb-tablet,bus=usb.0,port=2,display=gpu0 \
     -drive "if=none,id=disk0,file=$WORK/disk.qcow2,format=qcow2,cache=writeback,discard=unmap,detect-zeroes=unmap" \
-    -device nvme,drive=disk0,serial=avmdisk0,bootindex=1 \
+    -device "$DISKDEV,drive=disk0,serial=avmdisk0,bootindex=1" \
     -netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
     -spice "unix=on,addr=$WORK/spice.sock,disable-ticketing=on,agent-mouse=on" \
     -device ramfb -device virtio-gpu-pci,id=gpu0 \

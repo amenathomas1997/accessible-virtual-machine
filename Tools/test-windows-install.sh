@@ -19,7 +19,7 @@
 # It takes 30 to 90 minutes and about 25 GB of disk space while it runs.
 # The test machine is deleted afterwards unless it failed or --keep.
 #
-#   Tools/test-windows-install.sh [--iso PATH] [--app PATH] [--minutes N] [--keep] [--keyboard] [--reuse FOLDER]
+#   Tools/test-windows-install.sh [--iso PATH] [--app PATH] [--minutes N] [--keep] [--disk virtio|nvme] [--keyboard] [--reuse FOLDER]
 #
 # --iso      a Windows 11 ARM64 ISO (default: the newest *arm64*.iso in Downloads)
 # --app      the AVM.app to test (default: the Debug build in ~/Library/Caches/AVM-build)
@@ -40,6 +40,7 @@ ISO=""
 APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/AVM.app"
 MINUTES=150
 KEEP=0
+DISK=virtio   # the disk new machines get (2026-10-27); nvme as older ones
 KEYBOARD=0
 LATENCY=0
 REUSE=""
@@ -49,6 +50,7 @@ while [ $# -gt 0 ]; do
         --app) APP="$2"; shift 2 ;;
         --minutes) MINUTES="$2"; shift 2 ;;
         --keep) KEEP=1; shift ;;
+        --disk) DISK="$2"; shift 2 ;;
         --keyboard) KEYBOARD=1; shift ;;
         --latency) LATENCY=1; shift ;;
         --reuse) REUSE="$2"; shift 2 ;;
@@ -57,6 +59,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+case "$DISK" in nvme) DISKDEV=nvme ;; *) DISKDEV=virtio-blk-pci ;; esac
 step() { echo; echo "== $1"; }
 info() { echo "   $1"; }
 fail() {
@@ -166,7 +169,7 @@ json.dump({
 }, open(sys.argv[1], "w"))
 PY
 chmod 600 "$WORK/windows-setup.json"
-"$APP/Contents/MacOS/AVM" --build-install-media --iso "$ISO" --out "$WORK" --screen-readers nvda,jaws \
+"$APP/Contents/MacOS/AVM" --build-install-media --disk "$DISK" --iso "$ISO" --out "$WORK" --screen-readers nvda,jaws \
     || fail "AVM couldn't build the install media." "See the line above, and AVM's diagnostic log."
 [ -f "$WORK/install-avm.iso" ] && [ -f "$WORK/autounattend.img" ] || fail "AVM said it built the media, but the files aren't there."
 
@@ -198,7 +201,7 @@ step "Starting Windows Setup (no window)"
     -device usb-kbd,bus=usb.0,port=1 \
     -device usb-tablet,bus=usb.0,port=2,display=gpu0 \
     -drive "if=none,id=disk0,file=$WORK/disk.qcow2,format=qcow2,cache=writeback,discard=unmap,detect-zeroes=unmap" \
-    -device nvme,drive=disk0,serial=avmdisk0,bootindex=1 \
+    -device "$DISKDEV,drive=disk0,serial=avmdisk0,bootindex=1" \
     -drive "if=none,id=cdrom0,file=$WORK/install-avm.iso,media=cdrom,readonly=on" \
     -device usb-storage,drive=cdrom0,bus=usb.0,port=3,bootindex=0,removable=on \
     -drive "if=none,id=unattend,file=$WORK/autounattend.img,format=raw,cache=writeback" \
