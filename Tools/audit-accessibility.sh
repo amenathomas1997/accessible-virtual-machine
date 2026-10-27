@@ -49,6 +49,8 @@ mkdir -p "$OUT"
 # The audit is its own AVM process; an AVM that's already running is
 # left alone. ${EXTRA[@]+...} keeps an empty list working under macOS's
 # bash 3.2 with set -u.
+# An old report never stands in for this run's (2026-10-26, code audit).
+rm -f "$OUT/accessibility-report.txt" "$OUT/accessibility-tree.txt"
 set +e
 "$APP/Contents/MacOS/AVM" --audit-accessibility --out "$OUT" ${EXTRA[@]+"${EXTRA[@]}"} 2>"$OUT/audit-stderr.txt"
 RESULT=$?

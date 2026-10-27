@@ -27,6 +27,8 @@ GUEST=debian
 APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/AVM.app"
 MINUTES=120
 KEEP=0
+LAYOUT=us
+VARIANT=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --iso) ISO="$2"; shift 2 ;;
@@ -34,6 +36,7 @@ while [ $# -gt 0 ]; do
         --app) APP="$2"; shift 2 ;;
         --minutes) MINUTES="$2"; shift 2 ;;
         --keep) KEEP=1; shift ;;
+        --keyboard) LAYOUT="${2%%:*}"; [ "$2" != "$LAYOUT" ] && VARIANT="${2#*:}"; shift 2 ;;
         -h|--help) sed -n 2,22p "$0"; exit 0 ;;
         *) echo "Unknown option $1. Run with --help."; exit 64 ;;
     esac
@@ -93,8 +96,12 @@ info "ISO: $ISO"
 # The test account, as the wizard saves it: password "Hello world!", in
 # the SHA-512 crypt form (the specification's own test vector).
 cat > "$WORK/ubuntu-account.json" <<'JSON'
-{"realName":"AVM Test","userName":"avmtest","passwordHash":"$6$saltstring$svn8UoSVapNtMuq1ukKS4tPQd8iKwSMHWjl/O817G3uBnIFNjnQJuesI68u4OTLiBFdcbYEdFCoEOfaS35inz1","signInAutomatically":true,"keyboardLayout":"us"}
+{"realName":"AVM Test","userName":"avmtest","passwordHash":"$6$saltstring$svn8UoSVapNtMuq1ukKS4tPQd8iKwSMHWjl/O817G3uBnIFNjnQJuesI68u4OTLiBFdcbYEdFCoEOfaS35inz1","signInAutomatically":true,"keyboardLayout":"LAYOUT_HERE"VARIANT_HERE}
 JSON
+# --keyboard LAYOUT[:VARIANT] (2026-10-26): the account's keyboard, as the
+# wizard writes it, so a layout and Mac variant reaching the installed
+# system can be checked (the desktop check prints /etc/default/keyboard).
+sed -i '' -e "s/LAYOUT_HERE/$LAYOUT/" -e "s/VARIANT_HERE/${VARIANT:+,\"keyboardVariant\":\"$VARIANT\"}/" "$WORK/ubuntu-account.json"
 chmod 600 "$WORK/ubuntu-account.json"
 "$APP/Contents/MacOS/AVM" --build-install-media --guest "$GUEST" --iso "$ISO" --out "$WORK" \
     || fail "AVM couldn't build the install media." "See the line above, and AVM's diagnostic log."
@@ -220,6 +227,7 @@ script = r"""
 s=$(loginctl list-sessions --no-legend | awk '$3=="avmtest"{print $1; exit}')
 [ -n "$s" ] && echo "session $(loginctl show-session "$s" -p Type --value)" || echo "session none"
 pgrep -x spice-vdagent >/dev/null && echo "spice-vdagent running" || echo "spice-vdagent not running"
+grep -h "^XKB[LV]" /etc/default/keyboard 2>/dev/null
 # [o]rca: this script's own command line holds the word, and pgrep -f
 # matched itself (2026-10-26, code audit), so Orca always "ran".
 ps -eo args | grep -q "[o]rca" && echo "orca running" || echo "orca not running"

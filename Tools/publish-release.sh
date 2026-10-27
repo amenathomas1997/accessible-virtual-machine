@@ -59,8 +59,14 @@ BUILT="$(cat "$OUT_DIR/built-commit.txt" 2>/dev/null || true)"
 if grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" "$REPO_ROOT/appcast.xml"; then
     fail "appcast.xml already lists version $VERSION." "Raise MARKETING_VERSION and CURRENT_PROJECT_VERSION, then build again."
 fi
+# A release that already exists, with this version not yet in the feed, is
+# carried on with rather than refused (2026-10-26, code audit): a run that
+# stopped after making the release (a failed push, or the --draft flow)
+# could never be finished. Its files are replaced with this build's.
+EXISTING=0
 if gh release view "v$VERSION" --repo "$REPO_SLUG" >/dev/null 2>&1; then
-    fail "GitHub already has a release v$VERSION." "Raise the version, then build again."
+    EXISTING=1
+    echo "GitHub already has a release v$VERSION; this run finishes it: its files are replaced, then the feed is updated."
 fi
 
 echo "About to publish AVM $VERSION to https://github.com/$REPO_SLUG"
@@ -73,10 +79,18 @@ read -r answer
 
 DRAFT_FLAG=()
 [ "$DRAFT" = "1" ] && DRAFT_FLAG=(--draft)
-gh release create "v$VERSION" "$DMG" "$ZIP" --repo "$REPO_SLUG" --target "$FEED_BRANCH" \
-    --title "AVM $VERSION" --notes "AVM $VERSION. Install from the DMG; existing installs update from inside AVM." \
-    ${DRAFT_FLAG[@]+"${DRAFT_FLAG[@]}"} || fail "gh could not create the release."
-echo "Created release v$VERSION."
+if [ "$EXISTING" = "1" ]; then
+    gh release upload "v$VERSION" "$DMG" "$ZIP" --repo "$REPO_SLUG" --clobber || fail "gh could not replace the release's files."
+    if [ "$DRAFT" = "0" ]; then
+        gh release edit "v$VERSION" --repo "$REPO_SLUG" --draft=false >/dev/null || fail "gh could not publish the draft release."
+    fi
+    echo "Release v$VERSION updated."
+else
+    gh release create "v$VERSION" "$DMG" "$ZIP" --repo "$REPO_SLUG" --target "$FEED_BRANCH" \
+        --title "AVM $VERSION" --notes "AVM $VERSION. Install from the DMG; existing installs update from inside AVM." \
+        ${DRAFT_FLAG[@]+"${DRAFT_FLAG[@]}"} || fail "gh could not create the release."
+    echo "Created release v$VERSION."
+fi
 
 if [ "$DRAFT" = "1" ]; then
     echo "Draft release made. Publish it on GitHub, then run this script again without --draft to update the feed."
