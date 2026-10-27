@@ -2,23 +2,23 @@
 # test-linux-install.sh
 # AVM — Accessible Virtual Machine
 #
-# A complete unattended Ubuntu or Debian install with no one at the screen
+# A complete unattended Ubuntu, Debian or Fedora install with no one at the screen
 # (2026-10-26), the Linux counterpart of test-windows-install.sh:
 #   1. builds install media with AVM's own pipeline
-#      (AVM --build-install-media --guest ubuntu|debian), with a test
+#      (AVM --build-install-media --guest ubuntu|debian|fedora), with a test
 #      account in the form the wizard writes;
 #   2. makes a blank disk and firmware settings, and starts QEMU the way
 #      AVM starts a Linux machine, with no window;
 #   3. waits for the answer file's last step, the install-complete marker
 #      (AVMDONE.TAG on the UNATTEND volume), or the failure marker
-#      (AVMFAIL.TAG, Ubuntu only), and for the installer to power off;
+#      (AVMFAIL.TAG, Ubuntu and Fedora), and for the installer to power off;
 #   4. says which. A screenshot (screen.png) is saved every 10 minutes and
 #      when it gives up.
-# It takes 20 to 60 minutes (Debian's netinst downloads the desktop) and
+# It takes 20 to 60 minutes (Debian's and Fedora's netinstalls download the desktop) and
 # about 15 GB while it runs. The test machine is deleted afterwards unless
 # it failed or --keep.
 #
-#   Tools/test-linux-install.sh --iso PATH [--guest debian|ubuntu] [--app PATH] [--minutes N] [--keep]
+#   Tools/test-linux-install.sh --iso PATH [--guest debian|ubuntu|fedora] [--app PATH] [--minutes N] [--keep]
 
 set -euo pipefail
 
@@ -48,7 +48,7 @@ fail() {
     exit 1
 }
 
-case "$GUEST" in ubuntu|debian) ;; *) fail "--guest must be ubuntu or debian." ;; esac
+case "$GUEST" in ubuntu|debian|fedora) ;; *) fail "--guest must be ubuntu, debian or fedora." ;; esac
 [ -n "$ISO" ] && [ -f "$ISO" ] || fail "No installer ISO given." "Pass one with --iso."
 R="$APP/Contents/Resources"
 [ -x "$APP/Contents/MacOS/AVM" ] && [ -x "$R/qemu-system-aarch64" ] || fail "No AVM build at $APP." "Build AVM first, or pass --app."
@@ -244,7 +244,15 @@ echo "$DESKTOP" | sed 's/^/   /'
 CLIPBOARD="no"
 echo "$DESKTOP" | grep -q "spice-vdagent running" && CLIPBOARD="yes"
 info "the clipboard agent is running: $CLIPBOARD"
-echo "$DESKTOP" | grep -q "orca running" || { screenshot; fail "Orca isn't running after sign-in."; }
+# Fedora's SELinux policy keeps the guest agent from listing processes
+# (2026-10-26), so there it's reported, not required.
+if ! echo "$DESKTOP" | grep -q "orca running"; then
+    if [ "$GUEST" = "fedora" ]; then
+        info "(Orca can't be seen from the guest agent on Fedora; its setting is checked by the install)"
+    else
+        screenshot; fail "Orca isn't running after sign-in."
+    fi
+fi
 
 RESULT=0
 ELAPSED=$(( ($(date +%s) - START) / 60 ))
