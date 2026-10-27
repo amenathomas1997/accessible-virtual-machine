@@ -328,6 +328,10 @@ final class VMManager: ObservableObject {
         AVMLog.write("VMManager: state is now \(state)", category: "USBHotPlug")
         switch state {
         case .running:
+            // Plug-ins are offered to the current machine (2026-10-27,
+            // several at once); MachineSessions.makeCurrent moves the
+            // watcher when another machine comes to the front.
+            guard VMManager.shared === self || VMManager.shared == nil else { break }
             if let id = activeConfiguration?.id {
                 USBHotPlugWatcher.shared.start(vmID: id)
                 // Sends any device held while Windows was paused.
@@ -335,10 +339,10 @@ final class VMManager: ObservableObject {
             } else {
                 AVMLog.write("VMManager: running with no active configuration; USB watcher not started", category: "USBHotPlug")
             }
-        case .stopped:
-            USBHotPlugWatcher.shared.stop(reason: "VM stopped")
-        case .error:
-            USBHotPlugWatcher.shared.stop(reason: "VM error")
+        case .stopped, .error:
+            // Only if it was watching for this machine.
+            if let id = activeConfiguration?.id, USBHotPlugWatcher.shared.vmID != id { break }
+            USBHotPlugWatcher.shared.stop(reason: state == .stopped ? "VM stopped" : "VM error")
         default:
             break
         }
@@ -2848,9 +2852,13 @@ final class VMManager: ObservableObject {
     }
 
     @discardableResult
+    /// `timeout`: how long QEMU's answer may take. A few seconds for most
+    /// commands; snapshot-save answers only once the machine's memory is
+    /// written (2026-10-27: 6 s for a Windows machine timed out at 5).
     func sendQMPCommand(
         _ execute: String,
-        arguments: [String: Any]?
+        arguments: [String: Any]?,
+        timeout: TimeInterval = 5
     ) async throws -> Any? {
         guard qmpConnected, let _ = qmpSocket else {
             throw AVMError.qmpNotConnected
@@ -2882,7 +2890,7 @@ final class VMManager: ObservableObject {
         // beginQMPEventMonitoring), so skip event lines here, or the
         // next command would read the wrong line as its reply.
         // (2026-09-12, USB helper increment 1b.)
-        var responseData = try await readQMPLine()
+        var responseData = try await readQMPLine(timeout: timeout)
         while true {
             let object = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any]
             if let eventName = object?["event"] as? String {
@@ -2892,7 +2900,7 @@ final class VMManager: ObservableObject {
             } else {
                 avmLog("sendQMPCommand(\(execute)): skipped a reply that isn't for \(commandID) (\(object?["id"] as? String ?? "no id"))")
             }
-            responseData = try await readQMPLine()
+            responseData = try await readQMPLine(timeout: timeout)
         }
 
         if let errorResponse = try? JSONDecoder().decode(QMPError.self, from: responseData) {
@@ -2923,7 +2931,7 @@ final class VMManager: ObservableObject {
 
     // MARK: - QMP Reading
 
-    private func readQMPLine() async throws -> Data {
+    private func readQMPLine(timeout: TimeInterval = 5) async throws -> Data {
         guard let socket = qmpSocket else { throw AVMError.qmpNotConnected }
         var result = Data()
         var buf = [UInt8](repeating: 0, count: 1)
@@ -2940,7 +2948,7 @@ final class VMManager: ObservableObject {
             } else {
                 if errno == EAGAIN || errno == EWOULDBLOCK {
                     timeoutIterations += 1
-                    if timeoutIterations > 500 { throw AVMError.qmpTimeout }
+                    if timeoutIterations > Int(timeout * 100) { throw AVMError.qmpTimeout }
                     try await Task.sleep(nanoseconds: 10_000_000)
                 } else {
                     throw AVMError.qmpReadFailed
@@ -3261,8 +3269,8 @@ final class VMManager: ObservableObject {
         // The keyboard for Windows goes back to the Mac when the machine
         // stops (WindowsKeyboard.swift), and only then: it doesn't follow
         // the machine's window.
-        // Not while another machine is still running (2026-10-27).
-        if !MachineSessions.shared.managers.contains(where: { $0 !== self && ($0.state == .running || $0.state == .paused) }) {
+        // Only if it types into this machine (2026-10-27, several at once).
+        if WindowsKeyboard.shared.target === self || WindowsKeyboard.shared.target == nil {
             WindowsKeyboard.shared.stop()
         }
         qmpConnected = false
@@ -3453,7 +3461,8 @@ extension VMManager {
                            limit: Duration = .seconds(600)) async throws {
         var args = arguments
         args["job-id"] = id
-        _ = try await sendQMPCommand(command, arguments: args)
+        // The answer can wait for the whole save or load (see sendQMPCommand).
+        _ = try await sendQMPCommand(command, arguments: args, timeout: TimeInterval(limit.components.seconds))
         let clock = ContinuousClock()
         let deadline = clock.now + limit
         while true {
@@ -3503,7 +3512,7 @@ extension VMManager {
         let guest = configuration.guestOS.displayName
         // A USB device passed through was added after the start; a fresh
         // QEMU wouldn't have it to load into, so it goes back to the Mac.
-        for device in USBRedirectController.shared.redirectedDevices {
+        for device in USBRedirectController.shared.devices(for: self) {
             await USBRedirectController.shared.detach(device)
         }
         Announcer.shared.announce("Saving \(guest).", tone: .info)
@@ -3515,6 +3524,13 @@ extension VMManager {
                                 arguments: ["tag": QEMUSavedState.tag, "vmstate": node, "devices": [node]])
         } catch {
             avmLog("saveStateAndStop: save failed: \(error.localizedDescription)")
+            // A save QEMU finished after AVM gave up would be carried on
+            // over newer work at a later Start; it goes now.
+            if let node = try? await diskNodeName() {
+                _ = try? await sendQMPCommand("job-dismiss", arguments: ["id": "avm-save"])
+                try? await runQMPJob("snapshot-delete", id: "avm-unsave",
+                                     arguments: ["tag": QEMUSavedState.tag, "devices": [node]], limit: .seconds(120))
+            }
             // snapshot-save lets a running machine go again by itself; a
             // paused one stays paused.
             Announcer.shared.announce("\(guest) couldn't be saved, so it's still running. Reason: \(error.localizedDescription)", tone: .failure)

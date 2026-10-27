@@ -94,6 +94,10 @@ final class MachineSessions: ObservableObject {
         VMManager.shared = session.manager
         VMActivity.shared.follow(session.manager.state)
         FocusLockManager.shared?.guestName = session.configuration.name
+        // A USB device plugged in now is offered to this machine.
+        if session.vmState == .running {
+            USBHotPlugWatcher.shared.start(vmID: id)
+        }
         if let view = windows[id]?.captureView {
             FocusLockManager.shared?.registerCaptureView(view)
         }
