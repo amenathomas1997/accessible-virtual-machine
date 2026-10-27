@@ -17,9 +17,10 @@
 #          none of these libraries, so they would only cost hours.
 #        - AVM's patches in Tools/sysroot-patches are applied after UTM's
 #          own patch for the same package: the GStreamer osxaudio
-#          deadlock fix, and a QEMU build fix so UTM's Metal display code
-#          is compiled only when OpenGL is. Each patch's header says what
-#          it fixes and where it comes from.
+#          deadlock fix, a QEMU build fix so UTM's Metal display code
+#          is compiled only when OpenGL is, QEMU's coreaudio playback and
+#          microphone, and usb-camera (the Mac's camera as a USB webcam).
+#          Each patch's header says what it does and where it comes from.
 #   2. The install-pipeline tools UTM doesn't build: xorriso 1.5.8.pl02
 #      (the README's minimum), wimlib-imagex and mtools. They link only
 #      macOS's own libraries, as the build phase expects.
@@ -547,6 +548,8 @@ while IFS= read -r f; do
     fi
 done < <(find "$OUT/bin" "$OUT/lib" "$OUT/Frameworks" -type f \( -perm -u+x -o -name '*.dylib' \) 2>/dev/null)
 [ "$brew_refs" = "0" ] || problem "$brew_refs binaries link Homebrew libraries"
+"$OUT/bin/qemu-system-aarch64" -device help 2>/dev/null | grep -q '"usb-camera"' \
+    || problem "QEMU has no usb-camera device (Tools/sysroot-patches/qemu-10.0.12-utm+usb-camera.patch)"
 
 [ "$problems" = "0" ] || fail "$problems problems with the sysroot (listed above)."
 info "Every framework and library AVM links is present."
