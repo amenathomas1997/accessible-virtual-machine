@@ -450,6 +450,9 @@ cat > "$ITEM" <<ITEMXML
         </item>
 ITEMXML
 info "Update feed entry: $ITEM"
+# Which commit this is (2026-10-26, code audit): publish-release.sh
+# refuses to tag a different one with these files.
+git -C "$REPO_ROOT" rev-parse HEAD > "$OUT_DIR/built-commit.txt" 2>/dev/null || true
 fi
 
 # MARK: - Done

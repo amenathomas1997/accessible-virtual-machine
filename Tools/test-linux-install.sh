@@ -220,7 +220,9 @@ script = r"""
 s=$(loginctl list-sessions --no-legend | awk '$3=="avmtest"{print $1; exit}')
 [ -n "$s" ] && echo "session $(loginctl show-session "$s" -p Type --value)" || echo "session none"
 pgrep -x spice-vdagent >/dev/null && echo "spice-vdagent running" || echo "spice-vdagent not running"
-pgrep -f "orca" >/dev/null && echo "orca running" || echo "orca not running"
+# [o]rca: this script's own command line holds the word, and pgrep -f
+# matched itself (2026-10-26, code audit), so Orca always "ran".
+ps -eo args | grep -q "[o]rca" && echo "orca running" || echo "orca not running"
 """
 pid = call("guest-exec", {"path": "/bin/sh", "arg": ["-c", script], "capture-output": True})["pid"]
 for _ in range(20):
@@ -235,6 +237,10 @@ done
 if [ -z "$DESKTOP" ]; then
     screenshot
     fail "The installed $GUEST didn't answer through the guest agent in 10 minutes." "See $WORK/screen.png."
+fi
+if echo "$DESKTOP" | grep -q "session none" && [ "$GUEST" != "fedora" ]; then
+    screenshot
+    fail "Nobody was signed in after 10 minutes: the automatic sign-in didn't happen." "See $WORK/screen.png."
 fi
 echo "$DESKTOP" | sed 's/^/   /'
 # MEASURED 2026-10-26, Debian 13.7: a Wayland session, with spice-vdagent

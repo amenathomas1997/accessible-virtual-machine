@@ -408,10 +408,15 @@ XML
     done
     if [ "$READY" = "0" ]; then
         info "NO   the key watcher didn't start in Windows. What Windows says:"
-        python3 -I "$WORK/qga.py" "$QGA" diagnose 2>&1 | grep -v '^\s*$' | sed 's/^/      /' | head -60
+        python3 -I "$WORK/qga.py" "$QGA" diagnose > "$WORK/diagnose.log" 2>&1 || true
+        grep -v '^\s*$' "$WORK/diagnose.log" | sed 's/^/      /' | sed -n 1,60p || true
         MISSING=1
     else
-        "$APP/Contents/MacOS/AVM" --test-keyboard --spice "$WORK/spice.sock" --qmp "$QMP" 2>&1 | grep -v "^2026-" | sed 's/^/   /'
+        # Not in a pipe set -e can end silently (2026-10-26, code audit): an
+        # AVM that couldn't connect is said as a failure.
+        "$APP/Contents/MacOS/AVM" --test-keyboard --spice "$WORK/spice.sock" --qmp "$QMP" > "$WORK/typing.log" 2>&1 || true
+        grep -v "^2026-" "$WORK/typing.log" | sed 's/^/   /' || true
+        grep -q "^SENT" "$WORK/typing.log" || { info "NO   AVM couldn't type into Windows (see typing.log)"; MISSING=1; }
         sleep 2
         python3 -I "$WORK/qga.py" "$QGA" read > "$WORK/keys.log"
         if python3 -I - "$WORK/keys.log" <<'PY'

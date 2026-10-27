@@ -49,6 +49,13 @@ DMG="$OUT_DIR/AVM-$VERSION.dmg"
 ZIP="$OUT_DIR/AVM-$VERSION.zip"
 [ -f "$DMG" ] && [ -f "$ZIP" ] || fail "AVM-$VERSION.dmg or .zip is missing from $OUT_DIR." "Run Tools/build-installer.sh again."
 grep -q "edSignature" "$ITEM" || fail "The update feed entry has no signature." "Run Tools/build-installer.sh again and allow keychain access."
+# Notarized, and built from what's being tagged (2026-10-26, code audit): a
+# --skip-notarize build was otherwise publishable, and Gatekeeper then
+# blocked it for every new user; and a build made on another branch was
+# tagged at main's tip.
+xcrun stapler validate "$DMG" >/dev/null 2>&1 || fail "AVM-$VERSION.dmg isn't notarized." "Run Tools/build-installer.sh without --skip-notarize."
+BUILT="$(cat "$OUT_DIR/built-commit.txt" 2>/dev/null || true)"
+[ -n "$BUILT" ] && [ "$BUILT" = "$(git -C "$REPO_ROOT" rev-parse HEAD)" ] || fail "The build in $OUT_DIR wasn't made from this commit of $FEED_BRANCH." "Run Tools/build-installer.sh again here, on $FEED_BRANCH."
 if grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" "$REPO_ROOT/appcast.xml"; then
     fail "appcast.xml already lists version $VERSION." "Raise MARKETING_VERSION and CURRENT_PROJECT_VERSION, then build again."
 fi
