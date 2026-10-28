@@ -66,6 +66,15 @@ final class BackgroundMode: ObservableObject {
     /// At launch (AVMAppDelegate).
     func start() {
         AVMLog.write("AVM: Background and Startup — open at login: \(Self.loginStatusName(SMAppService.mainApp.status)); run in the background: \(runInBackground ? "on" : "off"); second monitor: \(useSecondDisplay ? "on" : "off"); starts when AVM opens: \(autoStartID?.uuidString ?? "none")")
+        // The machine that starts when AVM opens, from launch (2026-10-28,
+        // a user's log): AVM can open with no main window (macOS restores
+        // the windows it had, and that can be none), and the dashboard's
+        // own call (ContentView.onAppear) then never came; his machine
+        // started two and a half minutes later, when he opened the window.
+        // Whichever comes first does it; autoStarted keeps it to once.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            MainActor.assumeIsolated { BackgroundMode.shared.autoStartFromLaunch() }
+        }
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { BackgroundMode.shared.goToBackgroundIfChosen() }
@@ -173,25 +182,41 @@ final class BackgroundMode: ObservableObject {
         }
         refreshLoginStatus()
         AVMLog.write("AVM: open at login \(on ? "on" : "off") asked; macOS says \(Self.loginStatusName(SMAppService.mainApp.status))")
+        // Only the approval is spoken: VoiceOver says the checkbox, and an
+        // announcement over it hid the state (2026-10-28, see setAutoStart).
         if on && loginNeedsApproval {
             Announcer.shared.announce("macOS needs your OK. In Login Items in System Settings, turn on AVM.", tone: .info)
             SMAppService.openSystemSettingsLoginItems()
-        } else if on && opensAtLogin {
-            Announcer.shared.announce("AVM will open when you log in.", tone: .success)
-        } else if !on {
-            Announcer.shared.announce("AVM won't open when you log in.", tone: .info)
         }
     }
 
     // MARK: The machine that starts when AVM opens
 
+    /// Nothing spoken (2026-10-28, two users' logs): AVM's announcement
+    /// talked over VoiceOver's own "checked", and both users, not hearing
+    /// it, pressed again and turned it off. VoiceOver says the checkbox.
     func setAutoStart(_ config: VMConfiguration, _ on: Bool) {
         if on {
             autoStartID = config.id
-            Announcer.shared.announce("\(config.name) will start when AVM opens.", tone: .info)
+            AVMLog.write("AVM: \(config.name) will start when AVM opens")
         } else if autoStartID == config.id {
             autoStartID = nil
-            Announcer.shared.announce("\(config.name) won't start when AVM opens.", tone: .info)
+            AVMLog.write("AVM: \(config.name) won't start when AVM opens")
+        }
+    }
+
+    /// From launch, with no dashboard needed (see start()).
+    func autoStartFromLaunch() {
+        guard !autoStarted, let store = VMStore.shared else { return }
+        AVMLog.write("AVM: the dashboard hasn't appeared; starting the chosen machine from launch")
+        autoStartIfChosen(in: store.configurations) { config, takesKeyboard in
+            if MachineArchiveController.shared.refusesWhileBusy(config) { return }
+            if config.guestOS == .macOS {
+                MacGuestRunner.shared.start(config)
+            } else {
+                MachineSessions.shared.start(config, vmStore: store, focusLock: FocusLockManager.shared,
+                                             windowless: config.startsWithoutWindow, takesKeyboard: takesKeyboard)
+            }
         }
     }
 
