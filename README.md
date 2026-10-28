@@ -242,6 +242,16 @@ Fastest speech gets speech to you about 40 milliseconds sooner, but can
 crackle while your Mac is busy; Smoothest sound is for when Balanced
 crackles. A change takes effect at the machine's next Start.
 
+## Remote Desktop
+
+A machine's Settings has Remote Desktop: a user name, a password, and
+whether only this Mac or the whole network may connect. AVM makes the
+account in the machine, turns on its Remote Desktop host (Windows 11
+Pro's own, or xrdp on Linux), forwards a port on the Mac to it, and
+publishes the machine's name on the local network while it runs. In
+Microsoft's Windows App, add a PC named like amena-pc.local and sign in
+with that account. The password is kept in the Mac's keychain.
+
 ## Restore points
 
 A restore point saves a virtual machine as it is, so you can put it back
