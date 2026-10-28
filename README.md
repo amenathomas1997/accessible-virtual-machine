@@ -356,6 +356,20 @@ build in a folder under ~/Documents, add
 `--scratch-path ~/Library/Caches/AVM-build/swiftpm`: file syncing adds
 file attributes there that stop the tests from being signed.
 
+## Running every test
+
+`Tools/run-all-tests.sh` runs everything AVM can test by itself, one
+after another, and prints one report: the logic tests, the
+accessibility audit, and the machine tests (save and resume, two
+machines at once, the shared folder, Send File, printers, the camera,
+the Bluetooth bridge, background mode, Shut Down through the agent,
+Remote Desktop, and more) on the Windows, Debian and Fedora test
+machines that the install tests below leave in `~/Library/Caches/AVM-build`.
+It takes about 45 minutes in full; `--only` and `--skip` pick tests by
+name, `--list` shows what would run, and `--out` keeps every test's
+output. It uses the Debug build unless `--app` says otherwise, and runs
+one machine at a time.
+
 ## Testing an install
 
 `Tools/test-linux-install.sh --guest debian --iso <ISO>` does the same
