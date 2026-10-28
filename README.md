@@ -251,7 +251,9 @@ Pro's own, or xrdp on Linux), forwards a port on the Mac to it, and
 publishes the machine's name on the local network while it runs. In
 Microsoft's Windows App, add a PC named like amena-pc.local and sign in
 with that account. The password is kept in the Mac's keychain. On
-Linux the remote session has no sound and should use an account other
+Linux, AVM also installs the distribution's xrdp sound module where
+there is one (Debian 13, Ubuntu 24.04 and newer), so the remote session
+has sound there and is silent elsewhere; it should use an account other
 than the one signed in at the machine's screen.
 
 ## Restore points
