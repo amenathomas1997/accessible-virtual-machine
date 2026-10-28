@@ -98,6 +98,7 @@
             <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.3.1/AVM-0.3.1.zip" sparkle:edSignature="FWVC/I8IOniT9SV1Z0/+obpeEmCVIZAVq54huAyxj7gxSwCnvP00sL9E4CaPSmoOUI8DLfCV8P3EW4H9MGNvCA==" length="66379362" type="application/octet-stream" />
         </item>
         <item>
+            <!-- 0.3.0 crashed every machine without 3D at start (fixed in 0.3.1). Kept so the history is honest; never re-offer it. -->
             <title>Version 0.3.0</title>
             <sparkle:version>6</sparkle:version>
             <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>

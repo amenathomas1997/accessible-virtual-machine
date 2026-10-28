@@ -237,10 +237,10 @@ agent, so its clock catches up at its next time sync.
 
 ## Sound
 
-If speech from Windows starts to lag behind your keys during a long
-session, turn on Shorter speech delay in the machine's Settings. It
-keeps less sound waiting on the Mac: 70 ms instead of 220 ms on the
-Mac's side. It's experimental, so turn it off again if sound crackles.
+Each machine's Settings has a Sound choice. Balanced is the default.
+Fastest speech gets speech to you about 40 milliseconds sooner, but can
+crackle while your Mac is busy; Smoothest sound is for when Balanced
+crackles. A change takes effect at the machine's next Start.
 
 ## Restore points
 
