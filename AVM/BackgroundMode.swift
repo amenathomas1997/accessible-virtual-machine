@@ -65,6 +65,7 @@ final class BackgroundMode: ObservableObject {
 
     /// At launch (AVMAppDelegate).
     func start() {
+        AVMLog.write("AVM: Background and Startup — open at login: \(Self.loginStatusName(SMAppService.mainApp.status)); run in the background: \(runInBackground ? "on" : "off"); second monitor: \(useSecondDisplay ? "on" : "off"); starts when AVM opens: \(autoStartID?.uuidString ?? "none")")
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { BackgroundMode.shared.goToBackgroundIfChosen() }
@@ -153,6 +154,16 @@ final class BackgroundMode: ObservableObject {
         loginNeedsApproval = status == .requiresApproval
     }
 
+    static func loginStatusName(_ status: SMAppService.Status) -> String {
+        switch status {
+        case .enabled: return "on"
+        case .requiresApproval: return "waiting for approval in Login Items"
+        case .notRegistered: return "off"
+        case .notFound: return "not found"
+        @unknown default: return "unknown"
+        }
+    }
+
     func setOpensAtLogin(_ on: Bool) {
         do {
             if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
@@ -161,6 +172,7 @@ final class BackgroundMode: ObservableObject {
             Announcer.shared.announce("AVM couldn't change Open at Login. Reason: \(error.localizedDescription)", tone: .failure)
         }
         refreshLoginStatus()
+        AVMLog.write("AVM: open at login \(on ? "on" : "off") asked; macOS says \(Self.loginStatusName(SMAppService.mainApp.status))")
         if on && loginNeedsApproval {
             Announcer.shared.announce("macOS needs your OK. In Login Items in System Settings, turn on AVM.", tone: .info)
             SMAppService.openSystemSettingsLoginItems()
@@ -184,11 +196,18 @@ final class BackgroundMode: ObservableObject {
     }
 
     /// Once, when the main window first appears. `start` is the dashboard's
-    /// own Start. In the background when chosen, once the machine runs.
-    func autoStartIfChosen(in configurations: [VMConfiguration], start: (VMConfiguration) -> Void) {
+    /// own Start, and its second argument whether the machine takes the
+    /// Mac's keyboard: not when it has a keyboard for Windows of its own
+    /// (2026-10-28, a user's report: at login, a blind user's keyboard went
+    /// into Windows before they'd done anything). In the background when
+    /// chosen, once the machine runs.
+    func autoStartIfChosen(in configurations: [VMConfiguration], start: (VMConfiguration, Bool) -> Void) {
         guard !autoStarted else { return }
         autoStarted = true
-        guard let id = autoStartID else { return }
+        guard let id = autoStartID else {
+            AVMLog.write("AVM: no machine is chosen to start when AVM opens")
+            return
+        }
         // Not for the accessibility audit or a test job, which open AVM
         // with options and sample machines of their own.
         if CommandLine.arguments.dropFirst().contains(where: { $0.hasPrefix("--") }) { return }
@@ -197,9 +216,9 @@ final class BackgroundMode: ObservableObject {
             return
         }
         guard !config.isATemplate, MachineSessions.shared.session(for: id) == nil else { return }
-        AVMLog.write("AVM: starting \(config.name), chosen to start when AVM opens")
+        AVMLog.write("AVM: starting \(config.name), chosen to start when AVM opens (keyboard for Windows: \(config.windowsKeyboardName ?? "none"))")
         Announcer.shared.announce("Starting \(config.name).", tone: .info)
-        start(config)
+        start(config, config.windowsKeyboardID == nil)
         guard runInBackground, config.windowsKeyboardID != nil else { return }
         Task { @MainActor in
             // Up to ten minutes for a first boot or an update.
