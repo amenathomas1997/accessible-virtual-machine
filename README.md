@@ -250,7 +250,9 @@ account in the machine, turns on its Remote Desktop host (Windows 11
 Pro's own, or xrdp on Linux), forwards a port on the Mac to it, and
 publishes the machine's name on the local network while it runs. In
 Microsoft's Windows App, add a PC named like amena-pc.local and sign in
-with that account. The password is kept in the Mac's keychain.
+with that account. The password is kept in the Mac's keychain. On
+Linux the remote session has no sound and should use an account other
+than the one signed in at the machine's screen.
 
 ## Restore points
 
