@@ -10,6 +10,14 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.3.9</title>
+            <sparkle:version>15</sparkle:version>
+            <sparkle:shortVersionString>0.3.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <pubDate>Wed, 28 Oct 2026 14:44:27 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.3.9/AVM-0.3.9.zip" sparkle:edSignature="s2UAjgj1yzy/KNafoNTHMG41trwPl7zJXMCXQNixaAF30lBXdHYqooLXZcPm10ME8Etk34DKqYNtUzgbdPDJAA==" length="66526398" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.3.8</title>
             <sparkle:version>14</sparkle:version>
             <sparkle:shortVersionString>0.3.8</sparkle:shortVersionString>
