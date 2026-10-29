@@ -98,6 +98,18 @@ IFS=',' read -r -a ONTO_LIST <<< "$ONTO"
 for p in "${ONTO_LIST[@]}"; do
     PARENTS+=("$(git -C "$REPO_ROOT" rev-parse --verify "$p^{commit}")") || fail "$p isn't a commit."
 done
+# Someone else's commits on the branch this goes on (2026-10-28, fourth
+# audit): this script takes the fork's whole tree, so a fix Allison made
+# on the pull request (a suggestion she committed) would be silently
+# undone in it. Those commits are listed, and nothing is made.
+ME="$(git -C "$REPO_ROOT" config user.email)"
+for p in "${PARENTS[@]}"; do
+    OTHERS="$(git -C "$REPO_ROOT" log --format='%h %an <%ae> %s' "$HER..$p" | grep -v -F "<$ME>" || true)"
+    if [ -n "$OTHERS" ]; then
+        echo "$OTHERS"
+        fail "$(git -C "$REPO_ROOT" rev-parse --short "$p") has commits by someone else (above), which this sync would undo." "Bring those changes into the fork first, then run this again."
+    fi
+done
 
 WT="$(mktemp -d "${TMPDIR:-/tmp}/avm-sync.XXXXXX")"
 cleanup() { git -C "$REPO_ROOT" worktree remove --force "$WT" >/dev/null 2>&1 || true; rm -rf "$WT"; }
