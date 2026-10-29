@@ -102,12 +102,18 @@ done
 # audit): this script takes the fork's whole tree, so a fix Allison made
 # on the pull request (a suggestion she committed) would be silently
 # undone in it. Those commits are listed, and nothing is made.
-ME="$(git -C "$REPO_ROOT" config user.email)"
-[ -n "$ME" ] || fail "git's user.email is empty, so the fork's own commits can't be told from others'." "Set it with: git config user.email <address>"
-# Other addresses of the user's own (a suggestion applied in GitHub's web
-# UI lands under the noreply address): AVM_SYNC_EMAILS="a@x b@y".
+# Unset as well as empty (2026-10-29, sixth audit): an unset one ended the
+# script under set -e with nothing said.
+ME="$(git -C "$REPO_ROOT" config user.email || true)"
+[ -n "$ME" ] || fail "git's user.email isn't set, so the fork's own commits can't be told from others'." "Set it with: git config user.email <address>"
+# By who committed, not who wrote (2026-10-29, sixth audit): a suggestion
+# applied in GitHub's web page is authored under the user's own noreply
+# address, but GitHub commits it, and listing that address let exactly the
+# commits this guard is for through, to be undone. AVM_SYNC_EMAILS="a@x b@y"
+# is only for the user's own committer addresses on other Macs; never
+# GitHub's: bring a web-page commit into the fork first.
 for p in "${PARENTS[@]}"; do
-    OTHERS="$(git -C "$REPO_ROOT" log --format='%h %an <%ae> %s' "$HER..$p")"
+    OTHERS="$(git -C "$REPO_ROOT" log --format='%h %cn <%ce> %s' "$HER..$p")"
     for addr in $ME ${AVM_SYNC_EMAILS:-}; do
         OTHERS="$(printf '%s\n' "$OTHERS" | grep -v -F "<$addr>" || true)"
     done
