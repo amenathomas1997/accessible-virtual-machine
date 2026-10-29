@@ -103,8 +103,14 @@ done
 # on the pull request (a suggestion she committed) would be silently
 # undone in it. Those commits are listed, and nothing is made.
 ME="$(git -C "$REPO_ROOT" config user.email)"
+[ -n "$ME" ] || fail "git's user.email is empty, so the fork's own commits can't be told from others'." "Set it with: git config user.email <address>"
+# Other addresses of the user's own (a suggestion applied in GitHub's web
+# UI lands under the noreply address): AVM_SYNC_EMAILS="a@x b@y".
 for p in "${PARENTS[@]}"; do
-    OTHERS="$(git -C "$REPO_ROOT" log --format='%h %an <%ae> %s' "$HER..$p" | grep -v -F "<$ME>" || true)"
+    OTHERS="$(git -C "$REPO_ROOT" log --format='%h %an <%ae> %s' "$HER..$p")"
+    for addr in $ME ${AVM_SYNC_EMAILS:-}; do
+        OTHERS="$(printf '%s\n' "$OTHERS" | grep -v -F "<$addr>" || true)"
+    done
     if [ -n "$OTHERS" ]; then
         echo "$OTHERS"
         fail "$(git -C "$REPO_ROOT" rev-parse --short "$p") has commits by someone else (above), which this sync would undo." "Bring those changes into the fork first, then run this again."
