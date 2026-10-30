@@ -650,6 +650,12 @@ dashboard's Start buttons work too.
   Narrator. Control-Command-Escape comes back. The first time, AVM puts a
   small helper in Windows for this, which takes a few seconds. It's on
   unless you turn it off in the machine's Settings.
+- **Keep a Windows app in the Dock and Applications.** Command-Tab to
+  one, then choose Keep in Dock and Applications (in its window, or its
+  menu named for the machine). It's in the Dock and in Applications
+  (Command-Shift-A), in AVM Windows Apps. Quit AVM, open it from there,
+  and check that AVM opens, the machine starts, and after you sign in the
+  app opens with your keyboard in Windows. Try two at once, too.
 - **AVM in the background, and at login.** Background and Startup, on
   the dashboard and in the AVM menu, has three choices, all off until
   you turn them on. *Open AVM when you log in.* *Run in the background

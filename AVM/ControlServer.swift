@@ -221,15 +221,9 @@ final class ControlServer {
             session.forceStop()
             return ["ok": true, "message": "\(name) is turned off."]
 
-        // Command-Shift-E in a Windows app's Mac app (2026-10-29,
-        // WindowsApps.swift): the app forward in Windows, then entered.
-        case "enter-app":
-            guard config.guestOS == .windows, session?.vmState == .running else { return fail("\(name) isn't running.") }
-            let result = await WindowsApps.shared.enter(machine: config.id, appKey: request["app"] as? String ?? "")
-            return ["ok": result.ok, "message": result.message]
-
         // A Windows app's Mac app opened, from the Dock or Applications, or
-        // pinned or unpinned (2026-10-30, WindowsApps.swift).
+        // Command-Shift-E in it, or pinned or unpinned (2026-10-30,
+        // WindowsApps.swift). It replaces enter-app (2026-10-29).
         case "launch-app", "pin-app", "unpin-app":
             guard config.guestOS == .windows else { return fail("\(name) isn't a Windows machine.") }
             let key = request["app"] as? String ?? ""

@@ -10,15 +10,19 @@
 //     written to running.txt when the list changes: key TAB name. The key
 //     is the app's AppUserModelID when it has one (Store apps, and desktop
 //     apps that set one), else its program's path.
-//   - request.txt, written by AVM (as SYSTEM, through the agent): id TAB
-//     focus TAB key. The app's front window is restored and brought
-//     forward; reply.txt gets id TAB ok or failed TAB what happened.
+//   - request-ID.txt, written by AVM (as SYSTEM, through the agent), one
+//     file per request (2026-10-30 audit: one shared request.txt let a
+//     second request overwrite the first): id TAB focus TAB key. The
+//     app's front window is restored and brought forward; reply-ID.txt
+//     gets id TAB ok or failed TAB what happened.
 //   - id TAB launch TAB key TAB unix time (2026-10-30, apps pinned in the
 //     Mac's Dock): the same, and the app started first when no window of
-//     it is open. Written while Windows is still at its sign-in screen,
-//     it waits here for this helper, which starts at sign-in; one older
-//     than ten minutes is dropped, so an app never opens at some later
-//     sign-in nobody asked for.
+//     it is open, then waited for, up to 90 seconds, while other requests
+//     go on. Written while Windows is still at its sign-in screen, it
+//     waits here for this helper, which starts at sign-in; one older than
+//     ten minutes is dropped, so an app never opens at some later sign-in
+//     nobody asked for.
+//   - Replies older than fifteen minutes are deleted; AVM has its answer.
 //
 // It never shows a window, so it takes no focus and no screen reader
 // speaks for it. One copy per session (a named mutex).
@@ -35,8 +39,10 @@ static class AVMWindowsApps
 {
     static readonly string Folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), @"AVM\apps");
     static readonly string RunningFile = Path.Combine(Folder, "running.txt");
-    static readonly string RequestFile = Path.Combine(Folder, "request.txt");
-    static readonly string ReplyFile = Path.Combine(Folder, "reply.txt");
+
+    sealed class Pending { public string Id, Key; public DateTime Until; }
+    /// Apps started for a launch, whose window hasn't opened yet.
+    static readonly List<Pending> Waiting = new List<Pending>();
 
     [STAThread]
     static void Main()
@@ -50,8 +56,19 @@ static class AVMWindowsApps
             int ticks = 0;
             while (true)
             {
-                try { if (File.Exists(RequestFile)) Handle(File.ReadAllText(RequestFile)); }
-                catch (Exception e) { Write(ReplyFile, "0\tfailed\t" + e.Message + "\n"); }
+                string[] requests;
+                try { requests = Directory.GetFiles(Folder, "request-*.txt"); } catch { requests = new string[0]; }
+                foreach (string file in requests)
+                {
+                    try { Handle(file); }
+                    catch (Exception e)
+                    {
+                        try { File.Delete(file); } catch { }
+                        try { Reply(IdOf(file), "failed\t" + e.Message); } catch { }
+                    }
+                }
+                try { CheckWaiting(); } catch { }
+                if (ticks % 240 == 0) { try { DeleteOldReplies(); } catch { } }
                 if (ticks++ % 4 == 0)
                 {
                     try
@@ -68,25 +85,64 @@ static class AVMWindowsApps
 
     // MARK: Requests
 
-    static void Handle(string request)
+    static void Handle(string file)
     {
-        File.Delete(RequestFile);
+        string request = File.ReadAllText(file);
+        // AVM writes the line and its newline at once; without the newline
+        // it's still being written, unless it's been ten seconds.
+        if (!request.EndsWith("\n") && DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromSeconds(10)) return;
+        File.Delete(file);
+        string id = IdOf(file);
         string[] parts = request.Trim().Split('\t');
-        string id = parts.Length > 0 ? parts[0] : "0";
-        if (parts.Length < 3 || (parts[1] != "focus" && parts[1] != "launch")) { Write(ReplyFile, id + "\tfailed\tnot understood\n"); return; }
+        if (parts.Length < 3 || (parts[1] != "focus" && parts[1] != "launch")) { Reply(id, "failed\tnot understood"); return; }
         string key = parts[2];
         IntPtr window = WindowOf(key);
-        if (window == IntPtr.Zero && parts[1] == "launch")
+        if (window != IntPtr.Zero) { Forward(id, window); return; }
+        if (parts[1] != "launch") { Reply(id, "failed\tno window is open for it"); return; }
+        long asked;
+        long now = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
+        if (parts.Length < 4 || !long.TryParse(parts[3], out asked) || now - asked > 600) { Reply(id, "failed\tthe request was too old"); return; }
+        Start(key);
+        // A cold start in a virtual machine can be slow: up to 90 seconds,
+        // checked with every pass, so other requests aren't held up.
+        Waiting.Add(new Pending { Id = id, Key = key, Until = DateTime.UtcNow.AddSeconds(90) });
+    }
+
+    static void CheckWaiting()
+    {
+        for (int i = Waiting.Count - 1; i >= 0; i--)
         {
-            long asked;
-            long now = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
-            if (parts.Length < 4 || !long.TryParse(parts[3], out asked) || now - asked > 600) { Write(ReplyFile, id + "\tfailed\tthe request was too old\n"); return; }
-            Start(key);
-            for (int i = 0; i < 80 && window == IntPtr.Zero; i++) { Thread.Sleep(250); window = WindowOf(key); }
+            var p = Waiting[i];
+            IntPtr window = WindowOf(p.Key);
+            if (window != IntPtr.Zero) { Waiting.RemoveAt(i); Forward(p.Id, window); }
+            else if (DateTime.UtcNow > p.Until) { Waiting.RemoveAt(i); Reply(p.Id, "failed\tit didn't open a window within 90 seconds"); }
         }
-        if (window == IntPtr.Zero) { Write(ReplyFile, id + "\tfailed\tno window is open for it\n"); return; }
+    }
+
+    static void Forward(string id, IntPtr window)
+    {
         bool front = BringForward(window);
-        Write(ReplyFile, id + (front ? "\tok\t" : "\tfailed\twindows kept another window in front: ") + Title(window) + "\n");
+        Reply(id, (front ? "ok\t" : "failed\twindows kept another window in front: ") + Title(window));
+    }
+
+    /// The id in request-ID.txt: letters, digits and dashes only.
+    static string IdOf(string file)
+    {
+        string name = Path.GetFileNameWithoutExtension(file);
+        string id = name.StartsWith("request-") ? name.Substring(8) : "0";
+        foreach (char c in id) if (!char.IsLetterOrDigit(c) && c != '-') return "0";
+        return id.Length == 0 ? "0" : id;
+    }
+
+    static void Reply(string id, string text)
+    {
+        Write(Path.Combine(Folder, "reply-" + id + ".txt"), id + "\t" + text + "\n");
+    }
+
+    static void DeleteOldReplies()
+    {
+        foreach (string file in Directory.GetFiles(Folder, "reply-*.txt"))
+            if (DateTime.UtcNow - File.GetLastWriteTimeUtc(file) > TimeSpan.FromMinutes(15)) File.Delete(file);
     }
 
     static IntPtr WindowOf(string key)

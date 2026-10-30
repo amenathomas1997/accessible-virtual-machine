@@ -225,6 +225,15 @@ Command-Tab without it. For this, AVM puts a small helper in Windows
 it shows no window. Turn the list off
 in the machine's Settings, under Windows Apps on the Mac.
 
+To keep one, Command-Tab to it and choose **Keep in Dock and
+Applications** (a button in its window, and in its menu named for the
+machine). It goes in the Dock and in Applications, in the AVM Windows
+Apps folder. Open it from there, the Dock, Launchpad or Spotlight even
+when AVM or the machine isn't running: AVM opens, the machine starts, and
+once you're signed in to Windows the app opens there with your keyboard
+in it. **Remove from Dock and Applications** undoes it, moving it to the
+Trash.
+
 ## macOS virtual machines
 
 **New macOS Virtual Machine…** on the dashboard makes a macOS machine:

@@ -11,7 +11,9 @@
 // keyboard into it. Control-Command-Escape comes back, as always.
 //
 // Pinned (2026-10-30): Keep in Dock and Applications makes a lasting copy
-// in ~/Applications/AVM Windows Apps, in the Dock too. Opened by the
+// in /Applications/AVM Windows Apps (the home folder's Applications when
+// that can't be written), in the Dock too; AVM makes it again when AVM
+// itself changes. Opened by the
 // person, from there or the Dock, rather than by AVM (which passes
 // --avm-opened), it asks AVM to open its app: AVM opens if it isn't, the
 // machine starts if it isn't running, and once Windows is signed in the
