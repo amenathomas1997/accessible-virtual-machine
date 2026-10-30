@@ -176,6 +176,9 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
     /// The same for the Mac's own keyboard, typing in the machine's window;
     /// nil: as printed.
     var macKeyLayout: MacKeyLayout?
+    /// Windows apps in the Mac's Command-Tab list (WindowsApps.swift,
+    /// 2026-10-29); nil: on.
+    var windowsAppsInCommandTab: Bool?
 
     // MARK: - Display (2026-10-28)
 

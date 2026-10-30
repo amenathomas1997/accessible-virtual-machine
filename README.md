@@ -220,6 +220,24 @@ It takes effect the next time Windows starts. Nothing changes inside
 Windows, so if you swapped these keys there already (SharpKeys, or the
 registry's Scancode Map), undo that first, or they swap back.
 
+## Windows apps in Command-Tab
+
+While a Windows machine runs, every app with a window open in it is in
+your Mac's Command-Tab list as an app of its own, such as "Microsoft Word
+(Amena-PC)", added when it opens and gone when it closes. Command-Tab to
+one and VoiceOver reads its window; press **Command-Shift-E** and the app
+comes forward in Windows and your keyboard goes into the machine, where
+NVDA, JAWS or Narrator read it as usual. Control-Command-Escape brings
+you back to the Mac, where Command-Tab takes you to the next one. While
+your keyboard is in Windows, Command-Tab stays off, as it always has.
+
+macOS puts these apps in the Dock too; it has no way to list an app in
+Command-Tab without it. For this, AVM puts a small helper in Windows
+(`C:\ProgramData\AVM`, started at sign-in by the scheduled task
+`\AVM\Windows Apps`), which lists the apps open and brings one forward;
+it shows no window. Turn it off in the machine's Settings, under Mac
+Keyboard in Windows: Windows apps in Command-Tab.
+
 ## macOS virtual machines
 
 **New macOS Virtual Machine…** on the dashboard makes a macOS machine:

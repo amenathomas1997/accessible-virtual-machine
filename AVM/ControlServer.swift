@@ -221,6 +221,13 @@ final class ControlServer {
             session.forceStop()
             return ["ok": true, "message": "\(name) is turned off."]
 
+        // Command-Shift-E in a Windows app's Mac app (2026-10-29,
+        // WindowsApps.swift): the app forward in Windows, then entered.
+        case "enter-app":
+            guard config.guestOS == .windows, session?.vmState == .running else { return fail("\(name) isn't running.") }
+            let result = await WindowsApps.shared.enter(machine: config.id, appKey: request["app"] as? String ?? "")
+            return ["ok": result.ok, "message": result.message]
+
         case "send-file":
             guard !isMac else { return fail("Send File works with Windows and Linux machines.") }
             guard let session, session.vmState == .running else { return fail("\(name) isn't running.") }

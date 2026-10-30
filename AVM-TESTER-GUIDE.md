@@ -651,6 +651,13 @@ dashboard's Start buttons work too.
   is Right Alt and right Option the Applications key instead). An Apple
   keyboard chosen as Keyboard for Windows has the same choice. Takes
   effect at the next Start; undo any swap you made inside Windows first.
+- **Windows apps in Command-Tab.** While Windows runs, each app open in
+  it is in your Mac's Command-Tab list (and the Dock), named for the app
+  and the machine. Command-Tab to one, press Command-Shift-E, and it comes
+  forward in Windows with your keyboard in it, for NVDA, JAWS or
+  Narrator. Control-Command-Escape comes back. The first time, AVM puts a
+  small helper in Windows for this, which takes a few seconds. It's on
+  unless you turn it off in the machine's Settings.
 - **AVM in the background, and at login.** Background and Startup, on
   the dashboard and in the AVM menu, has three choices, all off until
   you turn them on. *Open AVM when you log in.* *Run in the background

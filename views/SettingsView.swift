@@ -639,6 +639,7 @@ struct SettingsView: View {
     @State private var windowsKeyboardAppleISO = false
     @State private var windowsKeyboardLayout = MacKeyLayout.asPrinted
     @State private var macKeyLayout = MacKeyLayout.asPrinted
+    @State private var windowsAppsInCommandTab = true
 
     // MARK: - The Mac's keys in Windows (2026-10-29)
 
@@ -656,6 +657,11 @@ struct SettingsView: View {
             }
             .accessibilityHint("For your Mac's own keyboard, typing in the machine's window.")
             Text(macKeyLayout.keys)
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+            Toggle("Windows apps in Command-Tab", isOn: $windowsAppsInCommandTab)
+                .accessibilityHint("Each app open in \(guest) is in your Mac's Command-Tab list. Switch to one, then press Command-Shift-E to type in it.")
+            Text("Each app open in \(guest) is an app in Command-Tab, and in the Dock, while it's open. Switch to one and press Command-Shift-E: it comes forward and your keyboard goes into \(guest). AVM puts a small helper in \(guest) for this.")
                 .font(.caption)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1207,6 +1213,7 @@ struct SettingsView: View {
         windowsKeyboardAppleISO = saved.windowsKeyboardAppleISO == true
         windowsKeyboardLayout = saved.windowsKeyboardLayout ?? .asPrinted
         macKeyLayout = saved.macKeyLayout ?? .asPrinted
+        windowsAppsInCommandTab = saved.windowsAppsInCommandTab != false
         displayID = saved.displayID
         displayName = saved.displayName
         remoteDesktopOn = saved.remoteDesktopOn
@@ -1418,6 +1425,7 @@ struct SettingsView: View {
             updated.windowsKeyboardAppleISO = windowsKeyboardID != nil && windowsKeyboardAppleISO ? true : nil
             updated.windowsKeyboardLayout = windowsKeyboardID != nil && windowsKeyboardLayout != .asPrinted ? windowsKeyboardLayout : nil
             updated.macKeyLayout = macKeyLayout == .asPrinted ? nil : macKeyLayout
+            updated.windowsAppsInCommandTab = windowsAppsInCommandTab ? nil : false
             updated.displayID = displayID
             updated.displayName = displayID == nil ? nil : displayName
             let remoteDesktopWasOn = saved.remoteDesktopOn
