@@ -787,6 +787,57 @@ final class HIDKeyMapTests: XCTestCase {
     }
 }
 
+// MARK: - Option and Command in Windows (2026-10-29)
+
+final class MacKeyLayoutTests: XCTestCase {
+    let leftOption = 0x38, leftCommand = 0x15B, rightOption = 0x138, rightCommand = 0x15C
+    let insert = 0x152, applications = 0x15D
+
+    func testAsPrintedChangesNothing() {
+        for code in [leftOption, leftCommand, rightOption, rightCommand, 0x1E, 0x1D] {
+            XCTAssertEqual(MacKeyLayout.asPrinted.apply(code), code)
+        }
+    }
+
+    /// The user's own Windows remap: left Alt and Windows traded, right Alt
+    /// to Insert, right Windows to Applications.
+    func testWithoutANumberPad() {
+        let layout = MacKeyLayout.pcOrderNoNumberPad
+        XCTAssertEqual(layout.apply(leftOption), leftCommand, "left Option is Windows")
+        XCTAssertEqual(layout.apply(leftCommand), leftOption, "left Command is Alt")
+        XCTAssertEqual(layout.apply(rightOption), insert)
+        XCTAssertEqual(layout.apply(rightCommand), applications)
+        XCTAssertEqual(layout.apply(0x1D), 0x1D, "Control stays")
+        XCTAssertEqual(layout.apply(0x1E), 0x1E, "letters stay")
+    }
+
+    func testWithANumberPad() {
+        let layout = MacKeyLayout.pcOrderNumberPad
+        XCTAssertEqual(layout.apply(leftOption), leftCommand)
+        XCTAssertEqual(layout.apply(leftCommand), leftOption)
+        XCTAssertEqual(layout.apply(rightCommand), rightOption, "right Command is Right Alt")
+        XCTAssertEqual(layout.apply(rightOption), applications)
+    }
+
+    /// A machine saved before layouts existed reads as As printed.
+    func testOlderConfigurationsReadAsPrinted() throws {
+        let json = #"{"rawValue":"pcOrderNoNumberPad"}"#
+        XCTAssertNil(try? JSONDecoder().decode(MacKeyLayout.self, from: Data(json.utf8)))
+        XCTAssertEqual(try JSONDecoder().decode([MacKeyLayout].self, from: Data(#"["pcOrderNumberPad"]"#.utf8)), [.pcOrderNumberPad])
+    }
+
+    /// The keyboard for Windows: Option goes as Windows, and comes up as
+    /// Windows too.
+    func testTheKeyboardForWindowsUsesItsLayout() {
+        var translator = WindowsKeyTranslator()
+        translator.layout = .pcOrderNoNumberPad
+        XCTAssertEqual(translator.translate(usage: 0xE2, pressed: true), .key(Int32(leftCommand), down: true))
+        XCTAssertEqual(translator.translate(usage: 0xE2, pressed: false), .key(Int32(leftCommand), down: false))
+        XCTAssertEqual(translator.translate(usage: 0xE6, pressed: true), .key(Int32(insert), down: true))
+        XCTAssertEqual(translator.releaseAll(), [Int32(insert)])
+    }
+}
+
 // MARK: - Report descriptors (2026-10-29)
 
 final class HIDReportDescriptorTests: XCTestCase {

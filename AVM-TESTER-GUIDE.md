@@ -643,6 +643,14 @@ dashboard's Start buttons work too.
   Monitoring, then turn on AVM in System Settings, under Privacy &
   Security, then Input Monitoring. If macOS then offers to quit and
   reopen AVM, choose Later.
+- **Option and Command where a PC has them.** In a Windows machine's
+  Settings, Mac Keyboard in Windows: As printed (Option is Alt, Command
+  is Windows), PC order for a keyboard without a number pad (Option is
+  Windows, Command is Alt, right Option is Insert, right Command is the
+  Applications key), or PC order for one with a number pad (right Command
+  is Right Alt and right Option the Applications key instead). An Apple
+  keyboard chosen as Keyboard for Windows has the same choice. Takes
+  effect at the next Start; undo any swap you made inside Windows first.
 - **AVM in the background, and at login.** Background and Startup, on
   the dashboard and in the AVM menu, has three choices, all off until
   you turn them on. *Open AVM when you log in.* *Run in the background

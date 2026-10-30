@@ -170,6 +170,12 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
     /// true: an Apple ISO keyboard, whose § and ` keys AVM swaps back
     /// (HIDKeyMap.isoSwapped). nil: a PC or ANSI keyboard, as it is.
     var windowsKeyboardAppleISO: Bool?
+    /// Where the keyboard for Windows' Option and Command keys land
+    /// (MacKeyLayout.swift, 2026-10-29); nil: as printed, for a PC keyboard.
+    var windowsKeyboardLayout: MacKeyLayout?
+    /// The same for the Mac's own keyboard, typing in the machine's window;
+    /// nil: as printed.
+    var macKeyLayout: MacKeyLayout?
 
     // MARK: - Display (2026-10-28)
 

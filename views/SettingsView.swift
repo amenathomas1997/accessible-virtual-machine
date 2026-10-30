@@ -388,6 +388,11 @@ struct SettingsView: View {
                 sharedFolderSection
             }
 
+            // The Mac's keys in Windows (2026-10-29, MacKeyLayout.swift)
+            if configuration.guestOS == .windows {
+                macKeyLayoutSection
+            }
+
             // Keyboard for Windows (2026-10-26)
             if configuration.guestOS == .windows {
                 windowsKeyboardSection
@@ -632,6 +637,30 @@ struct SettingsView: View {
     @State private var windowsKeyboardID: String?
     @State private var windowsKeyboardName: String?
     @State private var windowsKeyboardAppleISO = false
+    @State private var windowsKeyboardLayout = MacKeyLayout.asPrinted
+    @State private var macKeyLayout = MacKeyLayout.asPrinted
+
+    // MARK: - The Mac's keys in Windows (2026-10-29)
+
+    private var macKeyLayoutSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Mac Keyboard in Windows")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            Text("Where your Mac keyboard's Option and Command keys land in \(guest). Takes effect the next time \(guest) starts. If you swapped them inside \(guest) already, undo that there first, or they swap back.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Picker("Option and Command", selection: $macKeyLayout) {
+                ForEach(MacKeyLayout.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .accessibilityHint("For your Mac's own keyboard, typing in the machine's window.")
+            Text(macKeyLayout.keys)
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal)
+    }
     @State private var connectedKeyboards: [(id: String, name: String)] = []
     @State private var keyboardsMessage: String?
 
@@ -662,6 +691,13 @@ struct SettingsView: View {
             if windowsKeyboardID != nil {
                 Toggle("It's an Apple keyboard with a § key (ISO)", isOn: $windowsKeyboardAppleISO)
                     .accessibilityHint("Swaps the § key and the ` key back, as macOS does for these keyboards. Leave off for other keyboards.")
+                Picker("Its Option and Command keys", selection: $windowsKeyboardLayout) {
+                    ForEach(MacKeyLayout.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .accessibilityHint("For an Apple keyboard. A PC keyboard's keys are where they're printed: leave it As printed.")
+                Text(windowsKeyboardLayout.keys)
+                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack {
                 Button("Look Again") { Task { await loadKeyboards(registering: true) } }
@@ -1169,6 +1205,8 @@ struct SettingsView: View {
         windowsKeyboardID = saved.windowsKeyboardID
         windowsKeyboardName = saved.windowsKeyboardName
         windowsKeyboardAppleISO = saved.windowsKeyboardAppleISO == true
+        windowsKeyboardLayout = saved.windowsKeyboardLayout ?? .asPrinted
+        macKeyLayout = saved.macKeyLayout ?? .asPrinted
         displayID = saved.displayID
         displayName = saved.displayName
         remoteDesktopOn = saved.remoteDesktopOn
@@ -1378,6 +1416,8 @@ struct SettingsView: View {
             updated.windowsKeyboardID = windowsKeyboardID
             updated.windowsKeyboardName = windowsKeyboardID == nil ? nil : windowsKeyboardName
             updated.windowsKeyboardAppleISO = windowsKeyboardID != nil && windowsKeyboardAppleISO ? true : nil
+            updated.windowsKeyboardLayout = windowsKeyboardID != nil && windowsKeyboardLayout != .asPrinted ? windowsKeyboardLayout : nil
+            updated.macKeyLayout = macKeyLayout == .asPrinted ? nil : macKeyLayout
             updated.displayID = displayID
             updated.displayName = displayID == nil ? nil : displayName
             let remoteDesktopWasOn = saved.remoteDesktopOn

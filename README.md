@@ -200,6 +200,26 @@ time AVM says so and macOS asks: turn on AVM in System Settings, under
 Privacy & Security, then Input Monitoring. If macOS then offers to quit
 and reopen AVM, choose Later; the keyboard goes to Windows without it.
 
+## Option and Command in Windows
+
+On a Mac keyboard, Option is where a PC's Windows key is and Command is
+where its Alt is. In a Windows machine's Settings, **Mac Keyboard in
+Windows** puts them in a PC's order, for your Mac's keyboard and, under
+Keyboard for Windows, for an Apple keyboard given to Windows:
+
+- **As printed** (the default): Option is Alt, Command is Windows.
+- **PC order, keyboard without a number pad**: Option is Windows,
+  Command is Alt, right Option is Insert (for your screen reader's
+  desktop layout, on a keyboard with no Insert key) and right Command is
+  the Applications key.
+- **PC order, keyboard with a number pad**: Option is Windows, Command is
+  Alt, right Command is Right Alt and right Option is the Applications
+  key; number-pad 0 is Insert with Num Lock off.
+
+It takes effect the next time Windows starts. Nothing changes inside
+Windows, so if you swapped these keys there already (SharpKeys, or the
+registry's Scancode Map), undo that first, or they swap back.
+
 ## macOS virtual machines
 
 **New macOS Virtual Machine…** on the dashboard makes a macOS machine:

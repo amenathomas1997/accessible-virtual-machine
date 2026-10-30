@@ -101,6 +101,9 @@ final class WindowsKeyboard {
         self.keyboardID = keyboardID
         self.target = target
         self.appleISO = appleISO
+        // Its machine's layout (MacKeyLayout, 2026-10-29), read at every
+        // start, the restarts included, as the ISO swap is passed.
+        translator.layout = target?.activeConfiguration?.windowsKeyboardLayout ?? .asPrinted
         _ = lockObservers   // watching for the screen lock from now on
         // Locked already (2026-10-28, fifth audit): the notification came
         // before the observers existed, and the keyboard typed into the
