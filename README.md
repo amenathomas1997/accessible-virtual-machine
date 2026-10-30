@@ -207,6 +207,15 @@ where its Alt is. AVM sends them as printed: Option is Alt, Command is
 Windows. To put them in a PC's order, remap them inside Windows, with
 SharpKeys for example.
 
+## Virtual machines in Command-Tab
+
+Each running virtual machine is in your Mac's Command-Tab list as an app
+of its own, named for it, such as "Amena-PC", and in the Dock while it
+runs. Command-Tab to one and you're in it: its window comes forward with
+your keyboard in the machine. Control-Command-Escape brings you back to
+the Mac, where Command-Tab takes you to another. It leaves the list when
+the machine shuts down.
+
 ## Windows apps in Command-Tab
 
 While a Windows machine runs, every app with a window open in it is in

@@ -20,6 +20,12 @@
 // app opens and the keyboard goes into it. A click on its Dock icon while
 // it runs does the same, and so does Command-Shift-E.
 //
+// A machine's own app (AVMKind = machine, 2026-10-30): one for each
+// running machine, named for it, so Command-Tab switches between machines.
+// Switched to, or clicked in the Dock, it hands the front to AVM and asks
+// it to enter the machine ("enter-machine"): its window comes forward with
+// the keyboard in it. Its window shows only if AVM couldn't.
+//
 // Everything it needs is in its Info.plist, written by AVM: AVMAppName,
 // AVMAppKey (the Windows helper's key for the app), AVMMachineID,
 // AVMMachineName, AVMControlSocket, AVMBundleID (AVM's own) and AVMPinned.
@@ -31,11 +37,16 @@ final class WindowsAppEntry: NSObject, NSApplicationDelegate {
     private var appName: String { info["AVMAppName"] as? String ?? "Windows app" }
     private var machineName: String { info["AVMMachineName"] as? String ?? "Windows" }
     private var pinned: Bool { info["AVMPinned"] as? Bool == true }
+    private var isMachine: Bool { info["AVMKind"] as? String == "machine" }
     private var window: NSWindow?
     private var status: NSTextField?
     private var asking = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if isMachine {
+            buildMachine()
+            return
+        }
         buildMenu()
         let text = NSTextField(wrappingLabelWithString: "\(appName) in \(machineName). Press Command-Shift-E to type in it. Control-Command-Escape brings you back to the Mac.")
         text.setAccessibilityLabel(text.stringValue)
@@ -61,16 +72,78 @@ final class WindowsAppEntry: NSObject, NSApplicationDelegate {
         if !CommandLine.arguments.contains("--avm-opened") { openApp() }
     }
 
-    /// Back from Command-Tab: the window is what VoiceOver reads.
+    /// Back from Command-Tab: the window is what VoiceOver reads; for a
+    /// machine, straight into it.
     func applicationDidBecomeActive(_ notification: Notification) {
+        if isMachine {
+            enterMachine()
+            return
+        }
         window?.makeKeyAndOrderFront(nil)
     }
 
     /// A click on its Dock icon while it runs.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if isMachine {
+            enterMachine()
+            return false
+        }
         window?.makeKeyAndOrderFront(nil)
         openApp()
         return true
+    }
+
+    // MARK: A machine's own app (2026-10-30)
+
+    private func buildMachine() {
+        let main = NSMenu()
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+        let enter = NSMenuItem(title: "Enter \(machineName)", action: #selector(enterMachineChosen(_:)), keyEquivalent: "e")
+        enter.keyEquivalentModifierMask = [.command, .shift]
+        enter.target = self
+        appMenu.addItem(enter)
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Hide \(machineName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+        NSApp.mainMenu = main
+        // Shown only when AVM couldn't enter the machine, to say why.
+        let text = NSTextField(wrappingLabelWithString: "\(machineName): switching here puts your keyboard into it. Control-Command-Escape brings you back to the Mac.")
+        let enterButton = NSButton(title: "Enter \(machineName)", target: self, action: #selector(enterMachineChosen(_:)))
+        let stack = NSStackView(views: [text, enterButton])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 130),
+                              styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        window.title = machineName
+        window.contentView = stack
+        window.isReleasedWhenClosed = false
+        window.center()
+        self.window = window
+        status = text
+        if !CommandLine.arguments.contains("--avm-opened") { enterMachine() }
+    }
+
+    @objc func enterMachineChosen(_ sender: Any?) { enterMachine() }
+
+    /// AVM takes the front and enters the machine; only a refusal is said
+    /// here, in the window.
+    private func enterMachine() {
+        guard !asking else { return }
+        asking = true
+        if #available(macOS 14.0, *), let avm = info["AVMBundleID"] as? String {
+            NSApp.yieldActivation(toApplicationWithBundleIdentifier: avm)
+        }
+        ask("enter-machine") { reply in
+            self.asking = false
+            if reply?["ok"] as? Bool != true {
+                self.window?.makeKeyAndOrderFront(nil)
+                self.say(reply?["message"] as? String ?? "AVM didn't answer. Open AVM, then try again.")
+            }
+        }
     }
 
     private func buildMenu() {

@@ -221,6 +221,19 @@ final class ControlServer {
             session.forceStop()
             return ["ok": true, "message": "\(name) is turned off."]
 
+        // A machine's own app in Command-Tab, switched to (2026-10-30,
+        // WindowsApps.swift): its window forward and the keyboard in it.
+        case "enter-machine":
+            if BackgroundMode.shared.inBackground { BackgroundMode.shared.comeForward(announce: false) }
+            if isMac {
+                guard mac.runningID == config.id else { return fail("\(name) isn't running.") }
+                mac.enter()
+                return ["ok": true, "message": ""]
+            }
+            guard let session, session.vmState == .running || session.vmState == .paused else { return fail("\(name) isn't running.") }
+            MachineSessions.shared.enter(config.id)
+            return ["ok": true, "message": ""]
+
         // A Windows app's Mac app opened, from the Dock or Applications, or
         // Command-Shift-E in it, or pinned or unpinned (2026-10-30,
         // WindowsApps.swift). It replaces enter-app (2026-10-29).

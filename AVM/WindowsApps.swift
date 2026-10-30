@@ -27,6 +27,13 @@
 //
 // Every few seconds, for each running Windows machine with the setting on
 // (VMConfiguration.windowsAppsInCommandTab, on unless turned off).
+//
+// Machines too (2026-10-30, the user's request, to switch between them):
+// each running machine, of any kind, has an app of its own in Command-Tab,
+// named for it, made from the same AVMWindowsApp program
+// (AVMKind = machine). Switched to, it hands the front to AVM, which
+// brings the machine's window forward with the keyboard in it
+// ("enter-machine"). It goes when the machine stops.
 
 import AppKit
 import CryptoKit
@@ -61,6 +68,8 @@ final class WindowsApps {
     private var launching: Set<String> = []
     /// Pinned ones looked over this run (refreshPinned).
     private var pinnedRefreshed = false
+    /// Each running machine's own app, by machine (syncMachines).
+    private var machineEntries: [UUID: Entry] = [:]
 
     private var bundlePrefix: String { (Bundle.main.bundleIdentifier ?? "com.fullcircleat.AVM") + ".windowsapp." }
 
@@ -76,6 +85,8 @@ final class WindowsApps {
     /// AVM quitting: every Windows app's Mac app goes too.
     func quitAll() {
         for machine in entries.keys { quitEntries(of: machine) }
+        for entry in machineEntries.values { quit(entry.bundleID) }
+        machineEntries = [:]
         quitLeftovers()
     }
 
@@ -87,6 +98,7 @@ final class WindowsApps {
             pinnedRefreshed = true
             refreshPinned(store)
         }
+        syncMachines()
         // Every running Windows machine gets the helper (so 0.4.12's AVM
         // Keyboard is taken out of each); only those with the setting on
         // get their apps in Command-Tab.
@@ -221,7 +233,7 @@ final class WindowsApps {
     }
 
     private func build(_ url: URL, bundleID: String, title: String, name: String, key: String,
-                       machine: UUID, machineName: String, pinned: Bool = false) throws {
+                       machine: UUID, machineName: String, pinned: Bool = false, kind: String = "app") throws {
         let fm = FileManager.default
         guard let stub = Bundle.main.url(forAuxiliaryExecutable: "AVMWindowsApp") else {
             throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "AVMWindowsApp isn't in AVM"])
@@ -247,6 +259,7 @@ final class WindowsApps {
             "AVMControlSocket": ControlServer.socketURL?.path ?? "",
             "AVMBundleID": Bundle.main.bundleIdentifier ?? "",
             "AVMPinned": pinned,
+            "AVMKind": kind,
         ]
         let plist = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
         try plist.write(to: url.appendingPathComponent("Contents/Info.plist"))
@@ -277,6 +290,45 @@ final class WindowsApps {
         for app in NSWorkspace.shared.runningApplications where app.bundleIdentifier?.hasPrefix(bundlePrefix) == true {
             if keepingPinned, app.bundleIdentifier?.hasPrefix(bundlePrefix + "pinned.") == true { continue }
             app.terminate()
+        }
+    }
+
+    // MARK: Machines in Command-Tab (2026-10-30)
+
+    /// Every running machine has its app, named for it; one quit by the
+    /// person, or renamed, is made again, and a stopped one's goes.
+    private func syncMachines() {
+        var running: [UUID: String] = [:]
+        func name(_ id: UUID, _ fallback: String) -> String {
+            VMStore.shared?.configurations.first { $0.id == id }?.name ?? fallback
+        }
+        for session in MachineSessions.shared.sessions.values where session.vmState == .running || session.vmState == .paused {
+            running[session.configuration.id] = name(session.configuration.id, session.configuration.name)
+        }
+        if let id = MacGuestRunner.shared.runningID { running[id] = name(id, "macOS") }
+        for (id, entry) in machineEntries {
+            let quitByPerson = Date().timeIntervalSince(entry.opened) > 10
+                && NSRunningApplication.runningApplications(withBundleIdentifier: entry.bundleID).isEmpty
+            guard running[id] != entry.name || quitByPerson else { continue }
+            quit(entry.bundleID)
+            machineEntries[id] = nil
+        }
+        for (id, machineName) in running where machineEntries[id] == nil {
+            let digest = SHA256.hash(data: Data(("machine\n" + id.uuidString).utf8))
+            let bundleID = bundlePrefix + "machine." + digest.prefix(6).map { String(format: "%02x", $0) }.joined()
+            do {
+                let url = try bundleURL(machine: id, key: "", title: machineName)
+                if !built.contains(bundleID) || !FileManager.default.fileExists(atPath: url.path) {
+                    try build(url, bundleID: bundleID, title: machineName, name: machineName, key: "",
+                              machine: id, machineName: machineName, kind: "machine")
+                    built.insert(bundleID)
+                }
+                openHidden(url, title: machineName)
+                machineEntries[id] = Entry(bundleID: bundleID, name: machineName)
+                AVMLog.write("Windows apps: \(machineName) is in Command-Tab", category: "WindowsApps")
+            } catch {
+                AVMLog.write("Windows apps: couldn't put \(machineName) in Command-Tab: \(error.localizedDescription)", category: "WindowsApps")
+            }
         }
     }
 
