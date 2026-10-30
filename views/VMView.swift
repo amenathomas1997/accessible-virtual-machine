@@ -1105,34 +1105,6 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
     private var pressedScancodes = Set<Int32>()
     private var codeSentForKey: [Int: Int32] = [:]
 
-    // COMMAND-TAB (2026-10-29, CommandTabTap.swift): macOS keeps Command-Tab
-    // even with process switching off, so while this machine has the
-    // keyboard a listen-only tap hands its Tab here; Windows gets Alt-Tab
-    // (or Win-Tab, as printed). tabFromTap: a Tab pressed that way, to
-    // release.
-    private lazy var commandTab = CommandTabTap { [weak self] down, right in self?.commandTabKey(down: down, rightCommand: right) }
-    private var tabFromTap = false
-
-    private func commandTabKey(down: Bool, rightCommand: Bool) {
-        guard let input else { return }
-        if down {
-            guard isLocked, NSApp.isActive, focusLock.isCaptureView(mtkView) else { return }
-            // Command first, as the layout has it (Alt in a PC's order):
-            // macOS withholds its press here too. Its release comes through
-            // flagsChanged as usual; a second press is only a repeat.
-            let command = Int32(keyLayout.apply(rightCommand ? 0x100 | 0x5C : 0x100 | 0x5B))
-            input.send(.press, code: command)
-            input.send(.press, code: Int32(0x0F))
-            if KeyEventLogging.isEnabled {
-                NSLog("AVM: Command-Tab from the tap -> 0x\(String(command, radix: 16)) then Tab")
-            }
-            tabFromTap = true
-        } else if tabFromTap {
-            input.send(.release, code: Int32(0x0F))
-            tabFromTap = false
-        }
-    }
-
     // MOUSE INPUT (issue #4): the mouse buttons currently held in the guest
     // (as far as we've forwarded) — the pointer-side sibling of
     // pressedScancodes, MAIN-THREAD-ONLY for the same reason. Sent as the
@@ -1224,10 +1196,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
                     // fourth audit): every machine got the Control tap, which
                     // stopped its screen reader mid-sentence and let go of
                     // keys held on its own keyboard for Windows.
-                    guard let self else { return }
-                    self.commandTab.stop()
-                    self.tabFromTap = false
-                    guard self.focusLock.isCaptureView(self.mtkView) else { return }
+                    guard let self, self.focusLock.isCaptureView(self.mtkView) else { return }
                     self.flushGuestKeysOnSpiceContext(reason: "unlock observed", maskWindowsKey: true)
                 } else {
                     // The Mac's Caps Lock and modifiers as they are now
@@ -1236,10 +1205,6 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
                     // locking sent a Caps Lock tap that toggled the guest's.
                     self?.capsLockEngaged = NSEvent.modifierFlags.contains(.capsLock)
                     self?.previousModifiers = NSEvent.modifierFlags
-                    if let self, self.focusLock.isCaptureView(self.mtkView) {
-                        AVMLog.write(self.commandTab.start() ? "AVM: Command-Tab goes to the machine while it has the keyboard."
-                                                             : "AVM: Command-Tab stays with the Mac: AVM isn't allowed under Input Monitoring.")
-                    }
                     // POINTER CONFINEMENT: lock engaged — confine (warp to
                     // view center, dissociate, hide). Guards inside handle a
                     // not-yet-key window; the key-status watch below catches
@@ -1352,7 +1317,6 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
 
         lockCancellable?.cancel()
         lockCancellable = nil
-        commandTab.stop()
 
         // POINTER CONFINEMENT: restore before anything else can fail — plain
         // CG/AppKit calls, cannot block; idempotent when already restored.
@@ -1509,9 +1473,6 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
             return
         }
         let vk = Int(event.keyCode)
-        // Command-Tab comes through the tap (CommandTabTap), should macOS
-        // ever deliver it here too.
-        if vk == kVK_Tab, commandTab.isRunning { return }
         guard let scancode = self.scancode(forVirtualKey: vk) else {
             if KeyEventLogging.isEnabled {
                 NSLog("AVM: combo key vk=\(vk) has no scancode mapping (ignored).")
