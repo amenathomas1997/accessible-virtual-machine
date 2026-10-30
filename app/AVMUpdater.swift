@@ -143,6 +143,13 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.16", changes: [
+            "Each virtual machine's name is a heading in the dashboard's table, so VO-Command-H goes from machine to machine. The table also says Memory and Disk in gigabytes.",
+            "A machine's Settings come in five categories: General, Sharing, Devices, Display and Sound, and Startup and Recovery. Choose one in the Categories toolbar at the top, or with Command-1 to Command-5.",
+            "The setup wizard can download Linux: Download Linux gets Ubuntu Desktop, Debian or Fedora, checks it, and chooses it as the installer.",
+            "Each machine's Settings can leave it out of Command-Tab.",
+            "AVM comes to the front whenever it starts a machine that takes your keyboard, so the keyboard goes in and AVM stays in Command-Tab.",
+        ]),
         ReleaseNote(version: "0.4.15", changes: [
             "AVM no longer freezes for a moment when Windows apps or virtual machines are added to Command-Tab.",
             "The dashboard and the virtual machine window do less work in the background, so AVM stays quicker while machines run.",
