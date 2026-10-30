@@ -12,9 +12,12 @@
 //
 // So while locked, a listen-only event tap at the HID level, below the
 // switcher, watches for Tab with Command held and hands each press and
-// release to the machine's window, which sends it to Windows with
-// whatever modifiers are down there: Alt-Tab, Alt-Shift-Tab, held Tab
-// cycling as on a PC. Listen-only: the event still goes to macOS, whose
+// release to the machine's window, which sends it to Windows: Alt-Tab,
+// Alt-Shift-Tab, held Tab cycling as on a PC. With the Command key it was
+// pressed with, left or right: macOS doesn't deliver Command's own press
+// to the window either (the same test saw only its release), so 0.4.10's
+// Tabs reached Windows with no Alt down, as plain Tabs. The window puts
+// that Command down in Windows first. Listen-only: the event still goes to macOS, whose
 // switcher is off while locked, and nothing changes for any other app.
 // It needs Input Monitoring, the permission AVM asks for its helper's
 // devices with keys (InputMonitoring.swift); without it there's no tap and
@@ -29,10 +32,11 @@ final class CommandTabTap {
 
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
-    /// down: true for a press (repeats included), false for the release.
-    private let handler: (_ down: Bool) -> Void
+    /// down: true for a press (repeats included), false for the release;
+    /// rightCommand: the right Command key is the one held.
+    private let handler: (_ down: Bool, _ rightCommand: Bool) -> Void
 
-    init(handler: @escaping (_ down: Bool) -> Void) {
+    init(handler: @escaping (_ down: Bool, _ rightCommand: Bool) -> Void) {
         self.handler = handler
     }
 
@@ -55,7 +59,9 @@ final class CommandTabTap {
                 } else if type == .keyDown || type == .keyUp,
                           event.getIntegerValueField(.keyboardEventKeycode) == CommandTabTap.tabKey,
                           event.flags.contains(.maskCommand) || type == .keyUp {
-                    me.handler(type == .keyDown)
+                    // NX_DEVICERCMDKEYMASK; left is 0x08.
+                    let right = event.flags.rawValue & 0x10 != 0 && event.flags.rawValue & 0x08 == 0
+                    me.handler(type == .keyDown, right)
                 }
             }
             return Unmanaged.passUnretained(event)

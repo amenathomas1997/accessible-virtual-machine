@@ -1110,14 +1110,22 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
     // keyboard a listen-only tap hands its Tab here; Windows gets Alt-Tab
     // (or Win-Tab, as printed). tabFromTap: a Tab pressed that way, to
     // release.
-    private lazy var commandTab = CommandTabTap { [weak self] down in self?.commandTabKey(down: down) }
+    private lazy var commandTab = CommandTabTap { [weak self] down, right in self?.commandTabKey(down: down, rightCommand: right) }
     private var tabFromTap = false
 
-    private func commandTabKey(down: Bool) {
+    private func commandTabKey(down: Bool, rightCommand: Bool) {
         guard let input else { return }
         if down {
             guard isLocked, NSApp.isActive, focusLock.isCaptureView(mtkView) else { return }
+            // Command first, as the layout has it (Alt in a PC's order):
+            // macOS withholds its press here too. Its release comes through
+            // flagsChanged as usual; a second press is only a repeat.
+            let command = Int32(keyLayout.apply(rightCommand ? 0x100 | 0x5C : 0x100 | 0x5B))
+            input.send(.press, code: command)
             input.send(.press, code: Int32(0x0F))
+            if KeyEventLogging.isEnabled {
+                NSLog("AVM: Command-Tab from the tap -> 0x\(String(command, radix: 16)) then Tab")
+            }
             tabFromTap = true
         } else if tabFromTap {
             input.send(.release, code: Int32(0x0F))
@@ -1228,8 +1236,9 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
                     // locking sent a Caps Lock tap that toggled the guest's.
                     self?.capsLockEngaged = NSEvent.modifierFlags.contains(.capsLock)
                     self?.previousModifiers = NSEvent.modifierFlags
-                    if let self, self.focusLock.isCaptureView(self.mtkView), !self.commandTab.start() {
-                        AVMLog.write("AVM: Command-Tab stays with the Mac: AVM isn't allowed under Input Monitoring.")
+                    if let self, self.focusLock.isCaptureView(self.mtkView) {
+                        AVMLog.write(self.commandTab.start() ? "AVM: Command-Tab goes to the machine while it has the keyboard."
+                                                             : "AVM: Command-Tab stays with the Mac: AVM isn't allowed under Input Monitoring.")
                     }
                     // POINTER CONFINEMENT: lock engaged — confine (warp to
                     // view center, dissociate, hide). Guards inside handle a
