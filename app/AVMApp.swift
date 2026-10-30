@@ -524,11 +524,11 @@ struct AVMApp: App {
             // never received it (tested 2026-10-24). The search field is the
             // system's and stays.
             CommandGroup(replacing: .help) {
-                // Report a Problem… (2026-10-26, ProblemReporter.swift).
                 // What's New in AVM (2026-10-30, AVMUpdater.swift).
                 Button("What's New in AVM") {
                     ReleaseNotes.showRecent()
                 }
+                // Report a Problem… (2026-10-26, ProblemReporter.swift).
                 Button("Report a Problem…") {
                     ProblemReporter.reportAProblem()
                 }
