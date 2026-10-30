@@ -143,6 +143,10 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.15", changes: [
+            "AVM no longer freezes for a moment when Windows apps or virtual machines are added to Command-Tab.",
+            "The dashboard and the virtual machine window do less work in the background, so AVM stays quicker while machines run.",
+        ]),
         ReleaseNote(version: "0.4.14", changes: [
             "The dashboard lists your virtual machines in a table: Name, Status, System, Cores, Memory, Disk and Drive. Choose one with the arrow keys. Return starts it, or enters it when it's running. VO-Shift-M opens its other actions, and its buttons are below the table.",
             "Each running virtual machine is in Command-Tab under its own name. Switch to it and your keyboard goes straight in. Control-Command-Escape brings you back.",
