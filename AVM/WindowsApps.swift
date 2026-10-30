@@ -35,9 +35,10 @@ import CryptoKit
 final class WindowsApps {
     static let shared = WindowsApps()
 
-    /// Bumped with every change to AVMWindowsApps.cs or AVMKeyboard.cs
-    /// (2: AVM Keyboard, 2026-10-29; 3: launch, for pinned apps, 2026-10-30).
-    static let helperVersion = "3"
+    /// Bumped with every change to AVMWindowsApps.cs or the install script
+    /// (2: AVM Keyboard, 2026-10-29; 3: launch, for pinned apps; 4: AVM
+    /// Keyboard removed again, 2026-10-30).
+    static let helperVersion = "4"
     static let guestFolder = #"C:\ProgramData\AVM"#
 
     private struct Entry {
@@ -77,8 +78,9 @@ final class WindowsApps {
 
     private func tick() {
         guard !ticking else { return }
-        // Every running Windows machine gets the helper and AVM Keyboard;
-        // only those with the setting on get their apps in Command-Tab.
+        // Every running Windows machine gets the helper (so 0.4.12's AVM
+        // Keyboard is taken out of each); only those with the setting on
+        // get their apps in Command-Tab.
         let machines = MachineSessions.shared.sessions.values.filter {
             $0.configuration.guestOS == .windows && $0.vmState == .running
         }
@@ -475,16 +477,13 @@ final class WindowsApps {
             return true
         }
         guard let source = Bundle.main.url(forResource: "AVMWindowsApps", withExtension: "cs"),
-              let code = try? String(contentsOf: source, encoding: .utf8),
-              let keyboardSource = Bundle.main.url(forResource: "AVMKeyboard", withExtension: "cs"),
-              let keyboardCode = try? String(contentsOf: keyboardSource, encoding: .utf8) else {
-            AVMLog.write("Windows apps: AVMWindowsApps.cs or AVMKeyboard.cs isn't in AVM", category: "WindowsApps")
+              let code = try? String(contentsOf: source, encoding: .utf8) else {
+            AVMLog.write("Windows apps: AVMWindowsApps.cs isn't in AVM", category: "WindowsApps")
             return false
         }
         do {
             _ = try await manager.agentRun("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", Self.prepareScript], limit: .seconds(60))
             try await Self.writeGuestFile(manager, Self.guestFolder + #"\bin\AVMWindowsApps.cs"#, code)
-            try await Self.writeGuestFile(manager, Self.guestFolder + #"\bin\AVMKeyboard.cs"#, keyboardCode)
             let output = try await manager.agentRun("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", Self.installScript(version: Self.helperVersion)], limit: .seconds(120))
             guard output.contains("AVM-INSTALLED") else {
                 AVMLog.write("Windows apps: the helper didn't install: \(output.prefix(600))", category: "WindowsApps")
@@ -518,15 +517,9 @@ final class WindowsApps {
         if (-not $csc) { 'no C# compiler'; exit 1 }
         & $csc /nologo /target:winexe /platform:anycpu /optimize /out:C:\ProgramData\AVM\bin\AVMWindowsApps.exe C:\ProgramData\AVM\bin\AVMWindowsApps.cs
         if ($LASTEXITCODE -ne 0) { 'compile failed'; exit 1 }
-        # AVM Keyboard (AVMKeyboard.cs): administrator rights, for the
-        # Scancode Map; in the Start menu for everyone.
-        Set-Content -Path 'C:\ProgramData\AVM\bin\AVMKeyboard.manifest' -Encoding UTF8 -Value '<?xml version="1.0" encoding="utf-8"?><assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1"><trustInfo xmlns="urn:schemas-microsoft-com:asm.v3"><security><requestedPrivileges><requestedExecutionLevel level="requireAdministrator" uiAccess="false"/></requestedPrivileges></security></trustInfo></assembly>'
-        & $csc /nologo /target:winexe /platform:anycpu /optimize /r:System.Windows.Forms.dll /r:System.Drawing.dll /win32manifest:C:\ProgramData\AVM\bin\AVMKeyboard.manifest /out:C:\ProgramData\AVM\bin\AVMKeyboard.exe C:\ProgramData\AVM\bin\AVMKeyboard.cs
-        if ($LASTEXITCODE -ne 0) { 'keyboard compile failed'; exit 1 }
-        $link = (New-Object -ComObject WScript.Shell).CreateShortcut('C:\ProgramData\Microsoft\Windows\Start Menu\Programs\AVM Keyboard.lnk')
-        $link.TargetPath = 'C:\ProgramData\AVM\bin\AVMKeyboard.exe'
-        $link.Description = 'Where your Mac keyboard''s Option and Command keys go in Windows'
-        $link.Save()
+        # AVM Keyboard (0.4.12) taken out again: it didn't work in Windows.
+        # The Scancode Map it may have written is left as it is.
+        Remove-Item -Force -ErrorAction SilentlyContinue 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\AVM Keyboard.lnk','C:\ProgramData\AVM\bin\AVMKeyboard.exe','C:\ProgramData\AVM\bin\AVMKeyboard.cs','C:\ProgramData\AVM\bin\AVMKeyboard.manifest'
         $action = New-ScheduledTaskAction -Execute 'C:\ProgramData\AVM\bin\AVMWindowsApps.exe'
         $trigger = New-ScheduledTaskTrigger -AtLogOn
         $principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited

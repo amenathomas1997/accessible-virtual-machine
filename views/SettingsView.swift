@@ -673,9 +673,6 @@ struct SettingsView: View {
             Text("Each app open in \(guest) is an app in Command-Tab, and in the Dock, while it's open. Switch to one and press Command-Shift-E: it comes forward and your keyboard goes into \(guest). AVM puts a small helper in \(guest) for this.")
                 .font(.caption)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("To put Option and Command where a PC has them, open AVM Keyboard from the Start menu in \(guest).")
-                .font(.caption)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal)
     }

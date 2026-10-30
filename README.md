@@ -203,24 +203,9 @@ and reopen AVM, choose Later; the keyboard goes to Windows without it.
 ## Option and Command in Windows
 
 On a Mac keyboard, Option is where a PC's Windows key is and Command is
-where its Alt is, and AVM sends them as printed: Option is Alt, Command is
-Windows. To put them in a PC's order, open **AVM Keyboard** from the Start
-menu in Windows. AVM installs it in every Windows machine; it asks for
-administrator rights. Choose one of three, then Apply, and restart Windows
-when it offers:
-
-- **As printed**: Option is Alt, Command is Windows.
-- **PC order, Mac keyboard without a number pad**: Option is Windows,
-  Command is Alt, right Option is Insert (for your screen reader's desktop
-  layout, on a keyboard with no Insert key) and right Command is the
-  Applications key.
-- **PC order, Mac keyboard with a number pad**: Option is Windows, Command
-  is Alt, right Command is Right Alt and right Option is the Applications
-  key; number-pad 0 is Insert with Num Lock off.
-
-It sets the same registry setting SharpKeys does (the Scancode Map), and
-only for those four keys, so any other remap you have stays. It applies to
-every keyboard in Windows, a keyboard for Windows too.
+where its Alt is. AVM sends them as printed: Option is Alt, Command is
+Windows. To put them in a PC's order, remap them inside Windows, with
+SharpKeys for example.
 
 ## Windows apps in Command-Tab
 
@@ -237,7 +222,7 @@ macOS puts these apps in the Dock too; it has no way to list an app in
 Command-Tab without it. For this, AVM puts a small helper in Windows
 (`C:\ProgramData\AVM`, started at sign-in by the scheduled task
 `\AVM\Windows Apps`), which lists the apps open and brings one forward;
-it shows no window; AVM Keyboard is installed with it. Turn the list off
+it shows no window. Turn the list off
 in the machine's Settings, under Windows Apps on the Mac.
 
 ## macOS virtual machines
