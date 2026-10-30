@@ -65,9 +65,11 @@ final class AVMUpdater: ObservableObject {
     /// Sparkle holds its delegate weakly, so the updater keeps it.
     private let announcer = UpdateAnnouncer()
 
-    init() {
+    /// `starting` false for the accessibility audit (2026-10-30), which
+    /// shows AVM's Settings without checking for updates or asking to.
+    init(starting: Bool = true) {
         controller = SPUStandardUpdaterController(
-            startingUpdater: true,
+            startingUpdater: starting,
             updaterDelegate: announcer,
             userDriverDelegate: nil
         )
@@ -82,6 +84,17 @@ final class AVMUpdater: ObservableObject {
     func checkForUpdates() {
         AVMLog.write("AVM: Check for Updates menu — invoking Sparkle user-initiated check.")
         controller.checkForUpdates(nil)
+    }
+
+    /// Sparkle's own daily check, for AVM's Settings (2026-10-30). Sparkle
+    /// keeps the choice in AVM's defaults.
+    var checksAutomatically: Bool {
+        get { controller.updater.automaticallyChecksForUpdates }
+        set {
+            objectWillChange.send()
+            controller.updater.automaticallyChecksForUpdates = newValue
+            AVMLog.write("AVM: Settings — check for updates automatically \(newValue ? "on" : "off")")
+        }
     }
 }
 
@@ -153,6 +166,7 @@ enum ReleaseNotes {
             "The setup wizard downloads Windows 11 for ARM itself, straight from Microsoft, in your Mac's language: no web page to use. It checks the download and makes it into the installer.",
             "Installing Windows no longer stops for good when an installer hangs during setup, as the one Microsoft's download gives did. Anything that didn't finish installs when you first sign in.",
             "When AVM opens at login and starts a machine, the list of machines opens too, behind it, so the other machines and AVM's settings are a window away.",
+            "AVM has Settings of its own: Command-Comma from any AVM window. General has updates and What's New, Startup and Background has opening at login and running in the background, Keyboard has Caps Lock as the screen reader key, and Devices has Restart USB Helper. A machine's own Settings are now Command-Option-Comma.",
         ]),
         ReleaseNote(version: "0.4.15", changes: [
             "AVM no longer freezes for a moment when Windows apps or virtual machines are added to Command-Tab.",
