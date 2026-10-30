@@ -149,6 +149,7 @@ enum ReleaseNotes {
             "The setup wizard can download Linux: Download Linux gets Ubuntu Desktop, Debian or Fedora, checks it, and chooses it as the installer.",
             "Each machine's Settings can leave it out of Command-Tab.",
             "AVM comes to the front whenever it starts a machine that takes your keyboard, so the keyboard goes in and AVM stays in Command-Tab.",
+            "A new Ubuntu machine has the guest agent, so AVM can shut it down and send it files. Machines made earlier don't: install qemu-guest-agent in Ubuntu once.",
         ]),
         ReleaseNote(version: "0.4.15", changes: [
             "AVM no longer freezes for a moment when Windows apps or virtual machines are added to Command-Tab.",
