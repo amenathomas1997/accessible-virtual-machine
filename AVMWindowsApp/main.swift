@@ -10,9 +10,17 @@
 // its control socket, to bring the app forward in Windows and lock the
 // keyboard into it. Control-Command-Escape comes back, as always.
 //
+// Pinned (2026-10-30): Keep in Dock and Applications makes a lasting copy
+// in ~/Applications/AVM Windows Apps, in the Dock too. Opened by the
+// person, from there or the Dock, rather than by AVM (which passes
+// --avm-opened), it asks AVM to open its app: AVM opens if it isn't, the
+// machine starts if it isn't running, and once Windows is signed in the
+// app opens and the keyboard goes into it. A click on its Dock icon while
+// it runs does the same, and so does Command-Shift-E.
+//
 // Everything it needs is in its Info.plist, written by AVM: AVMAppName,
 // AVMAppKey (the Windows helper's key for the app), AVMMachineID,
-// AVMMachineName, AVMControlSocket and AVMBundleID (AVM's own).
+// AVMMachineName, AVMControlSocket, AVMBundleID (AVM's own) and AVMPinned.
 
 import AppKit
 
@@ -20,8 +28,10 @@ final class WindowsAppEntry: NSObject, NSApplicationDelegate {
     private let info = Bundle.main.infoDictionary ?? [:]
     private var appName: String { info["AVMAppName"] as? String ?? "Windows app" }
     private var machineName: String { info["AVMMachineName"] as? String ?? "Windows" }
+    private var pinned: Bool { info["AVMPinned"] as? Bool == true }
     private var window: NSWindow?
     private var status: NSTextField?
+    private var asking = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -29,12 +39,14 @@ final class WindowsAppEntry: NSObject, NSApplicationDelegate {
         text.setAccessibilityLabel(text.stringValue)
         // A button too, for VoiceOver's VO-Space; Command-Shift-E is the key.
         let enter = NSButton(title: "Type in \(appName)", target: self, action: #selector(enterApp(_:)))
-        let stack = NSStackView(views: [text, enter])
+        let keep = NSButton(title: pinned ? "Remove from Dock and Applications" : "Keep in Dock and Applications",
+                            target: self, action: #selector(togglePinned(_:)))
+        let stack = NSStackView(views: [text, enter, keep])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 140),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 170),
                               styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "\(appName) in \(machineName)"
         window.contentView = stack
@@ -43,6 +55,8 @@ final class WindowsAppEntry: NSObject, NSApplicationDelegate {
         self.window = window
         status = text
         if !NSApp.isHidden { window.makeKeyAndOrderFront(nil) }
+        // Opened by the person, not by AVM: open the app.
+        if !CommandLine.arguments.contains("--avm-opened") { openApp() }
     }
 
     /// Back from Command-Tab: the window is what VoiceOver reads.
@@ -50,8 +64,10 @@ final class WindowsAppEntry: NSObject, NSApplicationDelegate {
         window?.makeKeyAndOrderFront(nil)
     }
 
+    /// A click on its Dock icon while it runs.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         window?.makeKeyAndOrderFront(nil)
+        openApp()
         return true
     }
 
@@ -70,31 +86,67 @@ final class WindowsAppEntry: NSObject, NSApplicationDelegate {
         enter.keyEquivalentModifierMask = [.command, .shift]
         enter.target = self
         machineMenu.addItem(enter)
+        let keep = NSMenuItem(title: pinned ? "Remove from Dock and Applications" : "Keep in Dock and Applications",
+                              action: #selector(togglePinned(_:)), keyEquivalent: "")
+        keep.target = self
+        machineMenu.addItem(keep)
         machineItem.submenu = machineMenu
         main.addItem(machineItem)
         NSApp.mainMenu = main
     }
 
-    @objc func enterApp(_ sender: Any?) {
+    @objc func enterApp(_ sender: Any?) { openApp() }
+
+    /// The app, opened or brought forward in Windows, with the machine
+    /// started and AVM opened as needed (WindowsApps.launch).
+    private func openApp() {
+        guard !asking else { return }
+        asking = true
         // AVM takes the front next (macOS 14 lets an app activate only when
         // the active one yields).
         if #available(macOS 14.0, *), let avm = info["AVMBundleID"] as? String {
             NSApp.yieldActivation(toApplicationWithBundleIdentifier: avm)
         }
-        let request: [String: Any] = ["command": "enter-app",
+        ask("launch-app") { reply in
+            self.asking = false
+            if reply?["ok"] as? Bool != true { self.say(reply?["message"] as? String ?? "AVM didn't answer. Open AVM, then try again.") }
+        }
+    }
+
+    @objc func togglePinned(_ sender: Any?) {
+        ask(pinned ? "unpin-app" : "pin-app") { reply in
+            // AVM says what happened; only a refusal is said here.
+            if reply?["ok"] as? Bool != true { self.say(reply?["message"] as? String ?? "AVM didn't answer. Open AVM, then try again.") }
+        }
+    }
+
+    private func say(_ message: String) {
+        status?.stringValue = message
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    }
+
+    /// One request to AVM; AVM opened first if it isn't answering, then
+    /// asked again for up to a minute.
+    private func ask(_ command: String, then: @escaping ([String: Any]?) -> Void) {
+        let request: [String: Any] = ["command": command,
                                       "machine": info["AVMMachineID"] as? String ?? "",
-                                      "app": info["AVMAppKey"] as? String ?? ""]
+                                      "app": info["AVMAppKey"] as? String ?? "",
+                                      "name": appName]
         let socketPath = info["AVMControlSocket"] as? String ?? ""
+        let avm = info["AVMBundleID"] as? String ?? ""
         DispatchQueue.global(qos: .userInitiated).async {
-            let reply = Self.send(request, to: socketPath)
-            DispatchQueue.main.async {
-                if reply?["ok"] as? Bool != true {
-                    let message = reply?["message"] as? String ?? "AVM didn't answer. Open AVM, then try again."
-                    self.status?.stringValue = message
-                    NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
-                                         userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+            var reply = Self.send(request, to: socketPath)
+            if reply == nil, !avm.isEmpty, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: avm) {
+                let opening = NSWorkspace.OpenConfiguration()
+                opening.activates = true
+                NSWorkspace.shared.openApplication(at: url, configuration: opening) { _, _ in }
+                for _ in 0..<60 where reply == nil {
+                    Thread.sleep(forTimeInterval: 1)
+                    reply = Self.send(request, to: socketPath)
                 }
             }
+            DispatchQueue.main.async { then(reply) }
         }
     }
 

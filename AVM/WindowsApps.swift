@@ -36,8 +36,8 @@ final class WindowsApps {
     static let shared = WindowsApps()
 
     /// Bumped with every change to AVMWindowsApps.cs or AVMKeyboard.cs
-    /// (2: AVM Keyboard, 2026-10-29).
-    static let helperVersion = "2"
+    /// (2: AVM Keyboard, 2026-10-29; 3: launch, for pinned apps, 2026-10-30).
+    static let helperVersion = "3"
     static let guestFolder = #"C:\ProgramData\AVM"#
 
     private struct Entry {
@@ -53,12 +53,15 @@ final class WindowsApps {
     private var ticking = false
     private var built: Set<String> = []
     private var requestNumber = 0
+    /// Launches under way, by machine and app key: one at a time each.
+    private var launching: Set<String> = []
 
     private var bundlePrefix: String { (Bundle.main.bundleIdentifier ?? "com.fullcircleat.AVM") + ".windowsapp." }
 
     func start() {
         guard timer == nil else { return }
-        quitLeftovers()
+        // A pinned one may be what opened AVM, waiting for its answer.
+        quitLeftovers(keepingPinned: true)
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
             MainActor.assumeIsolated { WindowsApps.shared.tick() }
         }
@@ -123,29 +126,48 @@ final class WindowsApps {
 
     // MARK: The Mac apps
 
-    private func launchEntry(machine: UUID, machineName: String, key: String, name: String) -> Entry? {
+    private func bundleID(machine: UUID, key: String, pinned: Bool) -> String {
         let digest = SHA256.hash(data: Data((machine.uuidString + "\n" + key).utf8))
-        let bundleID = bundlePrefix + digest.prefix(6).map { String(format: "%02x", $0) }.joined()
+        return bundlePrefix + (pinned ? "pinned." : "") + digest.prefix(6).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func launchEntry(machine: UUID, machineName: String, key: String, name: String) -> Entry? {
         let title = "\(name) (\(machineName))"
+        // A pinned one opens as itself, so its Dock icon shows it's open.
+        if let pinned = pinnedBundle(machine: machine, key: key) {
+            // Opened by the person already, it stays as it is, not hidden.
+            if NSRunningApplication.runningApplications(withBundleIdentifier: pinned.bundleID).isEmpty {
+                openHidden(pinned.url, title: title)
+            }
+            return Entry(bundleID: pinned.bundleID, name: name)
+        }
+        let bundleID = bundleID(machine: machine, key: key, pinned: false)
         do {
             let url = try bundleURL(machine: machine, bundleID: bundleID, title: title)
             if !built.contains(bundleID) {
                 try build(url, bundleID: bundleID, title: title, name: name, key: key, machine: machine, machineName: machineName)
                 built.insert(bundleID)
             }
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = false
-            configuration.hides = true
-            configuration.addsToRecentItems = false
-            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
-                if let error {
-                    AVMLog.write("Windows apps: \(title) didn't open: \(error.localizedDescription)", category: "WindowsApps")
-                }
-            }
+            openHidden(url, title: title)
             return Entry(bundleID: bundleID, name: name)
         } catch {
             AVMLog.write("Windows apps: couldn't make \(title): \(error.localizedDescription)", category: "WindowsApps")
             return nil
+        }
+    }
+
+    /// Opened by AVM, not by the person: --avm-opened, so it doesn't ask to
+    /// launch the app it stands for.
+    private func openHidden(_ url: URL, title: String) {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        configuration.hides = true
+        configuration.addsToRecentItems = false
+        configuration.arguments = ["--avm-opened"]
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
+            if let error {
+                AVMLog.write("Windows apps: \(title) didn't open: \(error.localizedDescription)", category: "WindowsApps")
+            }
         }
     }
 
@@ -161,7 +183,7 @@ final class WindowsApps {
     }
 
     private func build(_ url: URL, bundleID: String, title: String, name: String, key: String,
-                       machine: UUID, machineName: String) throws {
+                       machine: UUID, machineName: String, pinned: Bool = false) throws {
         let fm = FileManager.default
         guard let stub = Bundle.main.url(forAuxiliaryExecutable: "AVMWindowsApp") else {
             throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "AVMWindowsApp isn't in AVM"])
@@ -186,6 +208,7 @@ final class WindowsApps {
             "AVMMachineName": machineName,
             "AVMControlSocket": ControlServer.socketURL?.path ?? "",
             "AVMBundleID": Bundle.main.bundleIdentifier ?? "",
+            "AVMPinned": pinned,
         ]
         let plist = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
         try plist.write(to: url.appendingPathComponent("Contents/Info.plist"))
@@ -212,10 +235,196 @@ final class WindowsApps {
     }
 
     /// From an AVM that didn't quit cleanly.
-    private func quitLeftovers() {
+    private func quitLeftovers(keepingPinned: Bool = false) {
         for app in NSWorkspace.shared.runningApplications where app.bundleIdentifier?.hasPrefix(bundlePrefix) == true {
+            if keepingPinned, app.bundleIdentifier?.hasPrefix(bundlePrefix + "pinned.") == true { continue }
             app.terminate()
         }
+    }
+
+    // MARK: Pinned: in ~/Applications and the Dock (2026-10-30)
+
+    /// Where pinned ones live: the person's own Applications folder, which
+    /// Launchpad and Spotlight list, like Chrome's web apps.
+    static var pinnedFolder: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Applications", isDirectory: true)
+            .appendingPathComponent("AVM Windows Apps", isDirectory: true)
+    }
+
+    private func pinnedBundle(machine: UUID, key: String) -> (url: URL, bundleID: String)? {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(at: Self.pinnedFolder, includingPropertiesForKeys: nil) else { return nil }
+        for url in items where url.pathExtension == "app" {
+            guard let info = NSDictionary(contentsOf: url.appendingPathComponent("Contents/Info.plist")),
+                  info["AVMMachineID"] as? String == machine.uuidString, info["AVMAppKey"] as? String == key,
+                  let id = info["CFBundleIdentifier"] as? String else { continue }
+            return (url, id)
+        }
+        return nil
+    }
+
+    /// Keep in Dock and Applications.
+    func pin(machine: UUID, appKey: String, name: String) -> (ok: Bool, message: String) {
+        guard let config = VMStore.shared?.configurations.first(where: { $0.id == machine }) else {
+            return (false, "That machine isn't in AVM any more.")
+        }
+        let title = "\(name) (\(config.name))"
+        if pinnedBundle(machine: machine, key: appKey) != nil {
+            return (true, "\(title) is in your Dock and Applications already.")
+        }
+        let id = bundleID(machine: machine, key: appKey, pinned: true)
+        do {
+            try FileManager.default.createDirectory(at: Self.pinnedFolder, withIntermediateDirectories: true)
+            let safe = String(title.map { "/:".contains($0) ? "-" : $0 }).trimmingCharacters(in: .whitespaces)
+            let url = Self.pinnedFolder.appendingPathComponent(safe + ".app", isDirectory: true)
+            try build(url, bundleID: id, title: title, name: name, key: appKey, machine: machine, machineName: config.name, pinned: true)
+            built.insert(id)
+            Self.addToDock(url, title: title, bundleID: id)
+            // The pinned one stands for the app from now on.
+            if let entry = entries[machine]?[appKey] {
+                quit(entry.bundleID)
+                openHidden(url, title: title)
+                entries[machine]?[appKey] = Entry(bundleID: id, name: name)
+            }
+            AVMLog.write("Windows apps: \(title) pinned (Dock and \(url.path))", category: "WindowsApps")
+            let line = "\(title) is in your Dock, and in Applications, in the AVM Windows Apps folder."
+            Announcer.shared.announce(line, tone: .success)
+            return (true, line)
+        } catch {
+            return (false, "AVM couldn't keep \(title): \(error.localizedDescription)")
+        }
+    }
+
+    /// Remove from Dock and Applications. The bundle goes to the Trash.
+    func unpin(machine: UUID, appKey: String) -> (ok: Bool, message: String) {
+        guard let pinned = pinnedBundle(machine: machine, key: appKey) else { return (true, "It isn't pinned.") }
+        let title = pinned.url.deletingPathExtension().lastPathComponent
+        Self.removeFromDock(pinned.url, bundleID: pinned.bundleID)
+        quit(pinned.bundleID)
+        do {
+            try FileManager.default.trashItem(at: pinned.url, resultingItemURL: nil)
+        } catch {
+            return (false, "AVM couldn't remove \(title): \(error.localizedDescription)")
+        }
+        // While the app is open, a temporary one stands for it again.
+        if entries[machine]?[appKey] != nil { entries[machine]?[appKey] = nil }
+        AVMLog.write("Windows apps: \(title) unpinned", category: "WindowsApps")
+        let line = "\(title) is out of your Dock and Applications."
+        Announcer.shared.announce(line, tone: .info)
+        return (true, line)
+    }
+
+    /// The Dock's own list (com.apple.dock persistent-apps), then the Dock
+    /// restarted to read it, as the Dock's Keep in Dock does it.
+    private static func addToDock(_ url: URL, title: String, bundleID: String) {
+        var apps = dockApps()
+        guard !apps.contains(where: { dockTile($0, is: url, bundleID: bundleID) }) else { return }
+        apps.append(["tile-type": "file-tile",
+                     "tile-data": ["file-label": title, "bundle-identifier": bundleID,
+                                   "file-data": ["_CFURLString": url.absoluteString, "_CFURLStringType": 15]]])
+        setDockApps(apps)
+    }
+
+    private static func removeFromDock(_ url: URL, bundleID: String) {
+        let apps = dockApps()
+        let kept = apps.filter { !dockTile($0, is: url, bundleID: bundleID) }
+        if kept.count != apps.count { setDockApps(kept) }
+    }
+
+    private static func dockApps() -> [[String: Any]] {
+        CFPreferencesCopyAppValue("persistent-apps" as CFString, "com.apple.dock" as CFString) as? [[String: Any]] ?? []
+    }
+
+    private static func dockTile(_ tile: [String: Any], is url: URL, bundleID: String) -> Bool {
+        let data = tile["tile-data"] as? [String: Any]
+        if data?["bundle-identifier"] as? String == bundleID { return true }
+        return ((data?["file-data"] as? [String: Any])?["_CFURLString"] as? String) == url.absoluteString
+    }
+
+    private static func setDockApps(_ apps: [[String: Any]]) {
+        CFPreferencesSetAppValue("persistent-apps" as CFString, apps as CFArray, "com.apple.dock" as CFString)
+        CFPreferencesAppSynchronize("com.apple.dock" as CFString)
+        let dock = Process()
+        dock.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        dock.arguments = ["Dock"]
+        try? dock.run()
+    }
+
+    // MARK: Opening an app from its Mac app (2026-10-30)
+
+    /// Its Mac app was opened, by a click in the Dock or Applications, or
+    /// Command-Shift-E in it: the machine started if it isn't running (its
+    /// keyboard in it, to sign in), then, once Windows is signed in, the
+    /// app opened or brought forward, and entered. Answers at once; the
+    /// rest is said as it happens.
+    func launch(machine: UUID, appKey: String, name: String) -> (ok: Bool, message: String) {
+        guard let config = VMStore.shared?.configurations.first(where: { $0.id == machine }) else {
+            return (false, "That machine isn't in AVM any more.")
+        }
+        let job = machine.uuidString + "\n" + appKey
+        guard !launching.contains(job) else { return (true, "\(name) is opening already.") }
+        if MachineSessions.shared.session(for: machine) == nil {
+            if config.isATemplate { return (false, "\(config.name) is a template.") }
+            if MachineArchiveController.shared.busyMachineID == machine, let activity = MachineArchiveController.shared.activity {
+                return (false, "AVM is \(activity). Try again when it's done.")
+            }
+            if BackgroundMode.shared.inBackground { BackgroundMode.shared.comeForward(announce: false) }
+            _ = MachineSessions.shared.start(config, vmStore: VMStore.shared, focusLock: FocusLockManager.shared, takesKeyboard: true)
+            Announcer.shared.announce("Starting \(config.name) for \(name). Sign in to Windows when it asks, and \(name) opens.", tone: .info)
+        }
+        launching.insert(job)
+        Task {
+            defer { launching.remove(job) }
+            await finishLaunch(machine: machine, machineName: config.name, appKey: appKey, name: name)
+        }
+        return (true, "")
+    }
+
+    private func finishLaunch(machine: UUID, machineName: String, appKey: String, name: String) async {
+        let started = Date()
+        func session() -> VMSession? { MachineSessions.shared.session(for: machine) }
+        // Running, with the agent and the helper, within five minutes.
+        while Date().timeIntervalSince(started) < 300 {
+            guard let s = session(), s.vmState != .stopping else { return }
+            if s.vmState == .running, helperReady[machine] == s.manager.qemuPID { break }
+            if s.vmState == .running { _ = await ensureHelper(s.manager, machine: machine) }
+            try? await Task.sleep(for: .seconds(2))
+        }
+        guard let s = session(), s.vmState == .running, helperReady[machine] == s.manager.qemuPID else {
+            Announcer.shared.announce("\(name) didn't open: \(machineName) wasn't ready in time.", tone: .failure)
+            return
+        }
+        let manager = s.manager
+        requestNumber += 1
+        let id = "\(requestNumber)-\(Int(Date().timeIntervalSince1970))"
+        do {
+            try await Self.writeGuestFile(manager, Self.guestFolder + #"\apps\request.txt"#,
+                                          "\(id)\tlaunch\t\(appKey)\t\(Int(Date().timeIntervalSince1970))\n")
+        } catch {
+            Announcer.shared.announce("\(name) didn't open: \(error.localizedDescription).", tone: .failure)
+            return
+        }
+        // The helper answers once Windows is signed in: ten minutes for that.
+        let asked = Date()
+        while Date().timeIntervalSince(asked) < 600 {
+            try? await Task.sleep(for: .seconds(1))
+            guard session()?.vmState == .running else { return }
+            guard let reply = try? await Self.readGuestFile(manager, Self.guestFolder + #"\apps\reply.txt"#) else { continue }
+            let parts = reply.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\t", maxSplits: 2).map(String.init)
+            guard parts.first == id else { continue }
+            if parts.count > 1, parts[1] == "ok" {
+                AVMLog.write("Windows apps: \(name) open and in front in \(machineName); entering", category: "WindowsApps")
+                if BackgroundMode.shared.inBackground { BackgroundMode.shared.comeForward(announce: false) }
+                MachineSessions.shared.enter(machine)
+            } else {
+                let why = parts.count > 2 ? parts[2] : "it didn't open"
+                AVMLog.write("Windows apps: \(name) didn't open in \(machineName): \(why)", category: "WindowsApps")
+                Announcer.shared.announce("\(name) didn't open in Windows: \(why).", tone: .failure)
+            }
+            return
+        }
+        Announcer.shared.announce("\(name) didn't open: Windows wasn't signed in within ten minutes. Open it again once you're signed in.", tone: .info)
     }
 
     // MARK: Command-Shift-E in one of them

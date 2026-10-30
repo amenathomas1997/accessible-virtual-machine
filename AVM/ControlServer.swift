@@ -228,6 +228,18 @@ final class ControlServer {
             let result = await WindowsApps.shared.enter(machine: config.id, appKey: request["app"] as? String ?? "")
             return ["ok": result.ok, "message": result.message]
 
+        // A Windows app's Mac app opened, from the Dock or Applications, or
+        // pinned or unpinned (2026-10-30, WindowsApps.swift).
+        case "launch-app", "pin-app", "unpin-app":
+            guard config.guestOS == .windows else { return fail("\(name) isn't a Windows machine.") }
+            let key = request["app"] as? String ?? ""
+            let appName = request["name"] as? String ?? "The app"
+            guard !key.isEmpty else { return fail("AVM didn't understand the request.") }
+            let result = command == "launch-app" ? WindowsApps.shared.launch(machine: config.id, appKey: key, name: appName)
+                : command == "pin-app" ? WindowsApps.shared.pin(machine: config.id, appKey: key, name: appName)
+                : WindowsApps.shared.unpin(machine: config.id, appKey: key)
+            return ["ok": result.ok, "message": result.message]
+
         case "send-file":
             guard !isMac else { return fail("Send File works with Windows and Linux machines.") }
             guard let session, session.vmState == .running else { return fail("\(name) isn't running.") }

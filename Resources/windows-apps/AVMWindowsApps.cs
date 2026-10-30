@@ -13,6 +13,12 @@
 //   - request.txt, written by AVM (as SYSTEM, through the agent): id TAB
 //     focus TAB key. The app's front window is restored and brought
 //     forward; reply.txt gets id TAB ok or failed TAB what happened.
+//   - id TAB launch TAB key TAB unix time (2026-10-30, apps pinned in the
+//     Mac's Dock): the same, and the app started first when no window of
+//     it is open. Written while Windows is still at its sign-in screen,
+//     it waits here for this helper, which starts at sign-in; one older
+//     than ten minutes is dropped, so an app never opens at some later
+//     sign-in nobody asked for.
 //
 // It never shows a window, so it takes no focus and no screen reader
 // speaks for it. One copy per session (a named mutex).
@@ -67,13 +73,35 @@ static class AVMWindowsApps
         File.Delete(RequestFile);
         string[] parts = request.Trim().Split('\t');
         string id = parts.Length > 0 ? parts[0] : "0";
-        if (parts.Length < 3 || parts[1] != "focus") { Write(ReplyFile, id + "\tfailed\tnot understood\n"); return; }
+        if (parts.Length < 3 || (parts[1] != "focus" && parts[1] != "launch")) { Write(ReplyFile, id + "\tfailed\tnot understood\n"); return; }
         string key = parts[2];
-        IntPtr window = IntPtr.Zero;
-        foreach (var w in AppWindows()) if (w.Key == key) { window = w.Handle; break; }
+        IntPtr window = WindowOf(key);
+        if (window == IntPtr.Zero && parts[1] == "launch")
+        {
+            long asked;
+            long now = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
+            if (parts.Length < 4 || !long.TryParse(parts[3], out asked) || now - asked > 600) { Write(ReplyFile, id + "\tfailed\tthe request was too old\n"); return; }
+            Start(key);
+            for (int i = 0; i < 80 && window == IntPtr.Zero; i++) { Thread.Sleep(250); window = WindowOf(key); }
+        }
         if (window == IntPtr.Zero) { Write(ReplyFile, id + "\tfailed\tno window is open for it\n"); return; }
         bool front = BringForward(window);
         Write(ReplyFile, id + (front ? "\tok\t" : "\tfailed\twindows kept another window in front: ") + Title(window) + "\n");
+    }
+
+    static IntPtr WindowOf(string key)
+    {
+        foreach (var w in AppWindows()) if (w.Key == key) return w.Handle;
+        return IntPtr.Zero;
+    }
+
+    /// A program path as it is; anything else is an AppUserModelID, which
+    /// the Start menu's own folder starts (Store apps, and desktop apps
+    /// that have one).
+    static void Start(string key)
+    {
+        if (key.Contains("\\")) Process.Start(new ProcessStartInfo(key) { UseShellExecute = true });
+        else Process.Start(new ProcessStartInfo("explorer.exe", "shell:AppsFolder\\" + key) { UseShellExecute = true });
     }
 
     static bool BringForward(IntPtr window)
