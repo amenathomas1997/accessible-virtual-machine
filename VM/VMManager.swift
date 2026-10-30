@@ -526,7 +526,7 @@ final class VMManager: ObservableObject {
 
     // MARK: Private — configuration reference
 
-    private(set) var activeConfiguration: VMConfiguration?
+    private var activeConfiguration: VMConfiguration?
 
     /// The save under way (2026-10-28, fourth audit): a second Save (Save
     /// and Quit during a Save, two avmctl saves) failed on the job id in

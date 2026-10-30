@@ -106,8 +106,6 @@ nonisolated struct WindowsKeyTranslator {
     }
 
     var appleISO = false
-    /// Option and Command moved to a PC's order (MacKeyLayout, 2026-10-29).
-    var layout = MacKeyLayout.asPrinted
     private(set) var fnHeld = false
     private(set) var pressed = Set<Int32>()
     /// What each held key was sent as, so its release matches its press
@@ -120,12 +118,12 @@ nonisolated struct WindowsKeyTranslator {
         if usage == HIDKeyMap.pauseUsage { return .pause(down: down) }
         if down {
             guard let code = (fnHeld ? HIDKeyMap.fnLayer[usage] : nil) ?? HIDKeyMap.scancode(forUsage: usage) else { return nil }
-            let scancode = Int32(layout.apply(code))
+            let scancode = Int32(code)
             sentFor[usage] = scancode
             pressed.insert(scancode)
             return .key(scancode, down: true)
         }
-        guard let scancode = sentFor.removeValue(forKey: usage) ?? HIDKeyMap.scancode(forUsage: usage).map({ Int32(layout.apply($0)) }) else { return nil }
+        guard let scancode = sentFor.removeValue(forKey: usage) ?? HIDKeyMap.scancode(forUsage: usage).map(Int32.init) else { return nil }
         pressed.remove(scancode)
         return .key(scancode, down: false)
     }

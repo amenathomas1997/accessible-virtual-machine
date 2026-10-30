@@ -1158,19 +1158,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         self.focusLock = focusLock
         self.machineID = machineID
         self.manager = manager
-        // The machine's layout for the Mac's keyboard (MacKeyLayout,
-        // 2026-10-29), fixed for this connection so a key's release always
-        // matches its press.
-        self.keyLayout = manager?.activeConfiguration?.macKeyLayout ?? .asPrinted
         super.init()
-    }
-
-    private let keyLayout: MacKeyLayout
-
-    /// A Mac key as Windows gets it: its PC scancode, with Option and
-    /// Command where the machine's layout puts them.
-    private func scancode(forVirtualKey vk: Int) -> Int? {
-        Self.scancode(forVirtualKey: vk).map(keyLayout.apply)
     }
 
     var isLocked: Bool { focusLock.isLocked }
@@ -1473,7 +1461,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
             return
         }
         let vk = Int(event.keyCode)
-        guard let scancode = self.scancode(forVirtualKey: vk) else {
+        guard let scancode = Self.scancode(forVirtualKey: vk) else {
             if KeyEventLogging.isEnabled {
                 NSLog("AVM: combo key vk=\(vk) has no scancode mapping (ignored).")
             } else {
@@ -1558,12 +1546,12 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         // their press is tracked, so their repeats pass. The type check
         // precedes isARepeat for the same reason as the F19 guard above.
         if pressed, event.type == .keyDown, event.isARepeat,
-           let repeatCode = self.scancode(forVirtualKey: vk),
+           let repeatCode = Self.scancode(forVirtualKey: vk),
            !pressedScancodes.contains(Int32(repeatCode)) {
             return
         }
 
-        guard let scancode = self.scancode(forVirtualKey: vk) else {
+        guard let scancode = Self.scancode(forVirtualKey: vk) else {
             // Stage B: an unmapped key is a REAL FAILURE — the key silently
             // does nothing in the guest — so it must not vanish from a
             // default-off diagnostic capture. The fallback line names no key:
@@ -1639,7 +1627,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
 
         let vk = Int(event.keyCode)
         // Caps Lock was sent above as a tap; nothing more for it.
-        if vk != kVK_CapsLock, let scancode = self.scancode(forVirtualKey: vk) {
+        if vk != kVK_CapsLock, let scancode = Self.scancode(forVirtualKey: vk) {
             // Left and right apart (2026-10-26, keyboard audit): the
             // device-independent .shift stays set while the OTHER Shift is
             // held, so releasing one Shift was sent as a second press and it

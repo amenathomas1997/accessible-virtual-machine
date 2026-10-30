@@ -388,9 +388,9 @@ struct SettingsView: View {
                 sharedFolderSection
             }
 
-            // The Mac's keys in Windows (2026-10-29, MacKeyLayout.swift)
+            // Windows apps in Command-Tab (2026-10-29, WindowsApps.swift)
             if configuration.guestOS == .windows {
-                macKeyLayoutSection
+                windowsAppsSection
             }
 
             // Keyboard for Windows (2026-10-26)
@@ -637,36 +637,27 @@ struct SettingsView: View {
     @State private var windowsKeyboardID: String?
     @State private var windowsKeyboardName: String?
     @State private var windowsKeyboardAppleISO = false
-    @State private var windowsKeyboardLayout = MacKeyLayout.asPrinted
-    @State private var macKeyLayout = MacKeyLayout.asPrinted
     @State private var windowsAppsInCommandTab = true
 
-    // MARK: - The Mac's keys in Windows (2026-10-29)
+    // MARK: - Windows apps on the Mac (2026-10-29)
 
-    private var macKeyLayoutSection: some View {
+    private var windowsAppsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Mac Keyboard in Windows")
+            Text("Windows Apps on the Mac")
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
-            Text("Where your Mac keyboard's Option and Command keys land in \(guest). Takes effect the next time \(guest) starts. If you swapped them inside \(guest) already, undo that there first, or they swap back.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Picker("Option and Command", selection: $macKeyLayout) {
-                ForEach(MacKeyLayout.allCases, id: \.self) { Text($0.title).tag($0) }
-            }
-            .accessibilityHint("For your Mac's own keyboard, typing in the machine's window.")
-            Text(macKeyLayout.keys)
-                .font(.caption)
-                .fixedSize(horizontal: false, vertical: true)
             Toggle("Windows apps in Command-Tab", isOn: $windowsAppsInCommandTab)
                 .accessibilityHint("Each app open in \(guest) is in your Mac's Command-Tab list. Switch to one, then press Command-Shift-E to type in it.")
             Text("Each app open in \(guest) is an app in Command-Tab, and in the Dock, while it's open. Switch to one and press Command-Shift-E: it comes forward and your keyboard goes into \(guest). AVM puts a small helper in \(guest) for this.")
                 .font(.caption)
                 .fixedSize(horizontal: false, vertical: true)
+            Text("To put Option and Command where a PC has them, open AVM Keyboard from the Start menu in \(guest).")
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal)
     }
+
     @State private var connectedKeyboards: [(id: String, name: String)] = []
     @State private var keyboardsMessage: String?
 
@@ -697,13 +688,6 @@ struct SettingsView: View {
             if windowsKeyboardID != nil {
                 Toggle("It's an Apple keyboard with a § key (ISO)", isOn: $windowsKeyboardAppleISO)
                     .accessibilityHint("Swaps the § key and the ` key back, as macOS does for these keyboards. Leave off for other keyboards.")
-                Picker("Its Option and Command keys", selection: $windowsKeyboardLayout) {
-                    ForEach(MacKeyLayout.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                .accessibilityHint("For an Apple keyboard. A PC keyboard's keys are where they're printed: leave it As printed.")
-                Text(windowsKeyboardLayout.keys)
-                    .font(.caption)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack {
                 Button("Look Again") { Task { await loadKeyboards(registering: true) } }
@@ -1211,8 +1195,6 @@ struct SettingsView: View {
         windowsKeyboardID = saved.windowsKeyboardID
         windowsKeyboardName = saved.windowsKeyboardName
         windowsKeyboardAppleISO = saved.windowsKeyboardAppleISO == true
-        windowsKeyboardLayout = saved.windowsKeyboardLayout ?? .asPrinted
-        macKeyLayout = saved.macKeyLayout ?? .asPrinted
         windowsAppsInCommandTab = saved.windowsAppsInCommandTab != false
         displayID = saved.displayID
         displayName = saved.displayName
@@ -1423,8 +1405,6 @@ struct SettingsView: View {
             updated.windowsKeyboardID = windowsKeyboardID
             updated.windowsKeyboardName = windowsKeyboardID == nil ? nil : windowsKeyboardName
             updated.windowsKeyboardAppleISO = windowsKeyboardID != nil && windowsKeyboardAppleISO ? true : nil
-            updated.windowsKeyboardLayout = windowsKeyboardID != nil && windowsKeyboardLayout != .asPrinted ? windowsKeyboardLayout : nil
-            updated.macKeyLayout = macKeyLayout == .asPrinted ? nil : macKeyLayout
             updated.windowsAppsInCommandTab = windowsAppsInCommandTab ? nil : false
             updated.displayID = displayID
             updated.displayName = displayID == nil ? nil : displayName
