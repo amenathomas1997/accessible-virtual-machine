@@ -440,10 +440,13 @@ private struct DashboardContent: View {
                     // The chosen machine's buttons, below the table.
                     if let config = selectedConfiguration {
                         VStack(alignment: .leading, spacing: 6) {
+                            // Not the name again (2026-10-30): the table's
+                            // names are the machines' headings now.
                             Text(config.name)
                                 .font(.body)
+                                .accessibilityLabel("Controls for \(config.name)")
                                 .accessibilityAddTraits(.isHeader)
-                                .accessibilityHeading(.h2)
+                                .accessibilityHeading(.h3)
                             Text(specLine(config))
                                 .font(.caption)
                                 .foregroundStyle(config.storageIsMissing ? Color.red : Color.secondary)
@@ -1284,6 +1287,18 @@ struct MachineTableView: NSViewRepresentable {
                 let field = NSTextField(labelWithString: "")
                 field.lineBreakMode = .byTruncatingTail
                 field.translatesAutoresizingMaskIntoConstraints = false
+                // Each machine's name a heading (2026-10-30, a tester: with
+                // headings there, a VoiceOver user goes by them first), so
+                // VO-Command-H goes machine to machine in the table too;
+                // VO-Space on one chooses it.
+                // Set on its cell: a label's accessibility is its cell's, and
+                // a role set on the field itself didn't reach VoiceOver.
+                if column == 0 {
+                    let heading = HeadingLabelCell(textCell: "")
+                    heading.isEditable = false
+                    heading.isSelectable = false
+                    field.cell = heading
+                }
                 cell.addSubview(field)
                 cell.textField = field
                 NSLayoutConstraint.activate([
@@ -1357,6 +1372,13 @@ final class FittingScrollView: NSScrollView {
             if abs(column.width - fitted) >= 1 { column.width = fitted }
         }
     }
+}
+
+/// A label VoiceOver reads as a heading: the table's machine names.
+final class HeadingLabelCell: NSTextFieldCell {
+    override func accessibilityRole() -> NSAccessibility.Role? { NSAccessibility.Role(rawValue: "AXHeading") }
+    /// A heading's words are its label; a label's text was its value.
+    override func accessibilityLabel() -> String? { stringValue }
 }
 
 /// Return is the row's main action, as a double-click is.
