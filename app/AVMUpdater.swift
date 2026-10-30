@@ -151,6 +151,7 @@ enum ReleaseNotes {
             "AVM comes to the front whenever it starts a machine that takes your keyboard, so the keyboard goes in and AVM stays in Command-Tab.",
             "A new Ubuntu machine has the guest agent, so AVM can shut it down and send it files. Machines made earlier don't: install qemu-guest-agent in Ubuntu once.",
             "The setup wizard downloads Windows 11 for ARM itself, straight from Microsoft, in your Mac's language: no web page to use. It checks the download and makes it into the installer.",
+            "Installing Windows no longer stops for good when an installer hangs during setup, as the one Microsoft's download gives did. Anything that didn't finish installs when you first sign in.",
         ]),
         ReleaseNote(version: "0.4.15", changes: [
             "AVM no longer freezes for a moment when Windows apps or virtual machines are added to Command-Tab.",
