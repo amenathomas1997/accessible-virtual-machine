@@ -546,19 +546,22 @@ private struct DashboardContent: View {
         _ = sessionChanges   // redrawn as running machines change
         let rows = vmStore.configurations.map(tableRow)
         return MachineTableView(rows: rows, selection: $selectedID,
-                                primaryAction: { id in
-                                    if let config = vmStore.configurations.first(where: { $0.id == id }) { primaryAction(config) }
-                                },
-                                menuItems: { id in
-                                    vmStore.configurations.first(where: { $0.id == id }).map(tableMenu) ?? []
-                                })
+                                primaryAction: { id in configuration(id).map(primaryAction) },
+                                menuItems: { id in configuration(id).map(tableMenu) ?? [] })
             // Tall enough for every row, up to ten; more scroll in the table.
             .frame(height: CGFloat(min(max(rows.count, 1), 10)) * MachineTableView.rowHeight + 32)
-            // Each running machine's changes redraw the table (its row's
-            // Status), as the rows below observe theirs.
-            .onReceive(Publishers.MergeMany(machines.sessions.values.map { $0.objectWillChange }).receive(on: RunLoop.main)) { _ in
+            // A running machine's state redraws the table (its row's Status),
+            // as the rows below observe theirs. Its state only (2026-10-30
+            // cleanup): every change to a session, its console text
+            // included, redrew the dashboard and read each machine's files.
+            .onReceive(Publishers.MergeMany(machines.sessions.values.map { $0.$vmState.removeDuplicates().dropFirst() })
+                .receive(on: RunLoop.main)) { _ in
                 sessionChanges &+= 1
             }
+    }
+
+    private func configuration(_ id: UUID) -> VMConfiguration? {
+        vmStore.configurations.first { $0.id == id }
     }
 
     private func tableRow(_ config: VMConfiguration) -> MachineTableRow {
@@ -616,7 +619,7 @@ private struct DashboardContent: View {
             return
         }
         if let session = machines.session(for: config.id) {
-            if session.vmState == .running || session.vmState == .paused {
+            if session.isRunningOrPaused {
                 MachineSessions.shared.enter(config.id)
             } else {
                 Announcer.shared.announce("\(config.name) is \(session.vmState == .starting ? "starting" : "shutting down").", tone: .info)
@@ -632,7 +635,7 @@ private struct DashboardContent: View {
         var items: [MachineMenuItem] = []
         let session = config.guestOS == .macOS ? nil : machines.session(for: config.id)
         let running = config.guestOS == .macOS ? macGuest.runningID == config.id
-            : session.map { $0.vmState == .running || $0.vmState == .paused } ?? false
+            : session?.isRunningOrPaused ?? false
         if running {
             items.append(MachineMenuItem("Enter \(config.name)") { primaryAction(config) })
         } else if session == nil, !config.isATemplate {
@@ -643,10 +646,7 @@ private struct DashboardContent: View {
             items.append(MachineMenuItem("Shut Down \(config.name)") { macGuest.shutDown() })
         } else if running, let session, !session.isSaving {
             items.append(MachineMenuItem("Shut Down \(config.name)") {
-                Task {
-                    do { try await session.stopGracefully() }
-                    catch { Announcer.shared.announce("\(config.name) could not be shut down. Reason: \(error.localizedDescription) Next: try Shut Down again, or use Force Stop.", tone: .failure) }
-                }
+                QEMUMachineRow.shutDown(session, name: config.name) { errorMessage = $0 }
             })
         }
         if !running, session == nil {
@@ -1009,7 +1009,7 @@ private struct QEMUMachineRow: View {
         Self.status(of: session, name: name, keyboardIn: focusLock.isLocked && machines.currentID == session.configuration.id)
     }
 
-    /// Also the table's Status column (SessionStatusText).
+    /// Also the table's Status column.
     static func status(of session: VMSession, name: String, keyboardIn: Bool) -> String {
         switch session.vmState {
         case .starting: return "Starting"
@@ -1157,6 +1157,11 @@ private struct QEMUMachineRow: View {
     }
 
     private func shutDown() {
+        Self.shutDown(session, name: name) { errorMessage = $0 }
+    }
+
+    /// Also the table's menu (2026-10-30 cleanup: its own copy had drifted).
+    static func shutDown(_ session: VMSession, name: String, failed: @escaping (String) -> Void) {
         Task {
             // stopGracefully waits until the machine has shut down, so its
             // session stays alive the whole time (fixed 2026-09-27); the
@@ -1164,7 +1169,7 @@ private struct QEMUMachineRow: View {
             do {
                 try await session.stopGracefully()
             } catch {
-                errorMessage = error.localizedDescription
+                failed(error.localizedDescription)
                 Announcer.shared.announce(
                     "\(name) could not be shut down. Reason: \(error.localizedDescription.hasSuffix(".") ? String(error.localizedDescription.dropLast()) : error.localizedDescription). Next: try Shut Down again, or use Force Stop.",
                     tone: .failure
@@ -1239,6 +1244,7 @@ struct MachineTableView: NSViewRepresentable {
         table.menu = menu
         table.setAccessibilityLabel("Virtual machines")
         let scroll = FittingScrollView()
+        scroll.shares = Self.widths
         scroll.documentView = table
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
@@ -1337,26 +1343,18 @@ struct MachineTableView: NSViewRepresentable {
 /// Fits the table's columns to its width, in their shares, whenever it's
 /// laid out, so no column runs off the edge or is cut to a letter.
 final class FittingScrollView: NSScrollView {
+    /// Each column's share of the width, in the table's column order.
+    var shares: [CGFloat] = []
+
     override func tile() {
         super.tile()
-        guard let table = documentView as? NSTableView, !table.tableColumns.isEmpty else { return }
-        let spacing = table.intercellSpacing.width * CGFloat(table.tableColumns.count)
-        let width = contentSize.width - spacing
-        guard width > 0 else { return }
-        let total = MachineTableView.widths.reduce(0, +)
-        var changed = false
-        for (index, column) in table.tableColumns.enumerated() where index < MachineTableView.widths.count {
-            let share = (width * MachineTableView.widths[index] / total).rounded(.down)
-            if abs(column.width - share) >= 1 {
-                column.width = max(share, column.minWidth)
-                changed = true
-            }
-        }
-        // The cells laid out again for their columns' new widths.
-        if changed {
-            table.tile()
-            table.needsLayout = true
-            table.layoutSubtreeIfNeeded()
+        guard let table = documentView as? NSTableView, !shares.isEmpty else { return }
+        let width = contentSize.width - table.intercellSpacing.width * CGFloat(table.tableColumns.count)
+        let total = shares.reduce(0, +)
+        guard width > 0, total > 0 else { return }
+        for (column, share) in zip(table.tableColumns, shares) {
+            let fitted = max((width * share / total).rounded(.down), column.minWidth)
+            if abs(column.width - fitted) >= 1 { column.width = fitted }
         }
     }
 }

@@ -49,11 +49,27 @@ final class WindowsApps {
     static let helperVersion = "5"
     static let guestFolder = #"C:\ProgramData\AVM"#
 
+    /// What a Mac app stands for: an app open in Windows, one kept in the
+    /// Dock and Applications, or a running machine. The raw value is its
+    /// part of the bundle identifier.
+    private enum Kind: String {
+        case app = ""
+        case pinned = "pinned."
+        case machine = "machine."
+    }
+
     private struct Entry {
         let bundleID: String
         let name: String
         /// When AVM last opened it, so one still launching isn't opened again.
         var opened = Date()
+
+        /// Quit by the person, or crashed, though what it stands for is still
+        /// open (2026-10-30 audit: it stayed out of Command-Tab until then),
+        /// given the bundle identifiers running now.
+        func wasQuit(running: Set<String>) -> Bool {
+            Date().timeIntervalSince(opened) > 10 && !running.contains(bundleID)
+        }
     }
     /// The Mac apps launched, by machine, by the helper's key for the app.
     private var entries: [UUID: [String: Entry]] = [:]
@@ -72,6 +88,11 @@ final class WindowsApps {
     private var machineEntries: [UUID: Entry] = [:]
 
     private var bundlePrefix: String { (Bundle.main.bundleIdentifier ?? "com.fullcircleat.AVM") + ".windowsapp." }
+
+    /// Every running app's bundle identifier, from one walk of the list.
+    private static func runningBundleIDs() -> Set<String> {
+        Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+    }
 
     func start() {
         guard timer == nil else { return }
@@ -94,11 +115,6 @@ final class WindowsApps {
 
     private func tick() {
         guard !ticking else { return }
-        if !pinnedRefreshed, let store = VMStore.shared, !store.configurations.isEmpty {
-            pinnedRefreshed = true
-            refreshPinned(store)
-        }
-        syncMachines()
         // Every running Windows machine gets the helper (so 0.4.12's AVM
         // Keyboard is taken out of each); only those with the setting on
         // get their apps in Command-Tab.
@@ -109,10 +125,14 @@ final class WindowsApps {
         let listed = Set(machines.filter { $0.configuration.windowsAppsInCommandTab != false }.map { $0.configuration.id })
         for machine in entries.keys where !listed.contains(machine) { quitEntries(of: machine) }
         for machine in helperReady.keys where !running.contains(machine) { helperReady[machine] = nil }
-        guard !machines.isEmpty else { return }
         ticking = true
         Task {
             defer { ticking = false }
+            if !pinnedRefreshed, let store = VMStore.shared, !store.configurations.isEmpty {
+                pinnedRefreshed = true
+                await refreshPinned(store)
+            }
+            await syncMachines()
             for session in machines {
                 let manager = session.manager
                 let id = session.configuration.id
@@ -121,62 +141,65 @@ final class WindowsApps {
                 }
                 guard listed.contains(id) else { continue }
                 guard let list = try? await Self.readGuestFile(manager, Self.guestFolder + #"\apps\running.txt"#) else { continue }
-                sync(machine: id, machineName: session.configuration.name, list: list)
+                await sync(machine: id, machineName: session.configuration.name, list: list)
             }
         }
     }
 
-    private func sync(machine: UUID, machineName: String, list: String) {
+    private func sync(machine: UUID, machineName: String, list: String) async {
         var open: [String: String] = [:]
         for line in list.split(separator: "\n") {
             let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
             guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { continue }
             open[parts[0]] = parts[1]
         }
-        var current = entries[machine] ?? [:]
-        // Quit by the person, or crashed, while its app is still open in
-        // Windows (2026-10-30 audit: it stayed out of Command-Tab until the
-        // app was closed and opened again): made again just below.
-        for (key, entry) in current where open[key] != nil && Date().timeIntervalSince(entry.opened) > 10
-            && NSRunningApplication.runningApplications(withBundleIdentifier: entry.bundleID).isEmpty {
-            current[key] = nil
+        // Made again just below.
+        let runningIDs = Self.runningBundleIDs()
+        for (key, entry) in entries[machine] ?? [:] where open[key] != nil && entry.wasQuit(running: runningIDs) {
+            entries[machine]?[key] = nil
             AVMLog.write("Windows apps: \(entry.name) was quit on the Mac; opening it again", category: "WindowsApps")
         }
-        for (key, entry) in current where open[key] == nil {
+        for (key, entry) in entries[machine] ?? [:] where open[key] == nil {
             quit(entry.bundleID)
-            current[key] = nil
+            entries[machine]?[key] = nil
             AVMLog.write("Windows apps: \(entry.name) closed in \(machineName); out of Command-Tab", category: "WindowsApps")
         }
-        for (key, name) in open where current[key] == nil {
-            guard let entry = launchEntry(machine: machine, machineName: machineName, key: key, name: name) else { continue }
-            current[key] = entry
+        let new = open.filter { entries[machine]?[$0.key] == nil }
+        guard !new.isEmpty else { return }
+        // Looked at once for them all, not once an app.
+        let pinned = pinnedBundles()
+        for (key, name) in new {
+            guard let entry = await launchEntry(machine: machine, machineName: machineName, key: key, name: name,
+                                                pinned: pinned, running: runningIDs) else { continue }
+            entries[machine, default: [:]][key] = entry
             AVMLog.write("Windows apps: \(name) open in \(machineName); in Command-Tab", category: "WindowsApps")
         }
-        entries[machine] = current
     }
 
     // MARK: The Mac apps
 
-    private func bundleID(machine: UUID, key: String, pinned: Bool) -> String {
+    /// A machine's own app has no app key.
+    private func bundleID(machine: UUID, key: String, kind: Kind) -> String {
         let digest = SHA256.hash(data: Data((machine.uuidString + "\n" + key).utf8))
-        return bundlePrefix + (pinned ? "pinned." : "") + digest.prefix(6).map { String(format: "%02x", $0) }.joined()
+        return bundlePrefix + kind.rawValue + digest.prefix(6).map { String(format: "%02x", $0) }.joined()
     }
 
-    private func launchEntry(machine: UUID, machineName: String, key: String, name: String) -> Entry? {
+    private func launchEntry(machine: UUID, machineName: String, key: String, name: String,
+                             pinned bundles: [(url: URL, info: NSDictionary)], running: Set<String>) async -> Entry? {
         let title = "\(name) (\(machineName))"
         // A pinned one opens as itself, so its Dock icon shows it's open.
-        if let pinned = pinnedBundle(machine: machine, key: key) {
+        if let pinned = pinnedBundle(machine: machine, key: key, in: bundles) {
             // Opened by the person already, it stays as it is, not hidden.
-            if NSRunningApplication.runningApplications(withBundleIdentifier: pinned.bundleID).isEmpty {
+            if !running.contains(pinned.bundleID) {
                 openHidden(pinned.url, title: title)
             }
             return Entry(bundleID: pinned.bundleID, name: name)
         }
-        let bundleID = bundleID(machine: machine, key: key, pinned: false)
+        let bundleID = bundleID(machine: machine, key: key, kind: .app)
         do {
             let url = try bundleURL(machine: machine, key: key, title: title)
             if !built.contains(bundleID) {
-                try build(url, bundleID: bundleID, title: title, name: name, key: key, machine: machine, machineName: machineName)
+                try await build(url, bundleID: bundleID, title: title, name: name, key: key, machine: machine, machineName: machineName)
                 built.insert(bundleID)
             }
             openHidden(url, title: title)
@@ -233,7 +256,7 @@ final class WindowsApps {
     }
 
     private func build(_ url: URL, bundleID: String, title: String, name: String, key: String,
-                       machine: UUID, machineName: String, pinned: Bool = false, kind: String = "app") throws {
+                       machine: UUID, machineName: String, kind: Kind = .app) async throws {
         let fm = FileManager.default
         guard let stub = Bundle.main.url(forAuxiliaryExecutable: "AVMWindowsApp") else {
             throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "AVMWindowsApp isn't in AVM"])
@@ -258,21 +281,26 @@ final class WindowsApps {
             "AVMMachineName": machineName,
             "AVMControlSocket": ControlServer.socketURL?.path ?? "",
             "AVMBundleID": Bundle.main.bundleIdentifier ?? "",
-            "AVMPinned": pinned,
-            "AVMKind": kind,
+            "AVMPinned": kind == .pinned,
+            "AVMKind": kind == .machine ? "machine" : "app",
         ]
         let plist = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
         try plist.write(to: url.appendingPathComponent("Contents/Info.plist"))
         // Signed for this Mac: the copy's signature is for AVM's bundle.
-        let sign = Process()
-        sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-        sign.arguments = ["--force", "--sign", "-", url.path]
-        sign.standardOutput = FileHandle.nullDevice
-        sign.standardError = FileHandle.nullDevice
-        try sign.run()
-        sign.waitUntilExit()
-        guard sign.terminationStatus == 0 else {
-            throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "codesign failed (\(sign.terminationStatus))"])
+        // Waited for without holding the main thread (2026-10-30 cleanup):
+        // a tenth of a second or more a bundle, and a machine with ten apps
+        // open froze AVM, VoiceOver and all, for a second or more.
+        let status: Int32 = try await withCheckedThrowingContinuation { done in
+            let sign = Process()
+            sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+            sign.arguments = ["--force", "--sign", "-", url.path]
+            sign.standardOutput = FileHandle.nullDevice
+            sign.standardError = FileHandle.nullDevice
+            sign.terminationHandler = { done.resume(returning: $0.terminationStatus) }
+            do { try sign.run() } catch { done.resume(throwing: error) }
+        }
+        guard status == 0 else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "codesign failed (\(status))"])
         }
     }
 
@@ -288,7 +316,7 @@ final class WindowsApps {
     /// From an AVM that didn't quit cleanly.
     private func quitLeftovers(keepingPinned: Bool = false) {
         for app in NSWorkspace.shared.runningApplications where app.bundleIdentifier?.hasPrefix(bundlePrefix) == true {
-            if keepingPinned, app.bundleIdentifier?.hasPrefix(bundlePrefix + "pinned.") == true { continue }
+            if keepingPinned, app.bundleIdentifier?.hasPrefix(bundlePrefix + Kind.pinned.rawValue) == true { continue }
             app.terminate()
         }
     }
@@ -297,30 +325,27 @@ final class WindowsApps {
 
     /// Every running machine has its app, named for it; one quit by the
     /// person, or renamed, is made again, and a stopped one's goes.
-    private func syncMachines() {
+    private func syncMachines() async {
         var running: [UUID: String] = [:]
         func name(_ id: UUID, _ fallback: String) -> String {
             VMStore.shared?.configurations.first { $0.id == id }?.name ?? fallback
         }
-        for session in MachineSessions.shared.sessions.values where session.vmState == .running || session.vmState == .paused {
+        for session in MachineSessions.shared.sessions.values where session.isRunningOrPaused {
             running[session.configuration.id] = name(session.configuration.id, session.configuration.name)
         }
         if let id = MacGuestRunner.shared.runningID { running[id] = name(id, "macOS") }
-        for (id, entry) in machineEntries {
-            let quitByPerson = Date().timeIntervalSince(entry.opened) > 10
-                && NSRunningApplication.runningApplications(withBundleIdentifier: entry.bundleID).isEmpty
-            guard running[id] != entry.name || quitByPerson else { continue }
+        let runningIDs = Self.runningBundleIDs()
+        for (id, entry) in machineEntries where running[id] != entry.name || entry.wasQuit(running: runningIDs) {
             quit(entry.bundleID)
             machineEntries[id] = nil
         }
         for (id, machineName) in running where machineEntries[id] == nil {
-            let digest = SHA256.hash(data: Data(("machine\n" + id.uuidString).utf8))
-            let bundleID = bundlePrefix + "machine." + digest.prefix(6).map { String(format: "%02x", $0) }.joined()
+            let bundleID = bundleID(machine: id, key: "", kind: .machine)
             do {
                 let url = try bundleURL(machine: id, key: "", title: machineName)
                 if !built.contains(bundleID) || !FileManager.default.fileExists(atPath: url.path) {
-                    try build(url, bundleID: bundleID, title: machineName, name: machineName, key: "",
-                              machine: id, machineName: machineName, kind: "machine")
+                    try await build(url, bundleID: bundleID, title: machineName, name: machineName, key: "",
+                                    machine: id, machineName: machineName, kind: .machine)
                     built.insert(bundleID)
                 }
                 openHidden(url, title: machineName)
@@ -368,8 +393,10 @@ final class WindowsApps {
         return found
     }
 
-    private func pinnedBundle(machine: UUID, key: String) -> (url: URL, bundleID: String)? {
-        for (url, info) in pinnedBundles() {
+    /// In `bundles` when they've been looked at already.
+    private func pinnedBundle(machine: UUID, key: String,
+                              in bundles: [(url: URL, info: NSDictionary)]? = nil) -> (url: URL, bundleID: String)? {
+        for (url, info) in bundles ?? pinnedBundles() {
             guard info["AVMMachineID"] as? String == machine.uuidString, info["AVMAppKey"] as? String == key,
                   let id = info["CFBundleIdentifier"] as? String else { continue }
             return (url, id)
@@ -384,7 +411,7 @@ final class WindowsApps {
     /// be, and those of a machine no longer in AVM taken out of the Dock and
     /// moved to the Trash. One that's running is left for the next run: it
     /// may be what opened AVM.
-    private func refreshPinned(_ store: VMStore) {
+    private func refreshPinned(_ store: VMStore) async {
         let fm = FileManager.default
         let version = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         let socket = ControlServer.socketURL?.path ?? ""
@@ -392,11 +419,12 @@ final class WindowsApps {
         let canMove = Self.folderForPinning() == Self.pinnedFolder
         var moved: [String: URL] = [:]
         var removed: Set<String> = []
+        let runningIDs = Self.runningBundleIDs()
         for (url, info) in pinnedBundles() {
             guard let id = info["CFBundleIdentifier"] as? String,
                   let machine = UUID(uuidString: info["AVMMachineID"] as? String ?? ""),
                   let key = info["AVMAppKey"] as? String, let name = info["AVMAppName"] as? String,
-                  NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty else { continue }
+                  !runningIDs.contains(id) else { continue }
             let title = info["CFBundleName"] as? String ?? url.deletingPathExtension().lastPathComponent
             if !machines.contains(machine) {
                 if (try? fm.trashItem(at: url, resultingItemURL: nil)) != nil {
@@ -419,8 +447,8 @@ final class WindowsApps {
             }
             guard info["CFBundleVersion"] as? String != version || info["AVMControlSocket"] as? String != socket else { continue }
             do {
-                try build(place, bundleID: id, title: title, name: name, key: key, machine: machine,
-                          machineName: info["AVMMachineName"] as? String ?? "", pinned: true)
+                try await build(place, bundleID: id, title: title, name: name, key: key, machine: machine,
+                                machineName: info["AVMMachineName"] as? String ?? "", kind: .pinned)
                 built.insert(id)
                 AVMLog.write("Windows apps: \(title) made again for this AVM", category: "WindowsApps")
             } catch {
@@ -434,7 +462,7 @@ final class WindowsApps {
     }
 
     /// Keep in Dock and Applications.
-    func pin(machine: UUID, appKey: String, name: String) -> (ok: Bool, message: String) {
+    func pin(machine: UUID, appKey: String, name: String) async -> (ok: Bool, message: String) {
         guard let config = VMStore.shared?.configurations.first(where: { $0.id == machine }) else {
             return (false, "That machine isn't in AVM any more.")
         }
@@ -442,13 +470,13 @@ final class WindowsApps {
         if pinnedBundle(machine: machine, key: appKey) != nil {
             return (true, "\(title) is in your Dock and Applications already.")
         }
-        let id = bundleID(machine: machine, key: appKey, pinned: true)
+        let id = bundleID(machine: machine, key: appKey, kind: .pinned)
         guard let folder = Self.folderForPinning() else {
             return (false, "AVM couldn't keep \(title): it can't write to Applications.")
         }
         do {
             let url = Self.freeURL(in: folder, title: title, machine: machine, key: appKey)
-            try build(url, bundleID: id, title: title, name: name, key: appKey, machine: machine, machineName: config.name, pinned: true)
+            try await build(url, bundleID: id, title: title, name: name, key: appKey, machine: machine, machineName: config.name, kind: .pinned)
             built.insert(id)
             Self.addToDock(url, title: title, bundleID: id)
             // The pinned one stands for the app from now on.
@@ -480,7 +508,7 @@ final class WindowsApps {
             return (false, "AVM couldn't remove \(title): \(error.localizedDescription)")
         }
         // While the app is open, a temporary one stands for it again.
-        if entries[machine]?[appKey] != nil { entries[machine]?[appKey] = nil }
+        entries[machine]?[appKey] = nil
         AVMLog.write("Windows apps: \(title) unpinned", category: "WindowsApps")
         let line = "\(title) is out of your Dock and Applications."
         Announcer.shared.announce(line, tone: .info)
@@ -558,10 +586,8 @@ final class WindowsApps {
         guard !launching.contains(job) else { return (true, "\(name) is opening already.") }
         if MachineSessions.shared.session(for: machine) == nil {
             if config.isATemplate { return (false, "\(config.name) is a template.") }
-            if MachineArchiveController.shared.busyMachineID == machine, let activity = MachineArchiveController.shared.activity {
-                return (false, "AVM is \(activity). Try again when it's done.")
-            }
-            if BackgroundMode.shared.inBackground { BackgroundMode.shared.comeForward(announce: false) }
+            if let busy = MachineArchiveController.shared.busyMessage(for: config) { return (false, busy) }
+            BackgroundMode.shared.comeForward(announce: false)
             _ = MachineSessions.shared.start(config, vmStore: VMStore.shared, focusLock: FocusLockManager.shared, takesKeyboard: true)
             Announcer.shared.announce("Starting \(config.name) for \(name). Sign in to Windows when it asks, and \(name) opens.", tone: .info)
         }
@@ -613,7 +639,7 @@ final class WindowsApps {
             guard parts.first == id else { continue }
             if parts.count > 1, parts[1] == "ok" {
                 AVMLog.write("Windows apps: \(name) open and in front in \(machineName); entering", category: "WindowsApps")
-                if BackgroundMode.shared.inBackground { BackgroundMode.shared.comeForward(announce: false) }
+                BackgroundMode.shared.comeForward(announce: false)
                 MachineSessions.shared.enter(machine)
             } else {
                 let why = parts.count > 2 ? parts[2] : "it didn't open"
@@ -644,7 +670,7 @@ final class WindowsApps {
         do {
             _ = try await manager.agentRun("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", Self.prepareScript], limit: .seconds(60))
             try await Self.writeGuestFile(manager, Self.guestFolder + #"\bin\AVMWindowsApps.cs"#, code)
-            let output = try await manager.agentRun("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", Self.installScript(version: Self.helperVersion)], limit: .seconds(120))
+            let output = try await manager.agentRun("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", Self.installScript], limit: .seconds(120))
             guard output.contains("AVM-INSTALLED") else {
                 AVMLog.write("Windows apps: the helper didn't install: \(output.prefix(600))", category: "WindowsApps")
                 return false
@@ -670,7 +696,7 @@ final class WindowsApps {
 
     /// Compiled with Windows' own .NET Framework compiler (Arm64 where
     /// there is one), then the task at sign-in, started now.
-    private static func installScript(version: String) -> String {
+    private static var installScript: String {
         #"""
         $ErrorActionPreference = 'Stop'
         $csc = @('C:\Windows\Microsoft.NET\FrameworkArm64\v4.0.30319\csc.exe', 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -688,7 +714,7 @@ final class WindowsApps {
         # At the sign-in screen there's no one to run it for, and Windows
         # refuses (2026-10-30 audit); it starts at sign-in anyway.
         try { Start-ScheduledTask -TaskPath '\AVM\' -TaskName 'Windows Apps' } catch { }
-        Set-Content -Path 'C:\ProgramData\AVM\bin\version.txt' -Value '\#(version)' -Encoding ASCII
+        Set-Content -Path 'C:\ProgramData\AVM\bin\version.txt' -Value '\#(helperVersion)' -Encoding ASCII
         'AVM-INSTALLED'
         """#
     }

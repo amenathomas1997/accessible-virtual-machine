@@ -1159,20 +1159,26 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         self.machineID = machineID
         self.manager = manager
         super.init()
+        if let machineID, let store = VMStore.shared {
+            pointerSetting = store.$configurations
+                .map { $0.first { $0.id == machineID }?.trackpadAndMouseOff == true }
+                .removeDuplicates()
+                .receive(on: RunLoop.main)
+                .sink { [weak self] in self?.pointerOff = $0 }
+        }
     }
 
     var isLocked: Bool { focusLock.isLocked }
 
     /// The machine's trackpad and mouse turned off (2026-10-30, the user's
     /// request: a blind person's stray touches moved and clicked in
-    /// Windows). Read as each event comes, from the saved settings, so the
-    /// switch in Settings takes effect at once. The pointer stays frozen
-    /// and hidden while locked, as always, so a touch does nothing at all;
-    /// on the Mac it works as ever.
-    private var pointerOff: Bool {
-        guard let machineID else { return false }
-        return VMStore.shared?.configurations.first { $0.id == machineID }?.trackpadAndMouseOff == true
-    }
+    /// Windows). Kept up to date from the saved settings (pointerSetting),
+    /// so the switch in Settings takes effect at once without a lookup at
+    /// every mouse event. The pointer stays frozen and hidden while locked,
+    /// as always, so a touch does nothing at all; on the Mac it works as
+    /// ever.
+    private var pointerOff = false
+    private var pointerSetting: AnyCancellable?
 
     // MARK: Setup
     func attach(mtkView: MTKView, socketPath: String) {

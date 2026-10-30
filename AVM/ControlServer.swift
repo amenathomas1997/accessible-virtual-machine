@@ -144,9 +144,7 @@ final class ControlServer {
         case "start":
             // The dashboard's refusals too (2026-10-28, code review): not
             // while its files are being copied, and never a template.
-            if MachineArchiveController.shared.busyMachineID == config.id, let activity = MachineArchiveController.shared.activity {
-                return fail("AVM is \(activity). Wait until it's done, then try again.")
-            }
+            if let busy = MachineArchiveController.shared.busyMessage(for: config) { return fail(busy) }
             if config.isATemplate { return fail("\(name) is a template. Duplicate it to make a machine to start.") }
             if isMac {
                 guard mac.runningID == nil else { return fail("A macOS machine is already running.") }
@@ -224,13 +222,13 @@ final class ControlServer {
         // A machine's own app in Command-Tab, switched to (2026-10-30,
         // WindowsApps.swift): its window forward and the keyboard in it.
         case "enter-machine":
-            if BackgroundMode.shared.inBackground { BackgroundMode.shared.comeForward(announce: false) }
+            BackgroundMode.shared.comeForward(announce: false)
             if isMac {
                 guard mac.runningID == config.id else { return fail("\(name) isn't running.") }
                 mac.enter()
                 return ["ok": true, "message": ""]
             }
-            guard let session, session.vmState == .running || session.vmState == .paused else { return fail("\(name) isn't running.") }
+            guard let session, session.isRunningOrPaused else { return fail("\(name) isn't running.") }
             MachineSessions.shared.enter(config.id)
             return ["ok": true, "message": ""]
 
@@ -242,9 +240,11 @@ final class ControlServer {
             let key = request["app"] as? String ?? ""
             let appName = request["name"] as? String ?? "The app"
             guard !key.isEmpty else { return fail("AVM didn't understand the request.") }
-            let result = command == "launch-app" ? WindowsApps.shared.launch(machine: config.id, appKey: key, name: appName)
-                : command == "pin-app" ? WindowsApps.shared.pin(machine: config.id, appKey: key, name: appName)
-                : WindowsApps.shared.unpin(machine: config.id, appKey: key)
+            let result = switch command {
+            case "launch-app": WindowsApps.shared.launch(machine: config.id, appKey: key, name: appName)
+            case "pin-app": await WindowsApps.shared.pin(machine: config.id, appKey: key, name: appName)
+            default: WindowsApps.shared.unpin(machine: config.id, appKey: key)
+            }
             return ["ok": result.ok, "message": result.message]
 
         case "send-file":

@@ -41,6 +41,7 @@ final class WindowsAppEntry: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var status: NSTextField?
     private var asking = false
+    private static let noAnswer = "AVM didn't answer. Open AVM, then try again."
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if isMachine {
@@ -54,20 +55,8 @@ final class WindowsAppEntry: NSObject, NSApplicationDelegate {
         let enter = NSButton(title: "Type in \(appName)", target: self, action: #selector(enterApp(_:)))
         let keep = NSButton(title: pinned ? "Remove from Dock and Applications" : "Keep in Dock and Applications",
                             target: self, action: #selector(togglePinned(_:)))
-        let stack = NSStackView(views: [text, enter, keep])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 170),
-                              styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-        window.title = "\(appName) in \(machineName)"
-        window.contentView = stack
-        window.isReleasedWhenClosed = false
-        window.center()
-        self.window = window
-        status = text
-        if !NSApp.isHidden { window.makeKeyAndOrderFront(nil) }
+        makeWindow(title: "\(appName) in \(machineName)", text: text, buttons: [enter, keep])
+        if !NSApp.isHidden { window?.makeKeyAndOrderFront(nil) }
         // Opened by the person, not by AVM: open the app.
         if !CommandLine.arguments.contains("--avm-opened") { openApp() }
     }
@@ -111,39 +100,54 @@ final class WindowsAppEntry: NSObject, NSApplicationDelegate {
         // Shown only when AVM couldn't enter the machine, to say why.
         let text = NSTextField(wrappingLabelWithString: "\(machineName): switching here puts your keyboard into it. Control-Command-Escape brings you back to the Mac.")
         let enterButton = NSButton(title: "Enter \(machineName)", target: self, action: #selector(enterMachineChosen(_:)))
-        let stack = NSStackView(views: [text, enterButton])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 130),
-                              styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-        window.title = machineName
-        window.contentView = stack
-        window.isReleasedWhenClosed = false
-        window.center()
-        self.window = window
-        status = text
+        makeWindow(title: machineName, text: text, buttons: [enterButton])
         if !CommandLine.arguments.contains("--avm-opened") { enterMachine() }
     }
 
     @objc func enterMachineChosen(_ sender: Any?) { enterMachine() }
 
-    /// AVM takes the front and enters the machine; only a refusal is said
-    /// here, in the window.
-    private func enterMachine() {
+    /// AVM takes the front and enters the machine; only a refusal shows
+    /// the window, to say why.
+    private func enterMachine() { handOver("enter-machine", showingWindowIfRefused: true) }
+
+    /// The one window, which VoiceOver reads: a line, then buttons.
+    private func makeWindow(title: String, text: NSTextField, buttons: [NSButton]) {
+        let stack = NSStackView(views: [text] + buttons)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 90 + CGFloat(buttons.count) * 40),
+                              styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        window.title = title
+        window.contentView = stack
+        window.isReleasedWhenClosed = false
+        window.center()
+        self.window = window
+        status = text
+    }
+
+    /// AVM takes the front next (macOS 14 lets an app activate only when
+    /// the active one yields) and is asked to act; only a refusal is said
+    /// here.
+    private func handOver(_ command: String, showingWindowIfRefused: Bool) {
         guard !asking else { return }
         asking = true
         if #available(macOS 14.0, *), let avm = info["AVMBundleID"] as? String {
             NSApp.yieldActivation(toApplicationWithBundleIdentifier: avm)
         }
-        ask("enter-machine") { reply in
+        ask(command) { reply in
             self.asking = false
-            if reply?["ok"] as? Bool != true {
-                self.window?.makeKeyAndOrderFront(nil)
-                self.say(reply?["message"] as? String ?? "AVM didn't answer. Open AVM, then try again.")
-            }
+            if self.sayIfRefused(reply), showingWindowIfRefused { self.window?.makeKeyAndOrderFront(nil) }
         }
+    }
+
+    /// True after saying why, when AVM said no or didn't answer.
+    @discardableResult
+    private func sayIfRefused(_ reply: [String: Any]?) -> Bool {
+        guard reply?["ok"] as? Bool != true else { return false }
+        say(reply?["message"] as? String ?? Self.noAnswer)
+        return true
     }
 
     private func buildMenu() {
@@ -174,25 +178,11 @@ final class WindowsAppEntry: NSObject, NSApplicationDelegate {
 
     /// The app, opened or brought forward in Windows, with the machine
     /// started and AVM opened as needed (WindowsApps.launch).
-    private func openApp() {
-        guard !asking else { return }
-        asking = true
-        // AVM takes the front next (macOS 14 lets an app activate only when
-        // the active one yields).
-        if #available(macOS 14.0, *), let avm = info["AVMBundleID"] as? String {
-            NSApp.yieldActivation(toApplicationWithBundleIdentifier: avm)
-        }
-        ask("launch-app") { reply in
-            self.asking = false
-            if reply?["ok"] as? Bool != true { self.say(reply?["message"] as? String ?? "AVM didn't answer. Open AVM, then try again.") }
-        }
-    }
+    private func openApp() { handOver("launch-app", showingWindowIfRefused: false) }
 
     @objc func togglePinned(_ sender: Any?) {
-        ask(pinned ? "unpin-app" : "pin-app") { reply in
-            // AVM says what happened; only a refusal is said here.
-            if reply?["ok"] as? Bool != true { self.say(reply?["message"] as? String ?? "AVM didn't answer. Open AVM, then try again.") }
-        }
+        // AVM says what happened; only a refusal is said here.
+        ask(pinned ? "unpin-app" : "pin-app") { self.sayIfRefused($0) }
     }
 
     private func say(_ message: String) {

@@ -200,10 +200,11 @@ enum ReleaseNotes {
         }
     }
 
-    /// From the Help menu: this version's notes and the two before.
-    static func showRecent() {
-        show(Array(since(nil).prefix(3)))
-    }
+    /// This version's notes and the two before, for the Help menu and the
+    /// accessibility audit.
+    static var recent: [ReleaseNote] { Array(since(nil).prefix(3)) }
+
+    static func showRecent() { show(recent) }
 
     private static func showWhenOnTheMac(_ notes: [ReleaseNote]) {
         guard FocusLockManager.shared?.isLocked != true else {
@@ -217,7 +218,7 @@ enum ReleaseNotes {
         guard !notes.isEmpty else { return }
         window?.close()
         let title = notes.count == 1 ? "What's New in AVM \(notes[0].version)" : "What's New in AVM"
-        let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 460),
+        let panel = NSWindow(contentRect: NSRect(origin: .zero, size: WhatsNewView.size),
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
         panel.title = title
         panel.isReleasedWhenClosed = false
@@ -231,6 +232,7 @@ enum ReleaseNotes {
 
 /// The notes: a heading per version, a line per change, and OK.
 struct WhatsNewView: View {
+    static let size = NSSize(width: 540, height: 460)
     let title: String
     let notes: [ReleaseNote]
     let close: () -> Void
@@ -267,6 +269,6 @@ struct WhatsNewView: View {
             }
         }
         .padding(24)
-        .frame(width: 540, height: 460)
+        .frame(width: Self.size.width, height: Self.size.height)
     }
 }

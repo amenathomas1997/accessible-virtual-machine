@@ -270,11 +270,7 @@ final class BackgroundMode: ObservableObject {
         // not locking"), and AVM, never brought forward, wasn't in
         // Command-Tab. A machine with a keyboard for Windows of its own
         // leaves the Mac's keyboard, and the front, alone.
-        if takesKeyboard {
-            NSApp.setActivationPolicy(.regular)
-            NSApp.unhide(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        if takesKeyboard { comeForward(openingDashboard: false) }
         start(config, takesKeyboard)
         guard runInBackground, config.windowsKeyboardID != nil else { return }
         Task { @MainActor in
