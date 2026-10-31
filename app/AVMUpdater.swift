@@ -156,6 +156,11 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.18", changes: [
+            "AVM speaks in VoiceOver again while you're in other apps. In 0.4.17 every line there failed and the system voice took over until AVM quit.",
+            "The Permissions window now sees VoiceOver Utility's Allow VoiceOver to be controlled with AppleScript when it's on, and says whether that switch or AVM's Automation permission is the one still missing.",
+            "Download Windows works in the setup wizard: the installer AVM makes from Microsoft's download is no longer called unreadable.",
+        ]),
         ReleaseNote(version: "0.4.17", changes: [
             "New macOS machines can set themselves up: turn on Set up macOS for me in New macOS Virtual Machine, give your name and a password, and AVM goes through Setup Assistant, signs in, and turns on VoiceOver. If a screen stops it, AVM reads that screen to you.",
             "A Permissions window, in the AVM menu, lists everything macOS has to allow for AVM, what each is for, and a button to allow it. It opens by itself only when something you use isn't allowed.",
