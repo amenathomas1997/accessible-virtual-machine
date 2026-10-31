@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.17</title>
+            <sparkle:version>37</sparkle:version>
+            <sparkle:shortVersionString>0.4.17</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>New macOS machines can set themselves up: turn on Set up macOS for me in New macOS Virtual Machine, give your name and a password, and AVM goes through Setup Assistant, signs in, and turns on VoiceOver. If a screen stops it, AVM reads that screen to you.</li><li>A Permissions window, in the AVM menu, lists everything macOS has to allow for AVM, what each is for, and a button to allow it. It opens by itself only when something you use isn&#x27;t allowed.</li><li>When AVM opens at login, only the machine that starts shows. AVM&#x27;s own window stays away until you open AVM from the Dock or Applications.</li><li>If no keyboard is chosen for Windows when a Windows machine starts, AVM offers the second keyboard it finds.</li><li>Virtual Machine menu: Type Clipboard (Command-Shift-V) types what you copied into Windows, Read Screen (Command-Shift-O) reads out the text on a machine&#x27;s screen, and Speak Updates and Disk (Command-Option-Shift-I) says the free disk space and pending updates in Windows or Linux.</li><li>A machine&#x27;s Sound settings can send its sound to any output device, such as headphones or a hearing aid, instead of the Mac&#x27;s own.</li><li>Report a Problem can email the whole log, and the AVM menu has Remove AVM, which takes AVM, its USB helper and its settings off your Mac.</li><li>A saved macOS machine started while the Mac is locked now resumes when you unlock it, instead of starting afresh and losing where you were.</li></ul>]]></description>
+            <pubDate>Sat, 31 Oct 2026 03:05:41 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.17/AVM-0.4.17.zip" sparkle:edSignature="KlLK0k68hg2UdOR8dLtabKF0KSuLcUM1t2MAblGDi/GTBEf7PNAPkaSaLsXkFl0rw9i0GqLmGTNkt4Tt+PCkBQ==" length="67703696" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.16</title>
             <sparkle:version>36</sparkle:version>
             <sparkle:shortVersionString>0.4.16</sparkle:shortVersionString>
