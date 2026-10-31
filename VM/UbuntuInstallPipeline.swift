@@ -13,6 +13,8 @@
 //                       reads it exactly as it does for Windows.
 // Debian (preseed) and Fedora (kickstart) installers go through the same
 // pipeline with their own answer files; see their MARK sections below.
+// Since 2026-10-30 so do Kali (Debian's), AlmaLinux and Rocky Linux
+// (Fedora's), and openSUSE Tumbleweed (an AutoYaST profile).
 //
 // HOW UBUNTU INSTALLS WITH NO QUESTIONS (approach proven first in Parallels
 // Manager's install-ubuntu.sh, then in AVM's own QEMU set-up, 2026-10-19):
@@ -163,7 +165,13 @@ nonisolated struct UbuntuAccount: Codable, Equatable {
                                      "ftp", "halt", "shutdown", "dbus", "chrony", "pipewire", "flatpak",
                                      "unbound", "rpc", "rpcuser", "usbmuxd", "abrt", "setroubleshoot",
                                      "qemu", "brlapi", "pesign", "wsdd", "saslauth", "openvpn",
-                                     "nm-openconnect", "passim", "dhcpcd"]
+                                     "nm-openconnect", "passim", "dhcpcd",
+                                     // Kali's tools' own (2026-10-30): the
+                                     // account is made before they install,
+                                     // and their adduser would then fail.
+                                     "kali", "postgres", "mysql", "redis", "sshd", "statd", "stunnel4",
+                                     "debian-tor", "inetsim", "iodine", "miredo", "mosquitto", "ntpsec",
+                                     "arpwatch", "kaboxer", "wireshark", "beef-xss", "king-phisher"]
         if reserved.contains(name) || name.hasPrefix("systemd-") {
             return "Linux keeps the name \(name) for itself. Please choose another user name."
         }
@@ -333,6 +341,35 @@ enum UbuntuKeyboard {
 /// (the account, Orca, the marker, the stall watch) is shared.
 nonisolated enum LinuxDistro: String, Equatable, Sendable {
     case ubuntu, debian, fedora
+    /// Kali Linux (2026-10-30): Debian's installer, Debian's path.
+    case kali
+
+    /// AlmaLinux and Rocky Linux (2026-10-30): Anaconda, Fedora's path.
+    case almalinux, rocky
+    /// openSUSE Tumbleweed (2026-10-30): YaST and an AutoYaST profile.
+    case opensuse
+
+    /// Installed with Debian's installer and a preseed file.
+    var usesPreseed: Bool { self == .debian || self == .kali }
+
+    /// Installed with Anaconda and a kickstart file.
+    var usesKickstart: Bool { self == .fedora || isEnterprise }
+
+    /// AlmaLinux or Rocky Linux: Red Hat Enterprise Linux rebuilds.
+    var isEnterprise: Bool { self == .almalinux || self == .rocky }
+
+    /// The name said and shown.
+    var name: String {
+        switch self {
+        case .ubuntu: return "Ubuntu"
+        case .debian: return "Debian"
+        case .fedora: return "Fedora"
+        case .kali: return "Kali Linux"
+        case .almalinux: return "AlmaLinux"
+        case .rocky: return "Rocky Linux"
+        case .opensuse: return "openSUSE Tumbleweed"
+        }
+    }
 }
 
 nonisolated struct UbuntuISOInfo: Equatable {
@@ -354,6 +391,13 @@ nonisolated struct UbuntuISOInfo: Equatable {
         }
         if distro == .fedora {
             return version.isEmpty ? "Fedora" : "Fedora \(version)"
+        }
+        // Tumbleweed's version is a snapshot date, nothing to say aloud.
+        if distro == .opensuse {
+            return distro.name
+        }
+        if distro == .kali || distro.isEnterprise {
+            return version.isEmpty ? distro.name : "\(distro.name) \(version)"
         }
         var name = "Ubuntu"
         if !version.isEmpty { name += " \(version)" }
@@ -507,6 +551,10 @@ nonisolated final class UbuntuInstallPipeline {
                 if let fedora = await identifyFedora(isoPath: isoPath, xorriso: xorriso) {
                     return .ubuntu(fedora)
                 }
+                // openSUSE's in /boot/aarch64 (2026-10-30).
+                if let suse = await identifyOpenSUSE(isoPath: isoPath, xorriso: xorriso) {
+                    return .ubuntu(suse)
+                }
                 ubuntuLog("identify: no /casper/vmlinuz, /install.a64/vmlinuz or Fedora disc — not a Linux installer AVM knows")
                 return .notUbuntu
             }
@@ -585,16 +633,30 @@ nonisolated final class UbuntuInstallPipeline {
             version = String(discInfo[match])
         }
         // The netinst installs the desktop from the network, so every Debian
-        // installer counts as a desktop one.
+        // installer counts as a desktop one. Kali's is Debian's installer
+        // (2026-10-30), with "Kali GNU/Linux 2026.3 ..." as its disc info.
         let info = UbuntuISOInfo(discInfo: discInfo, version: version,
-                                 isARM64: found.contains("'/EFI/boot/bootaa64.efi'"), isDesktop: true, distro: .debian)
+                                 isARM64: found.contains("'/EFI/boot/bootaa64.efi'"), isDesktop: true,
+                                 distro: debianFamily(discInfo: discInfo))
         ubuntuLog("identify: \(info.spokenName), arm64=\(info.isARM64), disc info \"\(discInfo)\"")
         return info
+    }
+
+    /// Kali or Debian, from a Debian-installer disc's /.disk/info.
+    static func debianFamily(discInfo: String) -> LinuxDistro {
+        discInfo.hasPrefix("Kali") ? .kali : .debian
     }
 
     static func problem(with info: UbuntuISOInfo?) -> String? {
         guard let info else {
             return "This ISO isn't an Ubuntu installer AVM recognizes."
+        }
+        if info.distro == .kali {
+            // Kali is a rolling release: any arm64 installer is current.
+            if !info.isARM64 {
+                return "This is a Kali Linux installer for Intel and AMD PCs. This Mac needs the arm64 one: on kali.org, under Installer Images, download the Apple Silicon (ARM64) netinstaller."
+            }
+            return nil
         }
         if info.distro == .debian {
             if !info.isARM64 {
@@ -607,6 +669,12 @@ nonisolated final class UbuntuInstallPipeline {
         }
         if info.distro == .fedora {
             return fedoraProblem(with: info)
+        }
+        if info.distro.isEnterprise {
+            return enterpriseProblem(with: info)
+        }
+        if info.distro == .opensuse {
+            return openSUSEProblem(with: info)
         }
         if !info.isARM64 {
             return "This is an Ubuntu installer for Intel and AMD PCs. This Mac needs the ARM version: on ubuntu.com, download Ubuntu Desktop for ARM."
@@ -687,22 +755,36 @@ nonisolated final class UbuntuInstallPipeline {
         let nocloud = scratch.appendingPathComponent("nocloud")
         do {
             try FileManager.default.createDirectory(at: nocloud, withIntermediateDirectories: true)
-            if distro == .debian {
-                try Self.debianPreseed(account: account, hostName: Self.hostName(fromVMName: input.vmName),
-                                       timeZone: TimeZone.current.identifier, disk: input.diskName)
+            if distro.usesPreseed {
+                let kali = distro == .kali
+                let hostName = Self.hostName(fromVMName: input.vmName)
+                let timeZone = TimeZone.current.identifier
+                try (kali ? Self.kaliPreseed(account: account, hostName: hostName, timeZone: timeZone, disk: input.diskName)
+                          : Self.debianPreseed(account: account, hostName: hostName, timeZone: timeZone, disk: input.diskName))
                     .write(to: nocloud.appendingPathComponent("preseed.cfg"), atomically: true, encoding: .utf8)
-                try Self.debianSetupScript(account: account)
+                try (kali ? Self.kaliSetupScript(account: account) : Self.debianSetupScript(account: account))
                     .write(to: nocloud.appendingPathComponent("setup.sh"), atomically: true, encoding: .utf8)
-                try Self.debianFailureScript
+                try (kali ? Self.kaliFailureScript : Self.debianFailureScript)
                     .write(to: nocloud.appendingPathComponent("failed.sh"), atomically: true, encoding: .utf8)
                 return
             }
-            if distro == .fedora {
+            if distro.usesKickstart {
                 // One file: the setup and failure scripts ride inside the
                 // kickstart, as its %post and %onerror sections.
-                try Self.fedoraKickstart(account: account, hostName: Self.hostName(fromVMName: input.vmName),
-                                         timeZone: TimeZone.current.identifier, version: version, disk: input.diskName)
+                let hostName = Self.hostName(fromVMName: input.vmName)
+                let timeZone = TimeZone.current.identifier
+                try (distro == .fedora
+                     ? Self.fedoraKickstart(account: account, hostName: hostName, timeZone: timeZone, version: version, disk: input.diskName)
+                     : Self.enterpriseKickstart(account: account, hostName: hostName, timeZone: timeZone, distro: distro,
+                                                version: version, disk: input.diskName))
                     .write(to: nocloud.appendingPathComponent("ks.cfg"), atomically: true, encoding: .utf8)
+                return
+            }
+            if distro == .opensuse {
+                // One file, as for Fedora: the scripts ride inside it.
+                try Self.autoYaSTProfile(account: account, hostName: Self.hostName(fromVMName: input.vmName),
+                                         timeZone: TimeZone.current.identifier, disk: input.diskName)
+                    .write(to: nocloud.appendingPathComponent("autoinst.xml"), atomically: true, encoding: .utf8)
                 return
             }
             try Self.userData(account: account, hostName: Self.hostName(fromVMName: input.vmName),
@@ -1031,8 +1113,8 @@ nonisolated final class UbuntuInstallPipeline {
     // MARK: Stage 3 — the ISO
 
     private func stageRebuildISO(input: Input, scratch: URL, distro: LinuxDistro, account: UbuntuAccount) async throws {
-        if distro == .fedora {
-            try await stageRebuildFedoraISO(input: input, scratch: scratch)
+        if distro.usesKickstart || distro == .opensuse {
+            try await stageRebuildFedoraISO(input: input, scratch: scratch, distro: distro)
             return
         }
         let xorriso = try Self.toolURL(named: "xorriso")
@@ -1046,7 +1128,13 @@ nonisolated final class UbuntuInstallPipeline {
             throw UbuntuPipelineError.stageFailed(stage: .rebuildISO,
                                                  reason: "Couldn't read the installer's boot menu. (xorriso exit \(extract.code))")
         }
-        guard let edited = distro == .debian ? Self.editedDebianBootMenu(original, keyboard: Self.debianKeyboardArguments(account)) : Self.editedBootMenu(original) else {
+        let menu: String?
+        switch distro {
+        case .debian: menu = Self.editedDebianBootMenu(original, keyboard: Self.debianKeyboardArguments(account))
+        case .kali: menu = Self.editedKaliBootMenu(original, keyboard: Self.debianKeyboardArguments(account))
+        default: menu = Self.editedBootMenu(original)
+        }
+        guard let edited = menu else {
             throw UbuntuPipelineError.stageFailed(stage: .rebuildISO,
                                                  reason: "The installer's boot menu isn't in the form AVM knows, so the answers couldn't be added. This Ubuntu release may be newer than this version of AVM.")
         }
@@ -1080,8 +1168,8 @@ nonisolated final class UbuntuInstallPipeline {
         let readBack = (try? String(contentsOf: check, encoding: .utf8)) ?? ""
         guard verify.code == 0,
               readBack.hasPrefix(Self.markerGuardLine),
-              readBack.contains(distro == .debian ? Self.debianKernelArguments : Self.kernelArguments),
-              verify.output.contains(distro == .debian ? "\n'/nocloud/preseed.cfg'" : "\n'/nocloud/user-data'"),
+              readBack.contains(distro.usesPreseed ? Self.debianKernelArguments : Self.kernelArguments),
+              verify.output.contains(distro.usesPreseed ? "\n'/nocloud/preseed.cfg'" : "\n'/nocloud/user-data'"),
               verify.output.contains("\n'/nocloud/setup.sh'"),
               verify.output.contains("\n'/nocloud/failed.sh'") else {
             throw UbuntuPipelineError.stageFailed(stage: .rebuildISO,
@@ -1233,6 +1321,90 @@ nonisolated final class UbuntuInstallPipeline {
             """
     }
 
+    // MARK: Kali Linux (2026-10-30, the user's request)
+    //
+    // Kali's installer is Debian's, so Kali takes Debian's path: the same
+    // preseed answers, setup script, failure script and marker. MEASURED on
+    // kali-linux-2026.3-installer-netinst-arm64.iso, what differs:
+    //   - Its boot menu already names a preseed file of its own
+    //     (preseed/file=/cdrom/simple-cdd/default.preseed, with
+    //     simple-cdd/profiles=kali). A second preseed/file on the command
+    //     line replaces the first, so AVM's takes its place on the entry it
+    //     boots, and AVM's answers start the same thing Kali's did (its only
+    //     line: anna-install simple-cdd-profiles), which then loads Kali's
+    //     own answers (kali.preseed: Kali's mirror, no Debian security
+    //     mirror, contrib and non-free) and runs kali.postinst at the end.
+    //   - Kali's mirror is http.kali.org/kali, and Debian's security and
+    //     updates mirrors don't apply to it.
+    //   - Kali's tasks are its own (tasksel-data 3.90+kali1): core,
+    //     desktop-gnome, meta-default (the tools a Kali install brings by
+    //     default) and standard. GNOME rather than Kali's default Xfce:
+    //     GDM speaks with Orca at the sign-in screen, and the setup script's
+    //     settings (dconf, gdm3) are GNOME's, proven on Debian.
+    //   - desktop=gnome on the command line, as Kali's own GNOME menu entry
+    //     has it, so Kali's packages pick GNOME's defaults too.
+
+    /// The words Kali's own menu uses to load its preseed file.
+    static let kaliOwnPreseedArgument = "preseed/file=/cdrom/simple-cdd/default.preseed"
+
+    /// Debian's menu edit, with Kali's own preseed argument taken off the
+    /// entry that boots (AVM's file starts what it started) and GNOME
+    /// chosen. nil when the menu isn't Kali's: no installer entry, or one
+    /// without Kali's profile.
+    static func editedKaliBootMenu(_ original: String, keyboard: String = "") -> String? {
+        let words = keyboard.isEmpty ? "desktop=gnome" : "\(keyboard) desktop=gnome"
+        guard var menu = editedDebianBootMenu(original, keyboard: words),
+              let start = menu.range(of: debianKernelArguments) else {
+            return nil
+        }
+        let line = menu.lineRange(for: start)
+        guard menu[line].contains("simple-cdd/profiles=kali"),
+              let own = menu.range(of: " " + kaliOwnPreseedArgument, range: line) else {
+            return nil
+        }
+        menu.removeSubrange(own)
+        return menu
+    }
+
+    /// Debian's answers, made Kali's (see the section header). The early
+    /// command is Kali's default.preseed's only line.
+    static func kaliPreseed(account: UbuntuAccount, hostName: String, timeZone: String, disk: String = "nvme0n1") -> String {
+        debianPreseed(account: account, hostName: hostName, timeZone: timeZone, disk: disk)
+            .replacingOccurrences(of: "# Written by AVM. Debian's installer reads this and asks nothing.",
+                                  with: "# Written by AVM. Kali's installer reads this and asks nothing.\nd-i preseed/early_command string anna-install simple-cdd-profiles")
+            .replacingOccurrences(of: "d-i mirror/http/hostname string deb.debian.org\nd-i mirror/http/directory string /debian",
+                                  with: "d-i mirror/http/hostname string http.kali.org\nd-i mirror/http/directory string /kali\nd-i apt-setup/services-select multiselect\nd-i apt-setup/contrib boolean true\nd-i apt-setup/non-free boolean true")
+            .replacingOccurrences(of: "tasksel tasksel/first multiselect standard, gnome-desktop",
+                                  with: "tasksel tasksel/first multiselect core, desktop-gnome, meta-default, standard")
+            .replacingOccurrences(of: "d-i pkgsel/upgrade select safe-upgrade", with: "d-i pkgsel/upgrade select full-upgrade")
+    }
+
+    /// Debian's setup script, made Kali's. Kali's GNOME may bring a dconf
+    /// profile of its own (its themes), so AVM's local database is added
+    /// to it rather than written over it.
+    static func kaliSetupScript(account: UbuntuAccount) -> String {
+        debianSetupScript(account: account)
+            .replacingOccurrences(of: "at the end of Debian's install", with: "at the end of Kali's install")
+            .replacingOccurrences(of: "Debian installed by AVM", with: "Kali Linux installed by AVM")
+            .replacingOccurrences(of: "printf 'user-db:user\\nsystem-db:local\\n' > $T/etc/dconf/profile/user",
+                                  with: dconfProfileKeptAndExtended)
+    }
+
+    /// The dconf user profile the distribution brings, with AVM's local
+    /// database added to it; written new only when there is none.
+    static let dconfProfileKeptAndExtended = """
+        if [ -s $T/etc/dconf/profile/user ]; then
+            grep -qx 'system-db:local' $T/etc/dconf/profile/user || sed -i '/^user-db:user$/a system-db:local' $T/etc/dconf/profile/user
+            grep -qx 'system-db:local' $T/etc/dconf/profile/user || echo 'system-db:local' >> $T/etc/dconf/profile/user
+        else
+            printf 'user-db:user\\nsystem-db:local\\n' > $T/etc/dconf/profile/user
+        fi
+        """
+
+    static let kaliFailureScript = debianFailureScript
+        .replacingOccurrences(of: "Runs only if Debian's install fails.", with: "Runs only if Kali's install fails.")
+        .replacingOccurrences(of: "Debian install failed", with: "Kali Linux install failed")
+
     // MARK: Fedora (2026-10-26)
     //
     // Fedora's installer (Anaconda) reads a kickstart file. AVM installs from
@@ -1330,42 +1502,54 @@ nonisolated final class UbuntuInstallPipeline {
     static func fedoraKickstart(account: UbuntuAccount, hostName: String, timeZone: String, version: String,
                                 disk: String = "nvme0n1") -> String {
         let release = version.isEmpty ? "$releasever" : version
+        return anacondaKickstart(
+            account: account, hostName: hostName, timeZone: timeZone, disk: disk,
+            installer: "Fedora's installer (Anaconda)",
+            sources: """
+                url --mirrorlist="https://mirrors.fedoraproject.org/mirrorlist?repo=fedora-\(release)&arch=aarch64"
+                repo --name=updates --mirrorlist="https://mirrors.fedoraproject.org/mirrorlist?repo=updates-released-f\(release)&arch=aarch64"
+                """,
+            partitioning: "autopart --type=btrfs",
+            packages: ["@^workstation-product-environment", "orca", "spice-vdagent", "spice-webdavd",
+                       "qemu-guest-agent", "dconf", "-gnome-tour"],
+            setup: fedoraSetupScript(account: account), failure: fedoraFailureScript)
+    }
+
+    /// A kickstart: the account, the disk, where the packages come from,
+    /// which ones, and the setup and failure scripts. Fedora's, AlmaLinux's
+    /// and Rocky's differ only in those (2026-10-30).
+    static func anacondaKickstart(account: UbuntuAccount, hostName: String, timeZone: String, disk: String,
+                                  installer: String, sources: String, partitioning: String, packages: [String],
+                                  setup: String, failure: String) -> String {
         let layout = account.keyboardLayout ?? "us"
         let xkb = account.keyboardVariant.map { "\(layout) (\($0))" } ?? layout
         return """
-        # Written by AVM. Fedora's installer (Anaconda) reads this and asks nothing.
+        # Written by AVM. \(installer) reads this and asks nothing.
         text
         lang en_US.UTF-8
         keyboard --xlayouts=\(kickstartQuoted(xkb))
         timezone \(kickstartQuoted(timeZone)) --utc
         network --bootproto=dhcp --device=link --activate --hostname=\(hostName)
-        url --mirrorlist="https://mirrors.fedoraproject.org/mirrorlist?repo=fedora-\(release)&arch=aarch64"
-        repo --name=updates --mirrorlist="https://mirrors.fedoraproject.org/mirrorlist?repo=updates-released-f\(release)&arch=aarch64"
+        \(sources)
         ignoredisk --only-use=\(disk)
         zerombr
         clearpart --all --initlabel --drives=\(disk)
-        autopart --type=btrfs
+        \(partitioning)
         rootpw --lock
         user --name=\(account.userName) --gecos=\(kickstartQuoted(account.realName)) --groups=wheel --iscrypted --password=\(kickstartQuoted(account.passwordHash))
         firstboot --disable
         poweroff
 
         %packages
-        @^workstation-product-environment
-        orca
-        spice-vdagent
-        spice-webdavd
-        qemu-guest-agent
-        dconf
-        -gnome-tour
+        \(packages.joined(separator: "\n"))
         %end
 
         %post --interpreter=/bin/bash --erroronfail --log=/root/avm-setup.log
-        \(fedoraSetupScript(account: account))
+        \(setup)
         %end
 
         %onerror --interpreter=/bin/bash
-        \(fedoraFailureScript)
+        \(failure)
         %end
 
         """
@@ -1438,7 +1622,10 @@ nonisolated final class UbuntuInstallPipeline {
             "-indev", isoPath,
             "-lsd", "/images/pxeboot/vmlinuz", "/.discinfo", "--"
         ])
-        guard let volumeID = fedoraVolumeID(inXorrisoReport: listing.output), volumeID.hasPrefix("Fedora") else {
+        // AlmaLinux's and Rocky's discs are laid out as Fedora's (2026-10-30,
+        // their 10.2 boot ISOs: AlmaLinux-10-2-aarch64-dvd, Rocky-10-2-aarch64-dvd).
+        guard let volumeID = fedoraVolumeID(inXorrisoReport: listing.output),
+              ["Fedora", "AlmaLinux", "Rocky"].contains(where: { volumeID.hasPrefix($0) }) else {
             return nil
         }
         let found = Set(listing.output.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) })
@@ -1452,8 +1639,10 @@ nonisolated final class UbuntuInstallPipeline {
             await runTool(xorriso, ["-osirrox", "on", "-indev", isoPath, "-extract", "/.discinfo", infoURL.path])
             discInfo = (try? String(contentsOf: infoURL, encoding: .utf8)) ?? ""
         }
-        let info = fedoraISOInfo(volumeID: volumeID, discInfo: discInfo,
-                                 hasInstallerKernel: found.contains("'/images/pxeboot/vmlinuz'"))
+        let hasKernel = found.contains("'/images/pxeboot/vmlinuz'")
+        let info = volumeID.hasPrefix("Fedora")
+            ? fedoraISOInfo(volumeID: volumeID, discInfo: discInfo, hasInstallerKernel: hasKernel)
+            : enterpriseISOInfo(volumeID: volumeID, discInfo: discInfo, hasInstallerKernel: hasKernel)
         ubuntuLog("identify: \(info.spokenName), arm64=\(info.isARM64), live=\(info.isLiveImage), volume id \"\(volumeID)\"")
         return info
     }
@@ -1508,13 +1697,445 @@ nonisolated final class UbuntuInstallPipeline {
         return nil
     }
 
+    // MARK: AlmaLinux and Rocky Linux (2026-10-30, the user's request)
+    //
+    // Red Hat Enterprise Linux's rebuilds install with Anaconda, as Fedora
+    // does, so they take Fedora's path: the same two-menu boot edit, the
+    // same kickstart shape, the same %post and %onerror. MEASURED on
+    // AlmaLinux-10.2-aarch64-boot.iso and Rocky-10.2-aarch64-boot.iso: the
+    // discs are laid out exactly as Fedora's (/EFI/BOOT/grub.cfg,
+    // /images/efiboot.img, /images/pxeboot, a .discinfo of time stamp,
+    // "10.2", "aarch64"), with menus that start on "Test this media"
+    // (set default="1") and find the installer by the label
+    // AlmaLinux-10-2-aarch64-dvd or Rocky-10-2-aarch64-dvd. What differs:
+    //   - The boot ISO holds only the installer. The packages come from
+    //     the distribution's own servers, BaseOS and AppStream, for the
+    //     major release (10), so an older boot ISO installs the current
+    //     point release, as their own installers do once one is out.
+    //   - "Server with GUI" (@^graphical-server-environment), the GNOME
+    //     desktop on the server base, the environment both offer for a
+    //     desktop on ARM. Orca 48, spice-vdagent and qemu-guest-agent come
+    //     from AppStream; AlmaLinux also has spice-webdavd, Rocky doesn't.
+    //   - LVM with XFS (autopart's default): RHEL has no btrfs.
+    //   - Their dconf user profile is kept and added to, as for Kali.
+
+    /// What an AlmaLinux or Rocky disc is, from its label and .discinfo.
+    /// The release is "10.2"; the label (AlmaLinux-10-2-aarch64-dvd) is
+    /// the fallback, so a disc without .discinfo is still named.
+    static func enterpriseISOInfo(volumeID: String, discInfo: String, hasInstallerKernel: Bool) -> UbuntuISOInfo {
+        let distro: LinuxDistro = volumeID.hasPrefix("Rocky") ? .rocky : .almalinux
+        let lines = discInfo.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+        let release = lines.count > 1 ? lines[1] : ""
+        let arch = lines.count > 2 ? lines[2] : ""
+        var version = release.range(of: "^[0-9]+(\\.[0-9]+)?$", options: .regularExpression) != nil ? release : ""
+        if version.isEmpty, let match = volumeID.range(of: "-[0-9]+(-[0-9]+)?-", options: .regularExpression) {
+            version = volumeID[match].dropFirst().dropLast().replacingOccurrences(of: "-", with: ".")
+        }
+        let isARM64 = arch.isEmpty ? volumeID.contains("aarch64") : arch == "aarch64"
+        let isInstaller = hasInstallerKernel && !arch.isEmpty
+        return UbuntuISOInfo(discInfo: volumeID, version: version, isARM64: isARM64, isDesktop: true,
+                             distro: distro, isLiveImage: !isInstaller)
+    }
+
+    /// Why AVM can't install from this AlmaLinux or Rocky disc, or nil.
+    /// Version 10 or later: it brings GNOME 47 and Orca 48; 9 was never
+    /// tried.
+    static func enterpriseProblem(with info: UbuntuISOInfo) -> String? {
+        let name = info.distro.name
+        let site = info.distro == .rocky ? "rockylinux.org" : "almalinux.org"
+        if info.isLiveImage {
+            return "This is a \(name) live image. AVM installs \(name) from its boot ISO instead: on \(site), download \(name) for ARM64 (aarch64), the boot ISO."
+        }
+        if !info.isARM64 {
+            return "This is a \(name) installer for Intel and AMD PCs. This Mac needs the aarch64 one: on \(site), download the \(name) boot ISO for ARM64 (aarch64)."
+        }
+        if info.majorVersion == 0 {
+            return "AVM couldn't tell which \(name) version this is. AVM needs \(name) 10 or later, from \(site)."
+        }
+        if info.majorVersion < 10 {
+            return "This is \(info.spokenName). AVM needs \(name) 10 or later."
+        }
+        return nil
+    }
+
+    /// The kickstart for AlmaLinux or Rocky: their own servers, Server with
+    /// GUI, LVM, and the same setup and failure scripts as Fedora's.
+    static func enterpriseKickstart(account: UbuntuAccount, hostName: String, timeZone: String, distro: LinuxDistro,
+                                    version: String, disk: String = "nvme0n1") -> String {
+        let major = version.split(separator: ".").first.map(String.init) ?? "$releasever"
+        let base = distro == .rocky
+            ? "https://download.rockylinux.org/pub/rocky/\(major)"
+            : "https://repo.almalinux.org/almalinux/\(major)"
+        var packages = ["@^graphical-server-environment", "orca", "spice-vdagent", "qemu-guest-agent", "dconf", "-gnome-tour"]
+        if distro == .almalinux { packages.insert("spice-webdavd", at: 3) }
+        return anacondaKickstart(
+            account: account, hostName: hostName, timeZone: timeZone, disk: disk,
+            installer: "\(distro.name)'s installer (Anaconda)",
+            sources: """
+                url --url="\(base)/BaseOS/aarch64/os/"
+                repo --name=AppStream --baseurl="\(base)/AppStream/aarch64/os/"
+                """,
+            partitioning: "autopart",
+            packages: packages,
+            setup: enterpriseSetupScript(account: account, distro: distro),
+            failure: fedoraFailureScript.replacingOccurrences(of: "Fedora", with: distro.name))
+    }
+
+    /// Fedora's %post, named for AlmaLinux or Rocky, with their dconf user
+    /// profile kept and added to (Fedora's already reads the local one).
+    static func enterpriseSetupScript(account: UbuntuAccount, distro: LinuxDistro) -> String {
+        // MEASURED 2026-10-31 on AlmaLinux 10.2 (guest-info): RHEL's
+        // /etc/sysconfig/qemu-ga lets the guest agent answer only a list of
+        // commands, without guest-exec and the guest-file ones, which AVM's
+        // Send File, disk check and install test use; the first install
+        // test's agent answered pings and refused the rest. An empty list
+        // enables all, as Fedora, Debian and Ubuntu ship it. The agent's
+        // channel is reachable only from AVM on the Mac.
+        let agent = """
+            # The guest agent answers everything AVM asks (see AVM's source).
+            sed -i 's/^FILTER_RPC_ARGS=.*/FILTER_RPC_ARGS=""/' /etc/sysconfig/qemu-ga
+            grep -qx 'FILTER_RPC_ARGS=""' /etc/sysconfig/qemu-ga
+
+            """
+        return fedoraSetupScript(account: account)
+            .replacingOccurrences(of: "# Fedora's own /etc/dconf/profile/user already reads the local database.",
+                                  with: dconfProfileKeptAndExtended)
+            .replacingOccurrences(of: "# The install-complete marker, last", with: agent + "# The install-complete marker, last")
+            .replacingOccurrences(of: "Fedora", with: distro.name)
+    }
+
+    // MARK: openSUSE Tumbleweed (2026-10-30, the user's request)
+    //
+    // Tumbleweed's network installer (openSUSE-Tumbleweed-NET-aarch64) is
+    // still YaST, not Agama: MEASURED on the Snapshot20261020 image, its
+    // initrd's linuxrc.config reads an AutoYaST profile (autoyast2: ...
+    // autoinst.xml), and the inst-sys downloads from
+    // download.opensuse.org/ports/aarch64/tumbleweed/repo/oss. So AVM
+    // gives YaST an AutoYaST profile:
+    //   - The profile rides the rebuilt disc at /nocloud/autoinst.xml and
+    //     the boot entry says where (autoyast=cd:/...), in text mode, with
+    //     no installer self-update.
+    //   - The disc has Fedora's two menus: /EFI/BOOT/grub.cfg, and a copy
+    //     inside the El Torito EFI image, /boot/aarch64/efi. Both are
+    //     edited, as for Fedora. Its menu starts on "Installation", after a
+    //     "Boot from Hard Disk" entry, and waits 60 seconds.
+    //   - GNOME (the gnome pattern) with Orca 50 and the agents, from the
+    //     same repository, with the disk proposal openSUSE makes itself
+    //     (btrfs with snapshots) on the virtual disk only. The repository
+    //     offers several products (Aeon, Kalpa, MicroOS, openSUSE: YaST's
+    //     error on the first test), so the profile names "openSUSE",
+    //     Tumbleweed's own (/media.1/products).
+    //   - Your account, and root with your password, as openSUSE's own
+    //     installer does by default ("Use this password for the system
+    //     administrator"), so sudo and YaST ask for the password you know.
+    //   - The setup script is Ubuntu's, run in the new system as a chroot
+    //     script at the end of the install, with no second stage. A failed
+    //     step writes AVMFAIL.TAG and powers off at once.
+    //   - THE END IS A RESTART, NOT A POWER-OFF (MEASURED 2026-10-31, the
+    //     second test install): YaST ends the install by restarting, and
+    //     AutoYaST's final_halt doesn't change that; it only powered off the
+    //     installed system at its first start (autoyast-initscripts), half
+    //     way to the desktop. So the profile leaves YaST's restart alone,
+    //     and the restart lands on the installer disc, whose marker guard
+    //     here powers the machine off (GRUB's halt) instead of handing back
+    //     to the firmware, the power-off AVM's restart-after-install waits
+    //     for. Handing back left the firmware's setup screen up, since the
+    //     firmware didn't go on to the disk's boot manager. If halt ever
+    //     failed, exit follows, as for the other distributions.
+
+    static let openSUSEEFIImagePath = "/boot/aarch64/efi"
+    static let openSUSEProfilePath = "/nocloud/autoinst.xml"
+
+    /// The marker guard for openSUSE's disc (see the section header).
+    static let openSUSEMarkerGuardLine = "if search --no-floppy --file --set=avmdone /AVMDONE.TAG; then halt; exit; fi"
+
+    /// The words the installer entry gains. console=tty0 last keeps the
+    /// screen YaST's console; ttyAMA0 copies the boot to the serial log.
+    static let openSUSEKernelArguments = "autoyast=cd:\(openSUSEProfilePath) textmode=1 self_update=0 console=ttyAMA0 console=tty0"
+
+    /// The "Installation" entry boots by itself after a second, with the
+    /// profile; the marker guard comes first. nil when the menu has no
+    /// installer entry.
+    static func editedOpenSUSEBootMenu(_ original: String) -> String? {
+        guard let entry = original.range(of: "linux\\s+/boot/aarch64/linux", options: .regularExpression),
+              let current = original.range(of: "(?m)^default=.*$", options: .regularExpression) else {
+            return nil
+        }
+        // Its place among the menu's entries is the default to boot.
+        let index = original[..<entry.lowerBound].components(separatedBy: "menuentry ").count - 2
+        guard index >= 0 else { return nil }
+        var menu = original
+        menu.replaceSubrange(entry, with: "\(original[entry]) \(openSUSEKernelArguments)")
+        menu = menu.replacingOccurrences(of: "(?m)^(\\s*)timeout=[0-9]+", with: "$1timeout=1", options: .regularExpression)
+        if let line = menu.range(of: "(?m)^default=.*$", options: .regularExpression), menu[line] == original[current] {
+            menu.replaceSubrange(line, with: "default=\(index)\ntimeout=1")
+        }
+        return openSUSEMarkerGuardLine + "\n" + menu
+    }
+
+    /// openSUSE's installer disc: its label starts "openSUSE", and its
+    /// installer kernel is /boot/aarch64/linux (a live image has none).
+    /// /media.1/products names the snapshot ("/ openSUSE 20261020-0").
+    @concurrent
+    static func identifyOpenSUSE(isoPath: String, xorriso: URL) async -> UbuntuISOInfo? {
+        let listing = await runTool(xorriso, [
+            "-indev", isoPath,
+            "-lsd", "/boot/aarch64/linux", "/media.1/products", "--"
+        ])
+        guard let volumeID = fedoraVolumeID(inXorrisoReport: listing.output), volumeID.hasPrefix("openSUSE") else {
+            return nil
+        }
+        let found = Set(listing.output.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) })
+        var products = ""
+        if found.contains("'/media.1/products'") {
+            let fm = FileManager.default
+            let probe = fm.temporaryDirectory.appendingPathComponent("avm-opensuse-probe-\(UUID().uuidString)")
+            try? fm.createDirectory(at: probe, withIntermediateDirectories: true)
+            defer { try? fm.removeItem(at: probe) }
+            let url = probe.appendingPathComponent("products")
+            await runTool(xorriso, ["-osirrox", "on", "-indev", isoPath, "-extract", "/media.1/products", url.path])
+            products = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        }
+        let info = openSUSEISOInfo(volumeID: volumeID, products: products,
+                                   hasInstallerKernel: found.contains("'/boot/aarch64/linux'"))
+        ubuntuLog("identify: \(info.spokenName) \(info.version), arm64=\(info.isARM64), live=\(info.isLiveImage), volume id \"\(volumeID)\"")
+        return info
+    }
+
+    /// What an openSUSE disc is. The version is the snapshot's date.
+    static func openSUSEISOInfo(volumeID: String, products: String, hasInstallerKernel: Bool) -> UbuntuISOInfo {
+        var version = ""
+        if let match = products.range(of: "[0-9]{8}", options: .regularExpression) {
+            version = String(products[match])
+        }
+        return UbuntuISOInfo(discInfo: volumeID, version: version, isARM64: volumeID.contains("aarch64"),
+                             isDesktop: true, distro: .opensuse, isLiveImage: !hasInstallerKernel)
+    }
+
+    /// Why AVM can't install from this openSUSE disc, or nil. Tumbleweed
+    /// only: Leap 16 installs with Agama, which AVM doesn't answer yet.
+    static func openSUSEProblem(with info: UbuntuISOInfo) -> String? {
+        let get = "on get.opensuse.org, choose Tumbleweed, then the aarch64 Network Image"
+        if !info.discInfo.contains("Tumbleweed") {
+            return "This is an openSUSE installer AVM can't answer yet. AVM installs openSUSE Tumbleweed: \(get)."
+        }
+        if info.isLiveImage {
+            return "This is an openSUSE Tumbleweed live image. AVM installs Tumbleweed from its installer instead: \(get)."
+        }
+        if !info.isARM64 {
+            return "This is an openSUSE Tumbleweed installer for Intel and AMD PCs. This Mac needs the aarch64 one: \(get)."
+        }
+        return nil
+    }
+
+    /// Text for an XML element.
+    static func xmlEscaped(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&apos;")
+    }
+
+    /// The AutoYaST profile: everything YaST would ask, the packages, and
+    /// the setup script as a chroot script (see the section header).
+    static func autoYaSTProfile(account: UbuntuAccount, hostName: String, timeZone: String, disk: String = "nvme0n1") -> String {
+        let user = account.userName   // validated: [a-z][a-z0-9_-]*
+        let hash = xmlEscaped(account.passwordHash)
+        let autoLogin = account.signInAutomatically
+            ? "<login_settings>\n    <autologin_user>\(user)</autologin_user>\n  </login_settings>"
+            : "<!-- Sign in automatically: not chosen. -->"
+        return """
+        <?xml version="1.0"?>
+        <!DOCTYPE profile>
+        <!-- Written by AVM. openSUSE's installer (YaST) reads this and asks nothing. -->
+        <profile xmlns="http://www.suse.com/1.0/yast2ns" xmlns:config="http://www.suse.com/1.0/configns">
+          <general>
+            <mode>
+              <confirm config:type="boolean">false</confirm>
+              <second_stage config:type="boolean">false</second_stage>
+            </mode>
+            <signature-handling>
+              <import_gpg_key config:type="boolean">true</import_gpg_key>
+            </signature-handling>
+          </general>
+          <report>
+            <errors><show config:type="boolean">true</show><timeout config:type="integer">10</timeout><log config:type="boolean">true</log></errors>
+            <warnings><show config:type="boolean">true</show><timeout config:type="integer">10</timeout><log config:type="boolean">true</log></warnings>
+            <messages><show config:type="boolean">true</show><timeout config:type="integer">10</timeout><log config:type="boolean">true</log></messages>
+            <yesno_messages><show config:type="boolean">true</show><timeout config:type="integer">10</timeout><log config:type="boolean">true</log></yesno_messages>
+          </report>
+          <language>
+            <language>en_US</language>
+          </language>
+          <keyboard>
+            <keymap>english-us</keymap>
+          </keyboard>
+          <timezone>
+            <hwclock>UTC</hwclock>
+            <timezone>\(xmlEscaped(timeZone))</timezone>
+          </timezone>
+          <networking>
+            <keep_install_network config:type="boolean">true</keep_install_network>
+            <backend>network_manager</backend>
+            <dns>
+              <hostname>\(hostName)</hostname>
+            </dns>
+          </networking>
+          <partitioning config:type="list">
+            <drive>
+              <device>/dev/\(disk)</device>
+              <initialize config:type="boolean">true</initialize>
+              <use>all</use>
+            </drive>
+          </partitioning>
+          <software>
+            <products config:type="list">
+              <product>openSUSE</product>
+            </products>
+            <install_recommended config:type="boolean">true</install_recommended>
+            <patterns config:type="list">
+              <pattern>base</pattern>
+              <pattern>enhanced_base</pattern>
+              <pattern>x11</pattern>
+              <pattern>gnome</pattern>
+            </patterns>
+            <packages config:type="list">
+              <package>orca</package>
+              <package>spice-vdagent</package>
+              <package>spice-webdavd</package>
+              <package>qemu-guest-agent</package>
+              <package>dconf</package>
+            </packages>
+          </software>
+          <services-manager>
+            <default_target>graphical</default_target>
+          </services-manager>
+          <users config:type="list">
+            <user>
+              <username>\(user)</username>
+              <fullname>\(xmlEscaped(account.realName))</fullname>
+              <user_password>\(hash)</user_password>
+              <encrypted config:type="boolean">true</encrypted>
+            </user>
+            <user>
+              <username>root</username>
+              <user_password>\(hash)</user_password>
+              <encrypted config:type="boolean">true</encrypted>
+            </user>
+          </users>
+          \(autoLogin)
+          <scripts>
+            <chroot-scripts config:type="list">
+              <script>
+                <chrooted config:type="boolean">true</chrooted>
+                <filename>avm-setup.sh</filename>
+                <interpreter>shell</interpreter>
+                <source><![CDATA[
+        cat > /tmp/avm-setup.sh <<'AVMSETUP'
+        \(openSUSESetupScript(account: account))
+        AVMSETUP
+        cat > /tmp/avm-failed.sh <<'AVMFAILED'
+        \(openSUSEFailureScript)
+        AVMFAILED
+        bash /tmp/avm-setup.sh > /var/log/avm-setup.log 2>&1 || bash /tmp/avm-failed.sh
+        ]]></source>
+              </script>
+            </chroot-scripts>
+          </scripts>
+        </profile>
+
+        """
+    }
+
+    /// Ubuntu's setup script, for openSUSE: run inside the new system (no
+    /// /target, no curtin), GDM's /etc/gdm, openSUSE's own dconf profile
+    /// kept and added to, its bootloader tool, a user whose group is
+    /// openSUSE's "users" rather than one of their own, and before the
+    /// marker: the desktop as the default target, the agents on, the
+    /// keyboard for the sign-in screen, no welcome window, and SELinux
+    /// labels on the files written (Tumbleweed enforces SELinux).
+    static func openSUSESetupScript(account: UbuntuAccount) -> String {
+        let layout = account.keyboardLayout ?? "us"     // validated words (UbuntuAccount)
+        let variant = account.keyboardVariant ?? ""
+        let extras = """
+            # openSUSE (2026-10-30): start to the desktop, with the agents
+            # on (their units also start when their virtual ports appear).
+            systemctl set-default graphical.target
+            systemctl enable spice-vdagentd.socket qemu-guest-agent.service || true
+            # openSUSE's guest agent refuses guest-exec (its
+            # /usr/etc/sysconfig/qemu-ga, qemu-guest-agent 11.1.2), which
+            # AVM's Send File, disk check and install test use; the admin's
+            # file, read after it, lets it answer everything, as Fedora's,
+            # Debian's and Ubuntu's do. Only AVM on the Mac reaches it.
+            printf '# Written by AVM: the guest agent answers everything AVM asks.\\nFILTER_RPC_ARGS=""\\n' > $T/etc/sysconfig/qemu-ga
+            # The keyboard chosen in AVM's wizard, for the sign-in screen
+            # and the desktop (the profile's keymap is only the console's).
+            mkdir -p $T/etc/X11/xorg.conf.d
+            printf 'Section "InputClass"\\n    Identifier "system-keyboard"\\n    MatchIsKeyboard "on"\\n    Option "XkbLayout" "%s"\\n    Option "XkbVariant" "%s"\\nEndSection\\n' '\(layout)' '\(variant)' > $T/etc/X11/xorg.conf.d/00-keyboard.conf
+            # openSUSE's welcome window opens over the desktop at each
+            # sign-in until it's told not to; it isn't wanted here.
+            rm -f $T/etc/xdg/autostart/*opensuse*welcome*.desktop $T/etc/xdg/autostart/*opensuse_welcome*.desktop
+            if command -v restorecon >/dev/null; then restorecon -R /etc /home/$U /usr/local || true; fi
+
+            """
+        let noTour = """
+            # GNOME's welcome tour asks at the first sign-in; this says it was shown.
+            cat > $T/etc/dconf/db/local.d/01-avm-opensuse <<'DCONF'
+            [org/gnome/shell]
+            welcome-dialog-last-shown-version='9999'
+            DCONF
+            dconf update
+            """
+        return setupScript(account: account)
+            .replacingOccurrences(of: "at the end of Ubuntu's install", with: "at the end of openSUSE's install, as an AutoYaST chroot script")
+            .replacingOccurrences(of: "(failed.sh)", with: "(avm-failed.sh)")
+            .replacingOccurrences(of: "T=/target", with: "T=")
+            .replacingOccurrences(of: "curtin in-target -- dconf update", with: noTour)
+            .replacingOccurrences(of: "curtin in-target -- chown -R $U:$U ", with: "chown -R $U: ")
+            .replacingOccurrences(of: "curtin in-target -- update-grub || true",
+                                  with: "update-bootloader --refresh || grub2-mkconfig -o /boot/grub2/grub.cfg || true")
+            .replacingOccurrences(of: "curtin in-target -- ", with: "")
+            .replacingOccurrences(of: "/etc/gdm3", with: "/etc/gdm")
+            .replacingOccurrences(of: "printf 'user-db:user\\nsystem-db:local\\n' > $T/etc/dconf/profile/user",
+                                  with: dconfProfileKeptAndExtended)
+            .replacingOccurrences(of: "# The install-complete marker, last", with: extras + "# The install-complete marker, last")
+            .replacingOccurrences(of: "Ubuntu is on the disk", with: "openSUSE is on the disk")
+            .replacingOccurrences(of: "Ubuntu installed by AVM", with: "openSUSE Tumbleweed installed by AVM")
+    }
+
+    /// The chroot script's failure branch: the setup log on the UNATTEND
+    /// volume, AVMFAIL.TAG, and an immediate power-off (YaST would
+    /// otherwise carry on and halt as if all were well).
+    static let openSUSEFailureScript = """
+        #!/bin/bash
+        # Written by AVM. Runs only if the setup step of openSUSE's install fails.
+        set -x
+        mkdir -p /run/avm-unattend
+        if mount -t vfat /dev/disk/by-label/UNATTEND /run/avm-unattend; then
+            for log in /var/log/avm-setup.log /var/log/YaST2/y2log /var/log/zypp/history; do
+                [ -f "$log" ] && tail -c 2000000 "$log" > "/run/avm-unattend/$(basename "$log" .log | cut -c1-8).log"
+            done
+            echo "openSUSE Tumbleweed install failed" > /run/avm-unattend/AVMFAIL.TAG
+            sync
+            umount /run/avm-unattend
+        fi
+        echo 1 > /proc/sys/kernel/sysrq
+        echo o > /proc/sysrq-trigger
+        """
+
     /// Stage 3 for Fedora: both copies of the boot menu edited (see the
     /// section header), the kickstart added, and the result read back.
-    private func stageRebuildFedoraISO(input: Input, scratch: URL) async throws {
+    /// openSUSE's disc has the same two menus (2026-10-30): its EFI image
+    /// is /boot/aarch64/efi, and its answers are an AutoYaST profile.
+    private func stageRebuildFedoraISO(input: Input, scratch: URL, distro: LinuxDistro = .fedora) async throws {
         let xorriso = try Self.toolURL(named: "xorriso")
         let mcopy = try Self.toolURL(named: "mcopy")
         let env = ["MTOOLS_SKIP_CHECK": "1"]
         let fm = FileManager.default
+        let suse = distro == .opensuse
+        let imagePath = suse ? Self.openSUSEEFIImagePath : "/images/efiboot.img"
+        let profilePath = suse ? Self.openSUSEProfilePath : Self.fedoraKickstartPath
         let bootDir = scratch.appendingPathComponent("fedora-boot")
         try? fm.createDirectory(at: bootDir, withIntermediateDirectories: true)
         let grubURL = bootDir.appendingPathComponent("grub.cfg")
@@ -1522,16 +2143,19 @@ nonisolated final class UbuntuInstallPipeline {
 
         let extract = await Self.runTool(xorriso, ["-osirrox", "on", "-indev", input.sourceISOPath,
                                                    "-extract", "/EFI/BOOT/grub.cfg", grubURL.path,
-                                                   "-extract", "/images/efiboot.img", efiURL.path])
+                                                   "-extract", imagePath, efiURL.path])
         guard extract.code == 0, let original = try? String(contentsOf: grubURL, encoding: .utf8),
               fm.fileExists(atPath: efiURL.path) else {
             throw UbuntuPipelineError.stageFailed(stage: .rebuildISO,
                                                  reason: "Couldn't read the installer's boot menu. (xorriso exit \(extract.code))")
         }
-        guard let edited = Self.editedFedoraBootMenu(original),
-              let label = Self.fedoraVolumeLabel(inBootMenu: original) else {
+        // Fedora's menu names the disc's label; openSUSE's finds the disc
+        // by a file on it, so its label is read off the disc itself.
+        let foundLabel = suse ? Self.fedoraVolumeID(inXorrisoReport: extract.output) : Self.fedoraVolumeLabel(inBootMenu: original)
+        guard let edited = suse ? Self.editedOpenSUSEBootMenu(original) : Self.editedFedoraBootMenu(original),
+              let label = foundLabel else {
             throw UbuntuPipelineError.stageFailed(stage: .rebuildISO,
-                                                 reason: "The installer's boot menu isn't in the form AVM knows, so the answers couldn't be added. This Fedora release may be newer than this version of AVM.")
+                                                 reason: "The installer's boot menu isn't in the form AVM knows, so the answers couldn't be added. This \(distro.name) release may be newer than this version of AVM.")
         }
         do {
             try? fm.removeItem(at: grubURL)
@@ -1551,11 +2175,18 @@ nonisolated final class UbuntuInstallPipeline {
         }
 
         let output = scratch.appendingPathComponent("install-avm.iso")
-        let build = await Self.runTool(xorriso, [
+        // openSUSE's disc also has an MBR partition table for booting from
+        // a USB stick (its EFI image as partition 1), which xorriso can't
+        // replay ("Cannot make proposal to mark data file as MBR
+        // partition", SORRY, even reading the original), so the copy has
+        // none. AVM attaches the copy as a CD, which boots from El Torito,
+        // so that one complaint is tolerated; anything worse still fails.
+        let tolerance = suse ? ["-return_with", "FAILURE", "32"] : []
+        let build = await Self.runTool(xorriso, tolerance + [
             "-indev", input.sourceISOPath,
             "-outdev", output.path,
             "-map", grubURL.path, "/EFI/BOOT/grub.cfg",
-            "-map", efiURL.path, "/images/efiboot.img",
+            "-map", efiURL.path, imagePath,
             "-map", scratch.appendingPathComponent("nocloud").path, "/nocloud",
             "-boot_image", "any", "replay"
         ])
@@ -1571,16 +2202,17 @@ nonisolated final class UbuntuInstallPipeline {
         let checkInner = bootDir.appendingPathComponent("grub-inner-check.cfg")
         let verify = await Self.runTool(xorriso, ["-osirrox", "on", "-indev", output.path,
                                                   "-extract", "/EFI/BOOT/grub.cfg", checkMenu.path,
-                                                  "-extract", "/images/efiboot.img", checkImage.path,
-                                                  "-lsd", Self.fedoraKickstartPath, "--"])
+                                                  "-extract", imagePath, checkImage.path,
+                                                  "-lsd", profilePath, "--"])
         let readInner = await Self.runTool(mcopy, ["-i", checkImage.path, "::/EFI/BOOT/grub.cfg", checkInner.path],
                                            extraEnvironment: env)
-        let arguments = Self.fedoraKernelArguments(volumeLabel: label)
+        let arguments = suse ? Self.openSUSEKernelArguments : Self.fedoraKernelArguments(volumeLabel: label)
+        let guardLine = suse ? Self.openSUSEMarkerGuardLine : Self.markerGuardLine
         let menus = [checkMenu, checkInner].map { (try? String(contentsOf: $0, encoding: .utf8)) ?? "" }
         guard verify.code == 0, readInner.code == 0,
-              menus.allSatisfy({ $0.hasPrefix(Self.markerGuardLine) && $0.contains(arguments) }),
+              menus.allSatisfy({ $0.hasPrefix(guardLine) && $0.contains(arguments) }),
               Self.fedoraVolumeID(inXorrisoReport: verify.output) == label,
-              verify.output.contains("\n'\(Self.fedoraKickstartPath)'") else {
+              verify.output.contains("\n'\(profilePath)'") else {
             throw UbuntuPipelineError.stageFailed(stage: .rebuildISO,
                                                  reason: "The installer copy didn't read back with the answers on it. (xorriso exit \(verify.code), mcopy exit \(readInner.code))")
         }

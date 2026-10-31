@@ -1698,5 +1698,390 @@ final class GuestWatchTests: XCTestCase {
         UserDefaults.standard.set(false, forKey: key)
         XCTAssertFalse(GuestWatchSettings.isOn(key))
         UserDefaults.standard.removeObject(forKey: key)
+
+// MARK: - Kali Linux, Debian's way (2026-10-30)
+
+final class KaliInstallTests: XCTestCase {
+    private let account = UbuntuAccount(realName: "Amena T", userName: "amena", passwordHash: "$6$salt$hash",
+                                        signInAutomatically: true, keyboardLayout: "gb", keyboardVariant: "mac")
+
+    /// The first two entries of kali-linux-2026.3-installer-netinst-arm64.iso's
+    /// menu, as they are on the disc.
+    private let menu = """
+        menuentry 'Install' {
+            set background_color=black
+            linux    /install.a64/vmlinuz net.ifnames=0 console=tty0 preseed/file=/cdrom/simple-cdd/default.preseed simple-cdd/profiles=kali --- quiet
+            initrd   /install.a64/initrd.gz
+        }
+        menuentry 'Graphical install' {
+            set background_color=black
+            linux    /install.a64/vmlinuz net.ifnames=0 console=tty0 preseed/file=/cdrom/simple-cdd/default.preseed simple-cdd/profiles=kali --- quiet
+            initrd   /install.a64/gtk/initrd.gz
+        }
+        """
+
+    /// AVM's preseed takes the place of Kali's on the entry that boots,
+    /// and only there; Kali's profile and the GNOME choice stay.
+    func testBootMenuEdit() throws {
+        let edited = try XCTUnwrap(UbuntuInstallPipeline.editedKaliBootMenu(menu, keyboard: "keymap=gb"))
+        XCTAssertTrue(edited.hasPrefix(UbuntuInstallPipeline.markerGuardLine))
+        let first = try XCTUnwrap(edited.components(separatedBy: "\n").first { $0.contains("/install.a64/vmlinuz") })
+        XCTAssertTrue(first.contains("\(UbuntuInstallPipeline.debianKernelArguments) keymap=gb desktop=gnome"))
+        XCTAssertFalse(first.contains(UbuntuInstallPipeline.kaliOwnPreseedArgument))
+        XCTAssertTrue(first.contains("simple-cdd/profiles=kali"))
+        XCTAssertEqual(edited.components(separatedBy: "preseed/file=").count, 3, "the second entry is untouched")
+        XCTAssertTrue(edited.contains("set timeout=1"))
+        // Debian's own menu has no Kali profile: not Kali's.
+        XCTAssertNil(UbuntuInstallPipeline.editedKaliBootMenu("menuentry 'x' {\n linux /install.a64/vmlinuz --- quiet\n}"))
+        XCTAssertNil(UbuntuInstallPipeline.editedKaliBootMenu("menuentry 'x' { linux /casper/vmlinuz }"))
+    }
+
+    func testPreseedIsKalis() {
+        let preseed = UbuntuInstallPipeline.kaliPreseed(account: account, hostName: "amenas-kali", timeZone: "UTC", disk: "vda")
+        for line in ["d-i preseed/early_command string anna-install simple-cdd-profiles\n",
+                     "d-i mirror/http/hostname string http.kali.org\n", "d-i mirror/http/directory string /kali\n",
+                     "d-i apt-setup/services-select multiselect\n",
+                     "tasksel tasksel/first multiselect core, desktop-gnome, meta-default, standard\n",
+                     "orca spice-vdagent qemu-guest-agent spice-webdavd", "d-i partman-auto/disk string /dev/vda\n",
+                     "d-i passwd/username string amena\n", "d-i preseed/late_command string sh /cdrom/nocloud/setup.sh",
+                     "d-i debian-installer/exit/poweroff boolean true\n"] {
+            XCTAssertTrue(preseed.contains(line), line)
+        }
+        XCTAssertFalse(preseed.contains("deb.debian.org"))
+        XCTAssertFalse(preseed.contains("gnome-desktop"))
+    }
+
+    func testSetupScriptIsKalis() throws {
+        let script = UbuntuInstallPipeline.kaliSetupScript(account: account)
+        XCTAssertTrue(script.hasPrefix("#!/bin/sh"))
+        XCTAssertTrue(script.contains("Kali Linux installed by AVM"))
+        XCTAssertTrue(script.contains("/etc/gdm3/daemon.conf"))
+        XCTAssertTrue(script.contains(#"XKBLAYOUT="gb""#))
+        // Kali's own dconf profile is added to, not written over.
+        XCTAssertTrue(script.contains("grep -qx 'system-db:local' $T/etc/dconf/profile/user ||"))
+        let profile = try XCTUnwrap(script.range(of: "system-db:local"))
+        let update = try XCTUnwrap(script.range(of: "in-target dconf update"))
+        XCTAssertLessThan(profile.lowerBound, update.lowerBound)
+        XCTAssertTrue(UbuntuInstallPipeline.kaliFailureScript.contains("Kali Linux install failed"))
+        XCTAssertTrue(UbuntuInstallPipeline.kaliFailureScript.contains("AVMFAIL.TAG"))
+    }
+
+    func testKaliDiscIsKnown() {
+        XCTAssertEqual(UbuntuInstallPipeline.debianFamily(
+            discInfo: "Kali GNU/Linux 2026.3rc2 \"Kali-last-snapshot\" - Official arm64 NETINST with firmware 20261009-17:19"), .kali)
+        XCTAssertEqual(UbuntuInstallPipeline.debianFamily(discInfo: "Debian GNU/Linux 13.7.0 \"Trixie\" - Official arm64 NETINST"), .debian)
+        let kali = UbuntuISOInfo(discInfo: "Kali GNU/Linux 2026.3", version: "2026.3", isARM64: true, isDesktop: true, distro: .kali)
+        XCTAssertEqual(kali.spokenName, "Kali Linux 2026.3")
+        XCTAssertNil(UbuntuInstallPipeline.problem(with: kali))
+        let intel = UbuntuISOInfo(discInfo: "Kali", version: "2026.3", isARM64: false, isDesktop: true, distro: .kali)
+        XCTAssertTrue(UbuntuInstallPipeline.problem(with: intel)?.contains("arm64") ?? false)
+        XCTAssertTrue(LinuxDistro.kali.usesPreseed)
+        XCTAssertTrue(GuestOS.kali.isLinux)
+        XCTAssertEqual(GuestOS(rawValue: "kali")?.displayName, "Kali Linux")
+        XCTAssertNotNil(UbuntuAccount.problem(withUserName: "postgres"), "a Kali tool's own user")
+    }
+}
+
+// MARK: - Download Linux: finding the file and its checksum (2026-10-30)
+
+final class LinuxDownloadTests: XCTestCase {
+    private func newest(_ distribution: LinuxISODownloader.Distribution, in listing: String) -> String? {
+        LinuxISODownloader.matches(distribution.filePattern, in: listing)
+            .max(by: { $0.compare($1, options: .numeric) == .orderedAscending })
+    }
+
+    /// cdimage.kali.org/current/ lists every kind of image; only the arm64
+    /// netinstaller is wanted, and its checksum, not its .torrent's.
+    func testKali() throws {
+        let listing = """
+            <a href="kali-linux-2026.3-installer-amd64.iso">x</a>
+            <a href="kali-linux-2026.3-installer-arm64.iso">x</a>
+            <a href="kali-linux-2026.3-installer-netinst-amd64.iso">x</a>
+            <a href="kali-linux-2026.3-installer-netinst-arm64.iso">x</a>
+            <a href="kali-linux-2026.3-installer-netinst-arm64.iso.torrent">x</a>
+            <a href="kali-linux-2026.3-live-arm64.iso.torrent">x</a>
+            <a href="SHA256SUMS">x</a> <a href="SHA256SUMS.gpg">x</a>
+            """
+        let name = try XCTUnwrap(newest(.kali, in: listing))
+        XCTAssertEqual(name, "kali-linux-2026.3-installer-netinst-arm64.iso")
+        XCTAssertEqual(LinuxISODownloader.matches(LinuxISODownloader.Distribution.kali.checksumPattern(for: name), in: listing), ["SHA256SUMS"])
+        let sums = """
+            0dd3e70f2e0b092286b29355450bc79a034a13fb1d5b4bf83c297149115258cd  kali-linux-2026.3-installer-netinst-amd64.iso
+            a986c7fe0f8e887a77e7ea9f868da88eae04e7ac780ae75e6b702f243b63bf8d  kali-linux-2026.3-installer-netinst-arm64.iso
+            5ad419b75bc29abc0f41047481ff46ff55c11a85588eb4c474892dca874100b7  kali-linux-2026.3-installer-netinst-arm64.iso.torrent
+            """
+        XCTAssertEqual(LinuxISODownloader.hash(of: name, in: sums), "a986c7fe0f8e887a77e7ea9f868da88eae04e7ac780ae75e6b702f243b63bf8d")
+        // The .torrent's line alone is no answer for the installer.
+        XCTAssertNil(LinuxISODownloader.hash(of: name, in: "5ad419b75bc29abc0f41047481ff46ff55c11a85588eb4c474892dca874100b7  \(name).torrent"))
+        // A later release is the newest.
+        XCTAssertEqual(newest(.kali, in: listing + "kali-linux-2026.4-installer-netinst-arm64.iso"),
+                       "kali-linux-2026.4-installer-netinst-arm64.iso")
+        XCTAssertEqual(LinuxISODownloader.Distribution(rawValue: "kali"), .kali)
+    }
+
+    /// The first three's lists still read: Ubuntu's "*name", Fedora's
+    /// "SHA256 (name) = hash".
+    func testExistingForms() {
+        let hex = String(repeating: "ab", count: 32)
+        XCTAssertEqual(LinuxISODownloader.hash(of: "ubuntu.iso", in: "\(hex) *ubuntu.iso"), hex)
+        XCTAssertEqual(LinuxISODownloader.hash(of: "debian.iso", in: "\(hex)  debian.iso"), hex)
+        XCTAssertEqual(LinuxISODownloader.hash(of: "Fedora.iso", in: "SHA256 (Fedora.iso) = \(hex)"), hex)
+        XCTAssertNil(LinuxISODownloader.hash(of: "Fedora.iso", in: "# Fedora.iso: 123 bytes"))
+    }
+
+    /// AlmaLinux's and Rocky's folders list a "10-latest" copy and, for
+    /// Rocky, a CHECKSUM per file; the numbered boot ISO and the folder's
+    /// own CHECKSUM are wanted (2026-10-30, the real listings).
+    func testAlmaLinuxAndRocky() throws {
+        let alma = """
+            <a href="AlmaLinux-10-latest-aarch64-boot.iso">x</a> <a href="AlmaLinux-10.2-aarch64-boot.iso">x</a>
+            <a href="AlmaLinux-10.2-aarch64-boot.iso.manifest">x</a> <a href="AlmaLinux-10.2-aarch64-dvd.iso">x</a>
+            <a href="AlmaLinux-10.2-aarch64-minimal.iso">x</a> <a href="CHECKSUM">x</a>
+            """
+        XCTAssertEqual(newest(.almalinux, in: alma), "AlmaLinux-10.2-aarch64-boot.iso")
+        XCTAssertEqual(newest(.almalinux, in: alma + "AlmaLinux-10.10-aarch64-boot.iso"), "AlmaLinux-10.10-aarch64-boot.iso")
+        let rocky = """
+            <a href="CHECKSUM">x</a> <a href="CHECKSUM.asc">x</a>
+            <a href="Rocky-10-latest-aarch64-boot.iso">x</a> <a href="Rocky-10-latest-aarch64-boot.iso.CHECKSUM">x</a>
+            <a href="Rocky-10.2-aarch64-boot.iso">x</a> <a href="Rocky-10.2-aarch64-boot.iso.CHECKSUM">x</a>
+            <a href="Rocky-10.2-aarch64-dvd1.iso">x</a>
+            """
+        let name = try XCTUnwrap(newest(.rocky, in: rocky))
+        XCTAssertEqual(name, "Rocky-10.2-aarch64-boot.iso")
+        XCTAssertEqual(LinuxISODownloader.matches(LinuxISODownloader.Distribution.rocky.checksumPattern(for: name), in: rocky), ["CHECKSUM"])
+        XCTAssertEqual(LinuxISODownloader.matches(LinuxISODownloader.Distribution.almalinux.checksumPattern(for: "x"), in: alma), ["CHECKSUM"])
+        let sums = """
+            # Rocky-10.2-aarch64-boot.iso: 1120931840 bytes
+            SHA256 (Rocky-10.2-aarch64-boot.iso) = 33c2d3dfd5f947b3201478180b549bb2995bd9573c2776b384e5ec1dd47326c0
+            SHA256 (Rocky-10-latest-aarch64-boot.iso) = 33c2d3dfd5f947b3201478180b549bb2995bd9573c2776b384e5ec1dd47326c1
+            """
+        XCTAssertEqual(LinuxISODownloader.hash(of: name, in: sums), "33c2d3dfd5f947b3201478180b549bb2995bd9573c2776b384e5ec1dd47326c0")
+    }
+}
+
+// MARK: - AlmaLinux and Rocky Linux, Fedora's way (2026-10-30)
+
+final class EnterpriseInstallTests: XCTestCase {
+    private let account = UbuntuAccount(realName: "Amena T", userName: "amena", passwordHash: "$6$salt$hash",
+                                        signInAutomatically: true)
+
+    func testDiscsAreKnown() throws {
+        let alma = UbuntuInstallPipeline.enterpriseISOInfo(volumeID: "AlmaLinux-10-2-aarch64-dvd",
+                                                           discInfo: "1779571190.291881\n10.2\naarch64\n", hasInstallerKernel: true)
+        XCTAssertEqual(alma.distro, .almalinux)
+        XCTAssertEqual(alma.version, "10.2")
+        XCTAssertEqual(alma.majorVersion, 10)
+        XCTAssertEqual(alma.spokenName, "AlmaLinux 10.2")
+        XCTAssertFalse(alma.isLiveImage)
+        XCTAssertNil(UbuntuInstallPipeline.problem(with: alma))
+        let rocky = UbuntuInstallPipeline.enterpriseISOInfo(volumeID: "Rocky-10-2-aarch64-dvd", discInfo: "", hasInstallerKernel: true)
+        XCTAssertEqual(rocky.distro, .rocky)
+        XCTAssertEqual(rocky.version, "10.2", "from the label when there's no .discinfo")
+        XCTAssertTrue(rocky.isARM64)
+        let nine = UbuntuInstallPipeline.enterpriseISOInfo(volumeID: "Rocky-9-6-aarch64-dvd",
+                                                           discInfo: "1\n9.6\naarch64\n", hasInstallerKernel: true)
+        XCTAssertTrue(try XCTUnwrap(UbuntuInstallPipeline.problem(with: nine)).contains("Rocky Linux 10 or later"))
+        let intel = UbuntuInstallPipeline.enterpriseISOInfo(volumeID: "AlmaLinux-10-2-x86_64-dvd",
+                                                            discInfo: "1\n10.2\nx86_64\n", hasInstallerKernel: true)
+        XCTAssertTrue(try XCTUnwrap(UbuntuInstallPipeline.problem(with: intel)).contains("aarch64"))
+        XCTAssertTrue(LinuxDistro.rocky.usesKickstart)
+        XCTAssertTrue(GuestOS.almalinux.isLinux)
+        XCTAssertEqual(GuestOS(rawValue: "rocky")?.displayName, "Rocky Linux")
+    }
+
+    func testBootMenuEditIsFedoras() throws {
+        let menu = """
+            set default="1"
+            set timeout=60
+            menuentry 'Install AlmaLinux 10.2' --class red --class gnu-linux --class gnu --class os {
+            \tlinux /images/pxeboot/vmlinuz inst.stage2=hd:LABEL=AlmaLinux-10-2-aarch64-dvd ro
+            \tinitrd /images/pxeboot/initrd.img
+            }
+            """
+        let edited = try XCTUnwrap(UbuntuInstallPipeline.editedFedoraBootMenu(menu))
+        XCTAssertTrue(edited.contains("inst.ks=hd:LABEL=AlmaLinux-10-2-aarch64-dvd:/nocloud/ks.cfg"))
+        XCTAssertTrue(edited.contains("set default=\"0\""))
+    }
+
+    func testKickstarts() throws {
+        let alma = UbuntuInstallPipeline.enterpriseKickstart(account: account, hostName: "h", timeZone: "UTC",
+                                                             distro: .almalinux, version: "10.2", disk: "vda")
+        for line in ["url --url=\"https://repo.almalinux.org/almalinux/10/BaseOS/aarch64/os/\"\n",
+                     "repo --name=AppStream --baseurl=\"https://repo.almalinux.org/almalinux/10/AppStream/aarch64/os/\"\n",
+                     "\n@^graphical-server-environment\n", "\norca\n", "\nspice-vdagent\n", "\nspice-webdavd\n",
+                     "\nqemu-guest-agent\n", "\nautopart\n", "ignoredisk --only-use=vda\n", "--groups=wheel",
+                     "AlmaLinux installed by AVM", "AlmaLinux install failed", "\npoweroff\n"] {
+            XCTAssertTrue(alma.contains(line), line)
+        }
+        XCTAssertFalse(alma.contains("btrfs"))
+        XCTAssertFalse(alma.contains("Fedora"))
+        XCTAssertFalse(alma.contains("fedoraproject"))
+        XCTAssertEqual(alma.components(separatedBy: "\n%end\n").count, 4)
+        let rocky = UbuntuInstallPipeline.enterpriseKickstart(account: account, hostName: "h", timeZone: "UTC",
+                                                              distro: .rocky, version: "10.2", disk: "vda")
+        XCTAssertTrue(rocky.contains("url --url=\"https://download.rockylinux.org/pub/rocky/10/BaseOS/aarch64/os/\"\n"))
+        XCTAssertFalse(rocky.contains("spice-webdavd\n"), "Rocky has no spice-webdavd package")
+        XCTAssertTrue(rocky.contains("Rocky Linux installed by AVM"))
+        // RHEL's guest agent is let answer guest-exec and guest-file, before the marker.
+        let filter = try XCTUnwrap(rocky.range(of: "s/^FILTER_RPC_ARGS=.*/FILTER_RPC_ARGS=\"\"/' /etc/sysconfig/qemu-ga"))
+        let marker = try XCTUnwrap(rocky.range(of: "AVMDONE.TAG"))
+        XCTAssertLessThan(filter.lowerBound, marker.lowerBound)
+        // The setup script keeps the distribution's dconf profile.
+        XCTAssertTrue(rocky.contains("grep -qx 'system-db:local' /etc/dconf/profile/user") ||
+                      rocky.contains("grep -qx 'system-db:local' $T/etc/dconf/profile/user"))
+    }
+}
+
+// MARK: - openSUSE Tumbleweed, YaST and AutoYaST (2026-10-30)
+
+final class OpenSUSEInstallTests: XCTestCase {
+    private let account = UbuntuAccount(realName: "Amena & Co <T>", userName: "amena", passwordHash: "$6$salt$hash",
+                                        signInAutomatically: true, keyboardLayout: "gb", keyboardVariant: "mac")
+
+    /// The menu of openSUSE-Tumbleweed-NET-aarch64-Snapshot20261020-Media.iso,
+    /// cut to its first entries.
+    private let menu = """
+        if sleep --interruptible 0 ; then
+          timeout=60
+        fi
+
+        default=1
+
+        menuentry "Boot from Hard Disk" --class opensuse --class gnu-linux --class gnu --class os {
+          exit
+        }
+
+        menuentry 'Installation' --class opensuse --class gnu-linux --class gnu --class os {
+          set gfxpayload=keep
+          echo 'Loading kernel ...'
+          linux /boot/aarch64/linux splash=silent
+          echo 'Loading initial ramdisk ...'
+          initrd /boot/aarch64/initrd
+        }
+
+        menuentry 'Upgrade' --class opensuse --class gnu-linux --class gnu --class os {
+          linux /boot/aarch64/linux splash=silent upgrade=1
+        }
+        """
+
+    func testBootMenuEdit() throws {
+        let edited = try XCTUnwrap(UbuntuInstallPipeline.editedOpenSUSEBootMenu(menu))
+        // After YaST's restart the disc powers the machine off (2026-10-31).
+        XCTAssertTrue(edited.hasPrefix(UbuntuInstallPipeline.openSUSEMarkerGuardLine + "\n"))
+        XCTAssertTrue(UbuntuInstallPipeline.openSUSEMarkerGuardLine.contains("/AVMDONE.TAG; then halt; exit; fi"))
+        XCTAssertTrue(edited.contains("linux /boot/aarch64/linux \(UbuntuInstallPipeline.openSUSEKernelArguments) splash=silent\n"))
+        XCTAssertTrue(UbuntuInstallPipeline.openSUSEKernelArguments.contains("autoyast=cd:/nocloud/autoinst.xml"))
+        XCTAssertEqual(edited.components(separatedBy: "autoyast=").count, 2, "only the installer entry")
+        XCTAssertTrue(edited.contains("\ndefault=1\ntimeout=1\n"), "Installation, the second entry, after a second")
+        XCTAssertTrue(edited.contains("  timeout=1\n"))
+        XCTAssertFalse(edited.contains("timeout=60"))
+        XCTAssertNil(UbuntuInstallPipeline.editedOpenSUSEBootMenu("menuentry 'x' { linux /images/pxeboot/vmlinuz }"))
+    }
+
+    func testDiscsAreKnown() throws {
+        let net = UbuntuInstallPipeline.openSUSEISOInfo(volumeID: "openSUSE-Tumbleweed-NET-aarch64",
+                                                         products: "/ openSUSE 20261020-0\n", hasInstallerKernel: true)
+        XCTAssertEqual(net.distro, .opensuse)
+        XCTAssertEqual(net.version, "20261020")
+        XCTAssertEqual(net.spokenName, "openSUSE Tumbleweed")
+        XCTAssertNil(UbuntuInstallPipeline.problem(with: net))
+        let live = UbuntuInstallPipeline.openSUSEISOInfo(volumeID: "openSUSE-Tumbleweed-GNOME-Live-aarch64",
+                                                          products: "", hasInstallerKernel: false)
+        XCTAssertTrue(try XCTUnwrap(UbuntuInstallPipeline.problem(with: live)).contains("live image"))
+        let intel = UbuntuInstallPipeline.openSUSEISOInfo(volumeID: "openSUSE-Tumbleweed-NET-x86_64",
+                                                           products: "", hasInstallerKernel: true)
+        XCTAssertTrue(try XCTUnwrap(UbuntuInstallPipeline.problem(with: intel)).contains("aarch64"))
+        let leap = UbuntuInstallPipeline.openSUSEISOInfo(volumeID: "openSUSE-Leap-16.0-aarch64",
+                                                          products: "", hasInstallerKernel: true)
+        XCTAssertTrue(try XCTUnwrap(UbuntuInstallPipeline.problem(with: leap)).contains("Tumbleweed"))
+        XCTAssertTrue(GuestOS.opensuse.isLinux)
+        XCTAssertEqual(GuestOS(rawValue: "opensuse")?.displayName, "openSUSE")
+    }
+
+    /// Well-formed XML whatever the name holds, every answer given, and the
+    /// setup and failure scripts inside it.
+    func testProfileAnswersEverything() throws {
+        let profile = UbuntuInstallPipeline.autoYaSTProfile(account: account, hostName: "amenas-suse",
+                                                            timeZone: "America/Chicago", disk: "vda")
+        let document = try XMLDocument(xmlString: profile, options: [])
+        let root = try XCTUnwrap(document.rootElement())
+        XCTAssertEqual(root.name, "profile")
+        func text(_ path: String) throws -> [String] {
+            try root.nodes(forXPath: path).compactMap(\.stringValue)
+        }
+        XCTAssertEqual(try text("./*[local-name()='users']/*[local-name()='user']/*[local-name()='username']"), ["amena", "root"])
+        XCTAssertEqual(try text("./*[local-name()='users']/*[local-name()='user']/*[local-name()='fullname']"), ["Amena & Co <T>"])
+        XCTAssertEqual(try text("./*[local-name()='users']/*[local-name()='user']/*[local-name()='user_password']"),
+                       ["$6$salt$hash", "$6$salt$hash"])
+        XCTAssertEqual(try text(".//*[local-name()='autologin_user']"), ["amena"])
+        XCTAssertEqual(try text(".//*[local-name()='drive']/*[local-name()='device']"), ["/dev/vda"])
+        // YaST's own restart ends the install; final_halt only powered off
+        // the installed system at its first start (2026-10-31).
+        XCTAssertEqual(try text(".//*[local-name()='final_halt']"), [])
+        XCTAssertEqual(try text(".//*[local-name()='final_reboot']"), [])
+        XCTAssertEqual(try text(".//*[local-name()='products']/*[local-name()='product']"), ["openSUSE"])
+        XCTAssertEqual(try text(".//*[local-name()='second_stage']"), ["false"])
+        XCTAssertEqual(try text(".//*[local-name()='timezone']/*[local-name()='timezone']"), ["America/Chicago"])
+        let packages = try text(".//*[local-name()='package']")
+        for package in ["orca", "spice-vdagent", "spice-webdavd", "qemu-guest-agent"] {
+            XCTAssertTrue(packages.contains(package), package)
+        }
+        XCTAssertTrue(try text(".//*[local-name()='pattern']").contains("gnome"))
+        let source = try XCTUnwrap(try text(".//*[local-name()='source']").first)
+        XCTAssertTrue(source.contains("openSUSE Tumbleweed installed by AVM"))
+        XCTAssertTrue(source.contains("AVMFAIL.TAG"))
+        XCTAssertTrue(source.contains("|| bash /tmp/avm-failed.sh"))
+        // Without automatic sign-in there's no autologin user.
+        var manual = account
+        manual.signInAutomatically = false
+        let other = try XMLDocument(xmlString: UbuntuInstallPipeline.autoYaSTProfile(account: manual, hostName: "h", timeZone: "UTC"))
+        XCTAssertEqual(try other.rootElement()?.nodes(forXPath: ".//*[local-name()='autologin_user']").count, 0)
+    }
+
+    func testSetupScriptIsOpenSUSEs() throws {
+        let script = UbuntuInstallPipeline.openSUSESetupScript(account: account)
+        XCTAssertFalse(script.contains("curtin"))
+        XCTAssertFalse(script.contains("/target"))
+        XCTAssertFalse(script.contains("gdm3"))
+        XCTAssertFalse(script.contains("update-grub"))
+        XCTAssertTrue(script.contains("\nT=\n"))
+        XCTAssertTrue(script.contains("/etc/gdm/custom.conf"))
+        XCTAssertTrue(script.contains("chown -R $U: /home/$U/.config"), "openSUSE's users share the users group")
+        XCTAssertTrue(script.contains("welcome-dialog-last-shown-version"))
+        XCTAssertTrue(script.contains(#""XkbLayout" "%s"\n"#) && script.contains("'gb' 'mac'"))
+        XCTAssertTrue(script.contains("grep -qx 'system-db:local' $T/etc/dconf/profile/user ||"))
+        let tour = try XCTUnwrap(script.range(of: "01-avm-opensuse"))
+        let update = try XCTUnwrap(script.range(of: "\ndconf update\n"))
+        XCTAssertLessThan(tour.lowerBound, update.lowerBound)
+        let restore = try XCTUnwrap(script.range(of: "restorecon -R"))
+        let marker = try XCTUnwrap(script.range(of: "AVMDONE.TAG"))
+        XCTAssertLessThan(restore.lowerBound, marker.lowerBound)
+        // The heredoc that carries it into the chroot can't end early.
+        XCTAssertFalse(script.components(separatedBy: "\n").contains("AVMSETUP"))
+        XCTAssertFalse(script.contains("]]>"))
+        XCTAssertTrue(UbuntuInstallPipeline.openSUSEFailureScript.contains("sysrq-trigger"))
+        XCTAssertTrue(script.contains(#"FILTER_RPC_ARGS=""\n' > $T/etc/sysconfig/qemu-ga"#), "the guest agent may run commands")
+    }
+
+    /// download.opensuse.org's ports folder: the dated NET snapshot, not
+    /// "Current", the DVD or a live image, and its own .sha256 beside it.
+    func testDownloadPatterns() throws {
+        let listing = """
+            <a href="./openSUSE-Tumbleweed-DVD-aarch64-Snapshot20261020-Media.iso">x</a>
+            <a href="./openSUSE-Tumbleweed-NET-aarch64-Current.iso">x</a>
+            <a href="./openSUSE-Tumbleweed-NET-aarch64-Current.iso.sha256">x</a>
+            <a href="./openSUSE-Tumbleweed-NET-aarch64-Snapshot20261020-Media.iso">x</a>
+            <a href="./openSUSE-Tumbleweed-NET-aarch64-Snapshot20261020-Media.iso.mirrorlist">x</a>
+            <a href="./openSUSE-Tumbleweed-NET-aarch64-Snapshot20261020-Media.iso.sha256">x</a>
+            <a href="./openSUSE-Tumbleweed-NET-aarch64-Snapshot20261020-Media.iso.sha256.asc">x</a>
+            <a href="./openSUSE-Tumbleweed-GNOME-Live-aarch64-Snapshot20261020-Media.iso">x</a>
+            """
+        let distribution = LinuxISODownloader.Distribution.opensuse
+        let name = try XCTUnwrap(LinuxISODownloader.matches(distribution.filePattern, in: listing)
+            .max(by: { $0.compare($1, options: .numeric) == .orderedAscending }))
+        XCTAssertEqual(name, "openSUSE-Tumbleweed-NET-aarch64-Snapshot20261020-Media.iso")
+        XCTAssertEqual(LinuxISODownloader.matches(distribution.checksumPattern(for: name), in: listing), [name + ".sha256"])
+        let sums = "33916688227949b0691502ed35f10329ce0047a7312239573bb99a93ce941f82  \(name)\n"
+        XCTAssertEqual(LinuxISODownloader.hash(of: name, in: sums), "33916688227949b0691502ed35f10329ce0047a7312239573bb99a93ce941f82")
     }
 }
