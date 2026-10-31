@@ -156,6 +156,16 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.17", changes: [
+            "New macOS machines can set themselves up: turn on Set up macOS for me in New macOS Virtual Machine, give your name and a password, and AVM goes through Setup Assistant, signs in, and turns on VoiceOver. If a screen stops it, AVM reads that screen to you.",
+            "A Permissions window, in the AVM menu, lists everything macOS has to allow for AVM, what each is for, and a button to allow it. It opens by itself only when something you use isn't allowed.",
+            "When AVM opens at login, only the machine that starts shows. AVM's own window stays away until you open AVM from the Dock or Applications.",
+            "If no keyboard is chosen for Windows when a Windows machine starts, AVM offers the second keyboard it finds.",
+            "Virtual Machine menu: Type Clipboard (Command-Shift-V) types what you copied into Windows, Read Screen (Command-Shift-O) reads out the text on a machine's screen, and Speak Updates and Disk (Command-Option-Shift-I) says the free disk space and pending updates in Windows or Linux.",
+            "A machine's Sound settings can send its sound to any output device, such as headphones or a hearing aid, instead of the Mac's own.",
+            "Report a Problem can email the whole log, and the AVM menu has Remove AVM, which takes AVM, its USB helper and its settings off your Mac.",
+            "A saved macOS machine started while the Mac is locked now resumes when you unlock it, instead of starting afresh and losing where you were.",
+        ]),
         ReleaseNote(version: "0.4.16", changes: [
             "Each virtual machine's name is a heading in the dashboard's table, so VO-Command-H goes from machine to machine. The table also says Memory and Disk in gigabytes.",
             "A machine's Settings come in five categories: General, Sharing, Devices, Display and Sound, and Startup and Recovery. Choose one in the Categories toolbar at the top, or with Command-1 to Command-5.",
