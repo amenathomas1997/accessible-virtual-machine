@@ -156,6 +156,14 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.21", changes: [
+            "Experimental: DirectX 11 for Windows machines, for apps and games that won't start without it. Turn on 3D Graphics in the machine's Settings, under Display and Sound. AVM takes a restore point first and puts the driver in for you; the first restart after that can take several minutes. It's still unstable, so leave it off unless an app needs it. Read Screen and Describe Screen need the machine's window open while it's on.",
+            "AVM's routine lines now wait only while your keyboard is in a machine and its screen reader is talking. Warnings and questions, such as another window taking the keyboard, are said at once. A machine's screen text is no longer written to the log that Report a Problem sends.",
+            "Set up macOS for me now refuses a password it can't type, such as one with an accented letter, instead of leaving you locked out of the machine. That password also stays out of exported machines.",
+            "Type Clipboard, Command-Shift-V, now tells you if it stopped part way, and pressing Command-Shift-V again stops it.",
+            "Cancel now really stops a Windows or Linux download. A machine left running after AVM closed unexpectedly is now mentioned when AVM opens.",
+            "If another program asks AVM to send a file from a private folder, such as Documents, AVM now asks you first. Sending from Finder works as before.",
+        ]),
         ReleaseNote(version: "0.4.20", changes: [
             "When a Windows machine has its own keyboard, chosen in its Settings under Devices, it and its Windows apps stay out of Command-Tab, so the Mac's keyboard never lands in Windows by accident. Turn either back on in Settings, General.",
             "Rocky Linux has a shared folder now, and Remote Desktop works in AlmaLinux and Rocky Linux, with GNOME's own Remote Desktop.",
