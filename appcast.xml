@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.20</title>
+            <sparkle:version>40</sparkle:version>
+            <sparkle:shortVersionString>0.4.20</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>When a Windows machine has its own keyboard, chosen in its Settings under Devices, it and its Windows apps stay out of Command-Tab, so the Mac&#x27;s keyboard never lands in Windows by accident. Turn either back on in Settings, General.</li><li>Rocky Linux has a shared folder now, and Remote Desktop works in AlmaLinux and Rocky Linux, with GNOME&#x27;s own Remote Desktop.</li><li>A Fedora, AlmaLinux, Rocky Linux or openSUSE machine installed by an older AVM can be repaired: choose Virtual Machine, Repair for AVM, while it&#x27;s signed in, and type your password when it asks. Then Send File, the shared folder and Remote Desktop work in it.</li><li>While your keyboard is in a machine and its screen reader is talking, AVM&#x27;s routine updates wait, and AVM says them when you come back to the Mac. Problems are still said at once. Turn this off in Settings, Watching Machines.</li><li>Describe Screen, Command-Option-Shift-O, says what a machine&#x27;s screen looks like: its colour and its text by where it is, worked out on your Mac. For a fuller description, you can let AVM ask Anthropic&#x27;s Claude, in Settings, Watching Machines, with your own API key; AVM asks before sending each machine&#x27;s screen.</li><li>Take the AVM Tour, in the Help menu, walks you through AVM in ten spoken steps.</li></ul>]]></description>
+            <pubDate>Sun, 01 Nov 2026 03:01:36 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.20/AVM-0.4.20.zip" sparkle:edSignature="SrctJ7fAmDyc/QbOj1L7mPYt94zh+bVltek5+OlaIl5r9H+/XP0lXpMYOMnCNozTvsNCOwbH48ErBHkY4AzwBQ==" length="67805800" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.19</title>
             <sparkle:version>39</sparkle:version>
             <sparkle:shortVersionString>0.4.19</sparkle:shortVersionString>
