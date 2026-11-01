@@ -156,6 +156,14 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.20", changes: [
+            "When a Windows machine has its own keyboard, chosen in its Settings under Devices, it and its Windows apps stay out of Command-Tab, so the Mac's keyboard never lands in Windows by accident. Turn either back on in Settings, General.",
+            "Rocky Linux has a shared folder now, and Remote Desktop works in AlmaLinux and Rocky Linux, with GNOME's own Remote Desktop.",
+            "A Fedora, AlmaLinux, Rocky Linux or openSUSE machine installed by an older AVM can be repaired: choose Virtual Machine, Repair for AVM, while it's signed in, and type your password when it asks. Then Send File, the shared folder and Remote Desktop work in it.",
+            "While your keyboard is in a machine and its screen reader is talking, AVM's routine updates wait, and AVM says them when you come back to the Mac. Problems are still said at once. Turn this off in Settings, Watching Machines.",
+            "Describe Screen, Command-Option-Shift-O, says what a machine's screen looks like: its colour and its text by where it is, worked out on your Mac. For a fuller description, you can let AVM ask Anthropic's Claude, in Settings, Watching Machines, with your own API key; AVM asks before sending each machine's screen.",
+            "Take the AVM Tour, in the Help menu, walks you through AVM in ten spoken steps.",
+        ]),
         ReleaseNote(version: "0.4.19", changes: [
             "Download Linux now offers Kali Linux, AlmaLinux, Rocky Linux and openSUSE Tumbleweed as well as Ubuntu, Debian and Fedora. Each installs with no questions and starts with Orca on.",
             "On Fedora, AlmaLinux, Rocky Linux and openSUSE, Send File, the shared folder and Remote Desktop now work. A machine of these installed with an earlier AVM can't receive files: install it again.",
