@@ -156,6 +156,17 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.19", changes: [
+            "Download Linux now offers Kali Linux, AlmaLinux, Rocky Linux and openSUSE Tumbleweed as well as Ubuntu, Debian and Fedora. Each installs with no questions and starts with Orca on.",
+            "On Fedora, AlmaLinux, Rocky Linux and openSUSE, Send File, the shared folder and Remote Desktop now work. A machine of these installed with an earlier AVM can't receive files: install it again.",
+            "AlmaLinux and Rocky Linux have no Remote Desktop host to install, so their Settings don't offer Remote Desktop. Rocky Linux also has no shared folder service, so it has no shared folder setting.",
+            "AVM watches running Windows and Linux machines: while no screen reader is running, such as during Setup or a restart, new text on the screen is read out. A screen reader that stops is started again. Each can be turned off in Settings, Watching Machines.",
+            "AVM can take a restore point before Windows or Linux installs updates, so you can go back if an update breaks something. It's off until you turn it on in Settings, Watching Machines.",
+            "Windows comes back after a restart that follows a restore point taken while it ran. Before, it could stop on a blank screen.",
+            "A running machine's restore points are listed in its Settings. Before, the list was empty until the machine stopped.",
+            "In Finder, Send to Virtual Machine in the right-click menu's Quick Actions sends the chosen files to Downloads in a running Windows or Linux machine.",
+            "Set up macOS for me knows Apple's newer words for skipping the Apple Account, so it no longer goes round in circles on that screen.",
+        ]),
         ReleaseNote(version: "0.4.18", changes: [
             "AVM speaks in VoiceOver again while you're in other apps. In 0.4.17 every line there failed and the system voice took over until AVM quit.",
             "The Permissions window now sees VoiceOver Utility's Allow VoiceOver to be controlled with AppleScript when it's on, and says whether that switch or AVM's Automation permission is the one still missing.",
