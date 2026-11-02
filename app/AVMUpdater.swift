@@ -158,6 +158,9 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.23", changes: [
+            "If Control-Left Arrow and Control-Right Arrow never reach Windows, your Mac is probably keeping them for moving between Spaces. AVM now tells you, once each time it opens, as a Windows machine starts, and Check This Machine says so too, with where to turn those shortcuts off.",
+        ]),
         ReleaseNote(version: "0.4.22", changes: [
             "Put a machine's sound in one ear, so its screen reader and VoiceOver don't talk over each other, and set its own volume. It's in the machine's Settings, under Display and Sound, and it changes as soon as you save.",
             "If a machine stops answering and its screen stops changing for 10 minutes, AVM now says it looks stuck and what to do, and tells you when it's moving again.",
