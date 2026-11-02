@@ -79,6 +79,7 @@ struct AVMApp: App {
         WindowsDownloadJob.runIfAsked()
         LinuxDownloadJob.runIfAsked()
         MacTestJob.runIfAsked()
+        UpdateTestJob.runIfAsked()
         KeyboardTestJob.runIfAsked()
         KeyboardTestJob.playAudioIfAsked()
         KeyboardTestJob.serveFolderIfAsked()
@@ -446,6 +447,40 @@ struct AVMApp: App {
 
                 // Repair for AVM (2026-10-31, GuestRepair.swift): a Fedora,
                 // AlmaLinux, Rocky or openSUSE machine from before 0.4.19.
+                // Check This Machine (2026-11-01, MachineCheck.swift).
+                Button("Check This Machine") {
+                    Task { @MainActor in
+                        guard let manager = VMManager.shared else {
+                            Announcer.shared.announce("Check This Machine works in Windows and Linux machines.", tone: .info)
+                            return
+                        }
+                        let config = VMStore.shared?.configurations.first { $0.id == manager.runningMachineID }
+                        await manager.checkThisMachine(configuration: config)
+                    }
+                }
+                .keyboardShortcut("c", modifiers: [.command, .option, .shift])
+                .disabled(!activity.isRunning)
+
+                // A screen reader's setup, between machines (2026-11-01,
+                // ScreenReaderSetup.swift).
+                Button("Save Screen Reader Setup") {
+                    Task { @MainActor in await VMManager.shared?.saveScreenReaderSetup() }
+                }
+                .disabled(!activity.isRunning)
+                Button("Apply Saved Screen Reader Setup…") {
+                    Task { @MainActor in
+                        guard let manager = VMManager.shared else { return }
+                        let alert = NSAlert()
+                        alert.messageText = "Put your saved screen reader setup in \(manager.machineName)?"
+                        alert.informativeText = "Its screen reader stops and starts again with your saved settings and add-ons. What it has now is kept beside them, in a folder ending before-avm."
+                        alert.addButton(withTitle: "Apply")
+                        alert.addButton(withTitle: "Cancel")
+                        guard alert.runModal() == .alertFirstButtonReturn else { return }
+                        await manager.applyScreenReaderSetup()
+                    }
+                }
+                .disabled(!activity.isRunning)
+
                 Button("Repair \(focusLock.guestName) for AVM…") {
                     Task { @MainActor in
                         guard let manager = VMManager.shared else { return }
@@ -743,6 +778,7 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
             if !testRun { WindowsApps.shared.start() }
             // What's New, once after an update (2026-10-30, AVMUpdater.swift).
             if !testRun { ReleaseNotes.showIfUpdated() }
+            if !testRun { MachineBackups.shared.start() }
             if !testRun {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     for config in VMStore.shared?.configurations ?? [] where config.guestOS != .macOS && VMManager.hasOrphanedQEMU(config.id) {

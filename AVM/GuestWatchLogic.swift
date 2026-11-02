@@ -16,6 +16,8 @@ nonisolated enum GuestWatchSettings {
     /// AVM's updates held while the keyboard is in a machine whose screen
     /// reader is running, and said when it comes back (Announcer, 2026-10-31).
     static let holdWhileInMachineKey = "AVMHoldUpdatesInMachine"
+    /// Off by default: each new machine gets the saved screen reader setup.
+    static let useSavedSetupKey = "AVMUseSavedScreenReaderSetup"
 
     /// On unless turned off, except the restore point before updates: off
     /// until turned on (2026-10-31). Twice in tests, Windows didn't come
@@ -125,3 +127,159 @@ nonisolated enum ScreenChange {
             && lines.contains { $0.localizedCaseInsensitiveContains("stop code") }
     }
 }
+
+/// "This machine looks stuck" (2026-11-01, the user's request): a person who
+/// can't see a frozen boot can't know to reset it. A sign of life is its agent
+/// answering, or its screen changing. Said once per freeze.
+nonisolated struct StuckWatch: Sendable {
+    /// Long enough for Windows' slowest quiet restarts, as a first restart
+    /// after the 3D driver, which take several minutes.
+    static let limit: TimeInterval = 600
+    /// Longer than this between looks, AVM wasn't looking: the Mac slept, or
+    /// the machine was paused.
+    static let longestGap: TimeInterval = 60
+
+    enum Change: Equatable, Sendable { case none, stuck, alive }
+
+    let limit: TimeInterval
+    private var lastSign: Date
+    private var lastLook: Date
+    private var told = false
+
+    init(limit: TimeInterval = StuckWatch.limit, now: Date = Date()) {
+        self.limit = limit
+        lastSign = now
+        lastLook = now
+    }
+
+    mutating func look(agentAnswered: Bool, screenChanged: Bool, now: Date = Date()) -> Change {
+        defer { lastLook = now }
+        if agentAnswered || screenChanged || now.timeIntervalSince(lastLook) > Self.longestGap {
+            lastSign = now
+            if told, agentAnswered || screenChanged {
+                told = false
+                return .alive
+            }
+            return .none
+        }
+        guard !told, now.timeIntervalSince(lastSign) >= limit else { return .none }
+        told = true
+        return .stuck
+    }
+}
+
+/// What Check This Machine found, from its script's key=value lines.
+nonisolated struct MachineCheckResult: Sendable {
+    struct Problem: Equatable, Sendable {
+        let what: String
+        let next: String
+    }
+    private(set) var problems: [Problem] = []
+    private(set) var fine: [String] = []
+
+    init(agentAnswered: Bool, output: String, windows: Bool, soundLevels: (left: Int, right: Int)?) {
+        guard agentAnswered else {
+            problems.append(Problem(what: "it isn't answering AVM", next: "wait for it to finish starting. If it's been more than a few minutes, press Command-Shift-R to reset it"))
+            return
+        }
+        var values: [String: String] = [:]
+        for line in output.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            if parts.count == 2 { values[parts[0].trimmingCharacters(in: .whitespaces)] = parts[1].trimmingCharacters(in: .whitespaces) }
+        }
+        fine.append("it's answering")
+        let signedIn = values["signedin"] == "1"
+        if signedIn {
+            fine.append("someone is signed in")
+        } else {
+            problems.append(Problem(what: "nobody is signed in", next: "press Command-Shift-E and sign in. Its screen reader and clipboard start after that"))
+        }
+        if signedIn {
+            if let reader = values["reader"], !reader.isEmpty {
+                let names = reader.split(separator: ",").map { Self.readerName(String($0).lowercased()) }
+                fine.append("\(names.joined(separator: " and ")) is running")
+            } else {
+                problems.append(Problem(what: "no screen reader is running", next: windows ? "press Command-Shift-E, then Control-Alt-N to start NVDA" : "press Command-Shift-E, then Super-Alt-S to start Orca"))
+            }
+        }
+        // Linux has no sound to ask about until someone's signed in.
+        if signedIn || windows {
+            if values["sound"] == "1" && values["sounddevice"] == "1" {
+                fine.append("sound is working")
+            } else {
+                problems.append(Problem(what: "its sound isn't working", next: "restart it. If that doesn't help, choose Report a Problem in the Help menu"))
+            }
+        }
+        if let soundLevels {
+            if soundLevels.left == 0 && soundLevels.right == 0 {
+                problems.append(Problem(what: "its volume is set to zero in AVM", next: "turn it up in its Settings, under Display and Sound"))
+            } else if soundLevels.left == 0 {
+                fine.append("its sound goes to your right ear only")
+            } else if soundLevels.right == 0 {
+                fine.append("its sound goes to your left ear only")
+            }
+        }
+        if signedIn {
+            if values["clipboard"] == "1" {
+                fine.append("the clipboard agent is running")
+            } else {
+                problems.append(Problem(what: "the clipboard agent isn't running", next: windows ? "install spice-vdagent from spice-space.org in it" : "sign out of it and back in"))
+            }
+        }
+        if values["sharedfolder"] == "1" {
+            fine.append("the shared folder service is running")
+        } else {
+            problems.append(Problem(what: "the shared folder service isn't running", next: windows ? "install spice-webdavd from spice-space.org in it" : "choose Virtual Machine, Repair for AVM, if it's offered, or restart it"))
+        }
+    }
+
+    private static func readerName(_ raw: String) -> String {
+        switch raw {
+        case "nvda": return "NVDA"
+        case "jfw": return "JAWS"
+        case "narrator": return "Narrator"
+        case "orca": return "Orca"
+        default: return raw
+        }
+    }
+
+    func words(machine: String) -> String {
+        if problems.isEmpty { return "\(machine) looks good: \(fine.joined(separator: ", "))." }
+        let list = problems.map { "\($0.what). Next: \($0.next)." }.joined(separator: " ")
+        let count = problems.count == 1 ? "one problem" : "\(problems.count) problems"
+        return "\(machine) has \(count): \(list)" + (fine.isEmpty ? "" : " Fine: \(fine.joined(separator: ", ")).")
+    }
+}
+
+/// When a machine's automatic backup is due, and which old ones go.
+nonisolated enum BackupSchedule {
+    static let folderKey = "AVMBackupFolder"
+    static let keep = 3
+
+    static func isDue(every: String?, last: Date?, now: Date) -> Bool {
+        let period: TimeInterval
+        switch every {
+        case "daily": period = 86_400
+        case "weekly": period = 7 * 86_400
+        default: return false
+        }
+        guard let last else { return true }
+        // An hour's grace: the look is hourly, and a daily backup shouldn't creep.
+        return now.timeIntervalSince(last) >= period - 3600
+    }
+
+    /// A new backup's name: sorts by date, and never clashes within a minute.
+    static func name(base: String, ext: String, date: Date) -> String {
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.dateFormat = "yyyy-MM-dd HHmm"
+        return "\(base) backup \(format.string(from: date)).\(ext)"
+    }
+
+    /// Of a folder's names, this machine's backups past the newest `keep`.
+    static func oldOnes(in names: [String], base: String, ext: String, keep: Int = BackupSchedule.keep) -> [String] {
+        let mine = names.filter { $0.hasPrefix("\(base) backup ") && $0.hasSuffix(".\(ext)") }.sorted()
+        return Array(mine.dropLast(keep))
+    }
+}
+

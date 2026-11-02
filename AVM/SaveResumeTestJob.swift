@@ -116,7 +116,7 @@ enum SaveResumeTestJob {
                 || arguments.contains("--test-duplicate") || arguments.contains("--test-send-file")
                 || arguments.contains("--test-linux-share") || arguments.contains("--test-ctl")
                 || arguments.contains("--test-disk-info") || arguments.contains("--run-in-guest")
-                || arguments.contains("--test-printers") || arguments.contains("--test-camera") || arguments.contains("--test-3d") || arguments.contains("--test-windows-3d") || arguments.contains("--test-camera-save")
+                || arguments.contains("--test-printers") || arguments.contains("--test-camera") || arguments.contains("--test-3d") || arguments.contains("--test-windows-3d") || arguments.contains("--test-repair") || arguments.contains("--test-finder-send") || arguments.contains("--test-tour") || arguments.contains("--test-machine-check") || arguments.contains("--test-sr-setup") || arguments.contains("--test-backup") || arguments.contains("--test-sound-ear") || arguments.contains("--test-stuck") || arguments.contains("--test-camera-save")
                 || arguments.contains("--test-screen-readers") || arguments.contains("--test-hid-bridge")
                 || arguments.contains("--test-background") || arguments.contains("--test-monitors")
                 || arguments.contains("--test-agent-shutdown") || arguments.contains("--test-remote-desktop")
@@ -171,6 +171,11 @@ enum SaveResumeTestJob {
                 let passed = monitors()
                 await finish(passed)
             }
+            return
+        }
+        if arguments.contains("--test-tour") {
+            AVMLog.useTestLogFolder()
+            Task { @MainActor in await finish(await tour()) }
             return
         }
         guard let folder = value("--vm") else {
@@ -591,6 +596,24 @@ enum SaveResumeTestJob {
                 check("the bridge device was removed", !usb.isEmpty && !usb.contains("hidbridge-dev-\(port)") && !usb.contains("AVM Bluetooth test"))
                 await shutDown(manager)
                 await finish(ok)
+            }
+            if arguments.contains("--test-repair") {
+                await finish(await repair(folderURL, guest))
+            }
+            if arguments.contains("--test-finder-send") {
+                await finish(await finderSend(folderURL, guest))
+            }
+            if arguments.contains("--test-stuck") {
+                await finish(await stuckMachine(folderURL, guest))
+            }
+            if arguments.contains("--test-machine-check") {
+                await finish(await machineCheck(folderURL, guest))
+            }
+            if arguments.contains("--test-sr-setup") {
+                await finish(await screenReaderSetup(folderURL, guest))
+            }
+            if arguments.contains("--test-backup") {
+                await finish(await backup(folderURL, guest))
             }
             if arguments.contains("--test-windows-3d") {
                 await finish(await windows3D(folderURL))
@@ -1029,6 +1052,257 @@ enum SaveResumeTestJob {
         }
         check("Windows starts with 3D off and the driver left in", true)
         await shutDown(plain)
+        return ok
+    }
+
+    /// Repair for AVM (2026-11-01), on a clone: its agent is confined again as
+    /// an older AVM left it, Repair types its command at GNOME's Run box, the
+    /// password goes into the box that asks, and the agent is free again.
+    private static func repair(_ folder: URL, _ guest: GuestOS) async -> Bool {
+        let clone = folder.deletingLastPathComponent().appendingPathComponent(folder.lastPathComponent + "-repair-\(UUID().uuidString.prefix(8))")
+        let copy = Process()
+        copy.executableURL = URL(fileURLWithPath: "/bin/cp")
+        copy.arguments = ["-c", "-R", folder.path, clone.path]
+        try? copy.run()
+        copy.waitUntilExit()
+        defer { try? FileManager.default.removeItem(at: clone) }
+        let manager = VMManager()
+        guard await start(manager, configuration(folder: clone, guest: guest)), let agent = manager.guestAgentSocketPath,
+              await waitForAgent(agent, seconds: 600) else {
+            check("the machine started and answers", false); await shutDown(manager); return false
+        }
+        // Signed in and settled before any keys are typed at the desktop.
+        try? await Task.sleep(for: .seconds(45))
+        print("== Confining its agent, as an older AVM left it")
+        _ = await exec(agent, program: "/bin/sh", args: ["-c", "for m in avm avm-qemu-ga; do semodule -r $m 2>/dev/null; done; true"])
+        try? await Task.sleep(for: .seconds(5))
+        check("its agent is confined", await manager.agentIsConfined() == true)
+        print("== Repair for AVM")
+        let repairing = Task { await manager.repairForAVM(askFirst: false) }
+        // Once Repair has finished typing: it types one at a time, and typing
+        // the password over it does nothing.
+        func log() -> String { AVMLog.currentLogURL().flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? "" }
+        for _ in 0..<120 where !log().contains("waiting for the password") { try? await Task.sleep(for: .seconds(1)) }
+        try? await Task.sleep(for: .seconds(6))
+        // The test account's password, as test-linux-install.sh makes it.
+        check("the password was typed", await manager.typeText("Hello world!\n")?.stopped == false)
+        await repairing.value
+        check("its agent is free", await manager.agentIsConfined() == false)
+        await shutDown(manager)
+        return ok
+    }
+
+    /// Send to Virtual Machine (2026-11-01): the service as Finder calls it,
+    /// with the file on a pasteboard and the machine running as the app runs
+    /// it, and macOS told of the service by Info.plist.
+    private static func finderSend(_ folder: URL, _ guest: GuestOS) async -> Bool {
+        let services = Bundle.main.object(forInfoDictionaryKey: "NSServices") as? [[String: Any]] ?? []
+        check("Info.plist offers the service", services.contains { $0["NSMessage"] as? String == "sendToVirtualMachine" })
+        check("AVM answers its message", SendToMachineService.shared.responds(to: NSSelectorFromString("sendToVirtualMachine:userData:error:")))
+        var config = configuration(folder: folder, guest: guest)
+        config.name = "Finder test"
+        let session = MachineSessions.shared.start(config, vmStore: nil, focusLock: nil)
+        for _ in 0..<600 where session.vmState != .running { try? await Task.sleep(for: .milliseconds(500)) }
+        guard session.vmState == .running, let agent = session.manager.guestAgentSocketPath,
+              await waitForAgent(agent, seconds: 600) else {
+            check("the machine started and answers", false); return false
+        }
+        let name = "avm finder test \(UUID().uuidString.prefix(6)).txt"
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try? "sent from Finder\n".write(to: file, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let board = NSPasteboard(name: NSPasteboard.Name("avm-finder-test"))
+        board.clearContents()
+        board.writeObjects([file as NSURL])
+        var error: NSString?
+        SendToMachineService.shared.sendToVirtualMachine(board, userData: nil, error: &error)
+        check("the service took it", error == nil)
+        var arrived = false
+        let look = guest == .windows
+            ? "Get-ChildItem -Path C:\\Users\\*\\Downloads -Filter '\(name)' | ForEach-Object { 'found' }"
+            : "ls /home/*/Downloads/'\(name)' 2>/dev/null && echo found"
+        for _ in 0..<20 where !arrived {
+            try? await Task.sleep(for: .seconds(3))
+            let out = guest == .windows
+                ? await exec(agent, program: "powershell.exe", args: ["-NoProfile", "-Command", look])
+                : await exec(agent, program: "/bin/sh", args: ["-c", look])
+            arrived = out?.contains("found") == true
+        }
+        check("the file is in the machine's Downloads", arrived)
+        session.forceStop()
+        return ok
+    }
+
+    /// Looks stuck (2026-11-01): QEMU's CPUs stopped, with AVM thinking it runs,
+    /// is a frozen machine. AVM says so within its limit, here a minute, and
+    /// says so when it moves again.
+    private static func stuckMachine(_ folder: URL, _ guest: GuestOS) async -> Bool {
+        func log() -> String { AVMLog.currentLogURL().flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? "" }
+        func waitForLog(_ text: String, seconds: Int) async -> Bool {
+            for _ in 0..<seconds where !log().contains(text) { try? await Task.sleep(for: .seconds(1)) }
+            return log().contains(text)
+        }
+        VMManager.stuckLimit = 60
+        let manager = VMManager()
+        guard await start(manager, configuration(folder: folder, guest: guest)), let agent = manager.guestAgentSocketPath,
+              await waitForAgent(agent, seconds: 600) else {
+            check("the machine started and answers", false); await shutDown(manager); return false
+        }
+        try? await Task.sleep(for: .seconds(30))
+        check("it isn't called stuck while it answers", !log().contains("looks stuck"))
+        print("== Frozen")
+        _ = try? await manager.sendQMPCommand("stop", arguments: nil)
+        check("AVM says it looks stuck", await waitForLog("looks stuck", seconds: 180))
+        print("== Moving again")
+        _ = try? await manager.sendQMPCommand("cont", arguments: nil)
+        check("AVM says it's moving again", await waitForLog("is moving again", seconds: 120))
+        await shutDown(manager)
+        return ok
+    }
+
+    /// Check This Machine (2026-11-01): what it says of the machine as it is,
+    /// and that it notices a service that stopped.
+    private static func machineCheck(_ folder: URL, _ guest: GuestOS) async -> Bool {
+        func log() -> String { AVMLog.currentLogURL().flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? "" }
+        let manager = VMManager()
+        let config = configuration(folder: folder, guest: guest)
+        guard await start(manager, config), let agent = manager.guestAgentSocketPath,
+              await waitForAgent(agent, seconds: 600) else {
+            check("the machine started and answers", false); await shutDown(manager); return false
+        }
+        try? await Task.sleep(for: .seconds(60))
+        await manager.checkThisMachine(configuration: config)
+        let first = log().components(separatedBy: "\n").last { $0.contains("said (") && $0.contains("Save test") && !$0.contains("Checking") } ?? ""
+        print("   it said: \(first.suffix(400))")
+        check("it reports that it's answering", first.contains("answering"))
+        if guest != .windows {
+            check("it found this machine good", first.contains("looks good"))
+        }
+        print("== With the shared folder service stopped")
+        _ = guest == .windows
+            ? await exec(agent, program: "powershell.exe", args: ["-NoProfile", "-Command", "Stop-Service spice-webdavd -Force"])
+            : await exec(agent, program: "/bin/sh", args: ["-c", "systemctl stop spice-webdavd"])
+        await manager.checkThisMachine(configuration: config)
+        let second = log().components(separatedBy: "\n").last { $0.contains("said (") && $0.contains("Save test") && !$0.contains("Checking") } ?? ""
+        check("it says so, with what to do", second.contains("shared folder service isn't running") && second.contains("Next:"))
+        await shutDown(manager)
+        return ok
+    }
+
+    /// Screen reader setup (2026-11-01): saved from a machine, changed there,
+    /// put back, with what was there kept. On a clone, into a test folder: a
+    /// person's own saved setup isn't touched.
+    private static func screenReaderSetup(_ folder: URL, _ guest: GuestOS) async -> Bool {
+        let clone = folder.deletingLastPathComponent().appendingPathComponent(folder.lastPathComponent + "-sr-\(UUID().uuidString.prefix(8))")
+        let copy = Process()
+        copy.executableURL = URL(fileURLWithPath: "/bin/cp")
+        copy.arguments = ["-c", "-R", folder.path, clone.path]
+        try? copy.run()
+        copy.waitUntilExit()
+        defer { try? FileManager.default.removeItem(at: clone) }
+        let support = FileManager.default.temporaryDirectory.appendingPathComponent("avm-sr-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: support) }
+        let manager = VMManager()
+        guard await start(manager, configuration(folder: clone, guest: guest)), let agent = manager.guestAgentSocketPath,
+              await waitForAgent(agent, seconds: 600) else {
+            check("the machine started and answers", false); await shutDown(manager); return false
+        }
+        // In Windows, someone has to be signed in for NVDA's folder.
+        if guest == .windows {
+            var tasks = await exec(agent, program: "tasklist.exe", args: ["/fo", "csv", "/nh"]) ?? ""
+            if !tasks.lowercased().contains("explorer.exe") {
+                let password = "T" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16).lowercased() + "x1"
+                _ = await exec(agent, program: "net.exe", args: ["user", "avmtest", password])
+                // The agent answers before the sign-in screen can take keys, so
+                // it's tried again each minute.
+                for _ in 0..<6 where !tasks.lowercased().contains("explorer.exe") {
+                    try? await Task.sleep(for: .seconds(30))
+                    _ = try? await manager.sendQMPCommand("send-key", arguments: ["keys": [["type": "qcode", "data": "spc"]]])
+                    try? await Task.sleep(for: .seconds(4))
+                    _ = await manager.typeText(password + "\n")
+                    try? await Task.sleep(for: .seconds(30))
+                    tasks = await exec(agent, program: "tasklist.exe", args: ["/fo", "csv", "/nh"]) ?? ""
+                }
+            }
+            check("someone is signed in", tasks.lowercased().contains("explorer.exe"))
+            // NVDA writes its settings folder a little after it starts.
+            try? await Task.sleep(for: .seconds(45))
+        } else {
+            try? await Task.sleep(for: .seconds(30))
+        }
+        func inGuest(_ windowsScript: String, _ linuxScript: String) async -> String {
+            guest == .windows
+                ? await exec(agent, program: "powershell.exe", args: ["-NoProfile", "-Command", "$u=(Get-CimInstance Win32_ComputerSystem).UserName.Split('\\')[-1]; $d=\"C:\\Users\\$u\\AppData\\Roaming\\nvda\"; " + windowsScript]) ?? ""
+                : await exec(agent, program: "/bin/sh", args: ["-c", "U=$(getent passwd 1000 | cut -d: -f1); D=/home/$U/.local/share/orca; " + linuxScript]) ?? ""
+        }
+        AVMPaths.supportDirectoryOverride = support
+        defer { AVMPaths.supportDirectoryOverride = nil }
+        print("== Saving, with a marker in its settings")
+        _ = await inGuest("Set-Content \"$d\\avm-marker.txt\" saved", "runuser -u \"$U\" -- sh -c \"mkdir -p $D && echo saved > $D/avm-marker.txt\"")
+        await manager.saveScreenReaderSetup()
+        let file = try? VMManager.screenReaderSetupFile(windows: guest == .windows)
+        let size = file.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int } ?? 0
+        check("the setup is on the Mac (\(size) bytes)", size > 0)
+        print("== Changed in the machine, then applied")
+        _ = await inGuest("Remove-Item \"$d\\avm-marker.txt\"; Set-Content \"$d\\avm-other.txt\" other", "rm -f $D/avm-marker.txt; runuser -u \"$U\" -- sh -c \"echo other > $D/avm-other.txt\"")
+        check("it applied", await manager.applyScreenReaderSetup())
+        let after = await inGuest("if (Test-Path \"$d\\avm-marker.txt\") { 'marker-back' }; if (Test-Path \"$d-before-avm\\avm-other.txt\") { 'other-kept' }; if (Test-Path \"$d\\nvda.ini\") { 'ini' }",
+                                  "[ -f $D/avm-marker.txt ] && echo marker-back; [ -f $D-before-avm/avm-other.txt ] && echo other-kept; [ \"$(stat -c %U $D/avm-marker.txt)\" = \"$U\" ] && echo owned")
+        print("   \(after.split(whereSeparator: \.isNewline).joined(separator: ", "))")
+        check("the saved settings are back", after.contains("marker-back"))
+        check("what was there is kept beside them", after.contains("other-kept"))
+        check(guest == .windows ? "its settings file is there" : "they're the user's own", after.contains(guest == .windows ? "ini" : "owned"))
+        await shutDown(manager)
+        return ok
+    }
+
+    /// Automatic backup (2026-11-01): a whole package in the chosen folder, with
+    /// the older ones past the newest few removed, and another machine's left.
+    private static func backup(_ folder: URL, _ guest: GuestOS) async -> Bool {
+        let target = folder.deletingLastPathComponent().appendingPathComponent("avm-backup-test-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try? FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: target) }
+        let config = configuration(folder: folder, guest: guest)
+        let ext = MachineArchive.packageExtension
+        let base = config.backupBaseName
+        let old = (1...3).map { "\(base) backup 2020-01-0\($0) 0000.\(ext)" }
+        let someoneElse = "Other backup 2020-01-01 0000.\(ext)"
+        for name in old + [someoneElse] {
+            try? FileManager.default.createDirectory(at: target.appendingPathComponent(name), withIntermediateDirectories: true)
+        }
+        check("it says it's done", await MachineArchiveController.shared.backUp(config, into: target))
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: target.path)) ?? []
+        print("   \(names.sorted().joined(separator: ", "))")
+        let new = names.first { $0.hasPrefix("\(base) backup ") && !old.contains($0) }
+        check("the new backup is there", new != nil)
+        if let new {
+            let inside = (try? FileManager.default.contentsOfDirectory(atPath: target.appendingPathComponent(new).path)) ?? []
+            check("it holds the disk", inside.contains("disk.qcow2"))
+        }
+        check("the oldest is gone", !names.contains(old[0]))
+        check("the newer two stay", names.contains(old[1]) && names.contains(old[2]))
+        check("another machine's backup stays", names.contains(someoneElse))
+        return ok
+    }
+
+    /// The tour (2026-11-01): its window opens, and every step is said. That
+    /// its keys are real is AVMLogicTests' to check.
+    private static func tour() async -> Bool {
+        func log() -> String { AVMLog.currentLogURL().flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? "" }
+        NSApp.setActivationPolicy(.regular)
+        Tour.show()
+        try? await Task.sleep(for: .seconds(1))
+        check("its window opens", NSApp.windows.contains { $0.title == "AVM Tour" && $0.isVisible })
+        for index in 1..<Tour.steps.count {
+            Tour.say(index)
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        try? await Task.sleep(for: .seconds(1))
+        let said = log()
+        for (index, step) in Tour.steps.enumerated() {
+            check("step \(index + 1) is said: \(step.title)", said.contains("Step \(index + 1) of \(Tour.steps.count): \(step.title)"))
+        }
         return ok
     }
 
@@ -1488,7 +1762,10 @@ enum SaveResumeTestJob {
     // MARK: Guest agent
 
     private static func waitForAgent(_ path: String, seconds: Int) async -> Bool {
-        for _ in 0..<(seconds * 2) {
+        // By the clock: each try can itself wait, so counting tries made ten
+        // minutes into hours (2026-11-01).
+        let deadline = Date().addingTimeInterval(TimeInterval(seconds))
+        while Date() < deadline {
             if let replies = try? await Task.detached(operation: { try GuestAgent.run([#"{"execute":"guest-ping"}"#], socketPath: path) }).value,
                replies.first?.contains(#""return""#) == true { return true }
             try? await Task.sleep(for: .milliseconds(500))

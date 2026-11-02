@@ -2197,4 +2197,94 @@ final class OpenSUSEInstallTests: XCTestCase {
         let sums = "33916688227949b0691502ed35f10329ce0047a7312239573bb99a93ce941f82  \(name)\n"
         XCTAssertEqual(LinuxISODownloader.hash(of: name, in: sums), "33916688227949b0691502ed35f10329ce0047a7312239573bb99a93ce941f82")
     }
+
+    // The tour's keys are real ones (2026-11-01): it's read out to people
+    // learning AVM, and a key that doesn't exist loses them.
+    func testEveryKeyTheTourNamesIsInTheMenus() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let tour = try String(contentsOf: root.appendingPathComponent("AVM/Tour.swift"), encoding: .utf8)
+        var sources = ""
+        for folder in ["app", "views", "AVM"] {
+            for name in try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent(folder).path) where name.hasSuffix(".swift") {
+                sources += try String(contentsOf: root.appendingPathComponent(folder).appendingPathComponent(name), encoding: .utf8)
+            }
+        }
+        let keys = try NSRegularExpression(pattern: "Command-(Option-)?Shift-([A-Z])\\b")
+        let found = keys.matches(in: tour, range: NSRange(tour.startIndex..., in: tour))
+        XCTAssertGreaterThan(found.count, 5)
+        for match in found {
+            let option = match.range(at: 1).location != NSNotFound
+            let letter = (tour as NSString).substring(with: match.range(at: 2)).lowercased()
+            let shortcut = "keyboardShortcut(\"\(letter)\", modifiers: [.command, \(option ? ".option, " : "").shift])"
+            XCTAssertTrue(sources.contains(shortcut), "the tour names a key no menu has: \(shortcut)")
+        }
+    }
+
+    func testSoundLevelsFollowTheEarAndVolume() {
+        var config = VMConfiguration(name: "T", cpuCount: 2, ramSizeGB: 4, diskSizeGB: 64, diskImagePath: "/t/disk.qcow2")
+        XCTAssertEqual(config.soundLevels.left, 100)
+        XCTAssertEqual(config.soundLevels.right, 100)
+        config.soundEarChoice = "left"
+        config.soundVolume = 40
+        XCTAssertEqual(config.soundLevels.left, 40)
+        XCTAssertEqual(config.soundLevels.right, 0)
+        config.soundEarChoice = "right"
+        config.soundVolume = 900
+        XCTAssertEqual(config.soundLevels.left, 0)
+        XCTAssertEqual(config.soundLevels.right, 100)
+    }
+
+    func testStuckIsSaidOncePerFreezeAndNotAfterASleep() {
+        let start = Date(timeIntervalSince1970: 1000)
+        var watch = StuckWatch(limit: 100, now: start)
+        var now = start
+        func look(_ answered: Bool = false, _ changed: Bool = false) -> StuckWatch.Change {
+            now += 16
+            return watch.look(agentAnswered: answered, screenChanged: changed, now: now)
+        }
+        for _ in 0..<6 { XCTAssertEqual(look(), .none) }
+        XCTAssertEqual(look(), .stuck)
+        XCTAssertEqual(look(), .none)
+        XCTAssertEqual(look(true), .alive)
+        for _ in 0..<3 { XCTAssertEqual(look(true), .none) }
+        // A changing screen counts as life.
+        for _ in 0..<5 { XCTAssertEqual(look(), .none) }
+        XCTAssertEqual(look(false, true), .none)
+        for _ in 0..<6 { XCTAssertEqual(look(), .none) }
+        XCTAssertEqual(look(), .stuck)
+        XCTAssertEqual(look(false, true), .alive)
+        // AVM wasn't looking for an hour, as when the Mac slept: not stuck.
+        now += 3600
+        XCTAssertEqual(watch.look(agentAnswered: false, screenChanged: false, now: now), .none)
+    }
+
+    func testBackupScheduleAndWhatGoes() {
+        let now = Date(timeIntervalSince1970: 10_000_000)
+        XCTAssertFalse(BackupSchedule.isDue(every: nil, last: nil, now: now))
+        XCTAssertTrue(BackupSchedule.isDue(every: "daily", last: nil, now: now))
+        XCTAssertFalse(BackupSchedule.isDue(every: "daily", last: now - 3600, now: now))
+        XCTAssertTrue(BackupSchedule.isDue(every: "daily", last: now - 86_000, now: now))
+        XCTAssertFalse(BackupSchedule.isDue(every: "weekly", last: now - 86_400, now: now))
+        XCTAssertTrue(BackupSchedule.isDue(every: "weekly", last: now - 7 * 86_400, now: now))
+        let names = ["A backup 2026-01-01 0000.avmvm", "A backup 2026-01-03 0000.avmvm", "A backup 2026-01-02 0000.avmvm",
+                     "A backup 2026-01-04 0000.avmvm", "AB backup 2020-01-01 0000.avmvm", "A.avmvm", "A backup notes.txt"]
+        XCTAssertEqual(BackupSchedule.oldOnes(in: names, base: "A", ext: "avmvm"), ["A backup 2026-01-01 0000.avmvm"])
+    }
+
+    func testMachineCheckSaysWhatsWrongAndWhatToDo() {
+        let good = "signedin=1\nreader=nvda\nsound=1\nsounddevice=1\nclipboard=1\nsharedfolder=1\n"
+        let fine = MachineCheckResult(agentAnswered: true, output: good, windows: true, soundLevels: (100, 0))
+        XCTAssertTrue(fine.problems.isEmpty)
+        XCTAssertTrue(fine.words(machine: "PC").hasPrefix("PC looks good"))
+        XCTAssertTrue(fine.words(machine: "PC").contains("NVDA is running"))
+        XCTAssertTrue(fine.words(machine: "PC").contains("left ear only"))
+        let silent = MachineCheckResult(agentAnswered: false, output: "", windows: true, soundLevels: nil)
+        XCTAssertTrue(silent.words(machine: "PC").contains("isn't answering AVM"))
+        let bad = MachineCheckResult(agentAnswered: true, output: "signedin=1\nreader=\nsound=0\nsounddevice=1\nclipboard=0\nsharedfolder=0\n", windows: false, soundLevels: (0, 0))
+        XCTAssertEqual(bad.problems.count, 5)
+        XCTAssertTrue(bad.words(machine: "L").contains("Super-Alt-S"))
+        // Nobody signed in on Linux: no complaints about what needs a session.
+        let locked = MachineCheckResult(agentAnswered: true, output: "signedin=0\nreader=\nsound=1\nsounddevice=0\nclipboard=0\nsharedfolder=1\n", windows: false, soundLevels: nil)
+        XCTAssertEqual(locked.problems.map(\.what), ["nobody is signed in"])
+    }
 }

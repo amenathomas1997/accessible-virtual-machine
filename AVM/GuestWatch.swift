@@ -52,6 +52,14 @@ extension VMManager {
         if installed, configuration.usesWindows3D, Self.supportsWindows3D {
             Task { [weak self] in await self?.installWindows3DDriverIfNeeded(machine: configuration.name) }
         }
+        // A saved screen reader setup for a machine AVM is installing
+        // (2026-11-01, ScreenReaderSetup.swift): noted now, put in at the
+        // first sign-in, on a later start.
+        if !installed, UserDefaults.standard.bool(forKey: GuestWatchSettings.useSavedSetupKey),
+           var stored = VMStore.shared?.configurations.first(where: { $0.id == configuration.id }) {
+            stored.wantsSavedScreenReaderSetup = true
+            VMStore.shared?.save(stored)
+        }
         guestWatchTask = Task { [weak self] in
             var lastThumb: [UInt8]?
             var said = Set<String>()
@@ -69,6 +77,8 @@ extension VMManager {
             var toldNoComeBack = false
             var toldDevices = false
             var agentEverAnswered = false
+            var stuck = StuckWatch(limit: Self.stuckLimit)
+            var stuckThumb: [UInt8]?
             let started = Date()
             defer { try? FileManager.default.removeItem(at: picture) }
             var lastBoot: String?
@@ -118,6 +128,39 @@ extension VMManager {
                     } else if agentLostAt == nil {
                         agentLostAt = Date()
                     }
+                }
+
+                // Looks stuck (2026-11-01): no answer, and the same screen.
+                // The picture only when the agent is silent: it costs a little,
+                // and with its window closed a 3D machine has none, so there
+                // only the agent counts. Not during an install, which has its
+                // own watchdog.
+                if installed, tick % 4 == 1 {
+                    var changed = false
+                    if !agentAnswered, await self.screenPicture(to: picture.path),
+                       let source = CGImageSourceCreateWithURL(picture as CFURL, nil),
+                       let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+                       let thumb = ScreenChange.thumbnail(of: image) {
+                        changed = stuckThumb.map { ScreenChange.isNewScreen($0, thumb) } ?? true
+                        stuckThumb = thumb
+                    }
+                    switch stuck.look(agentAnswered: agentAnswered, screenChanged: changed) {
+                    case .stuck:
+                        AVMLog.write("AVM: GuestWatch — \(machine) looks stuck")
+                        Announcer.shared.announce("\(machine) looks stuck: for \(Int(stuck.limit / 60)) minutes it hasn't answered AVM, and its screen hasn't changed. Next: press Command-Shift-R to reset it, or wait if it's doing something long.", tone: .failure)
+                    case .alive:
+                        AVMLog.write("AVM: GuestWatch — \(machine) is moving again")
+                        Announcer.shared.announce("\(machine) is moving again.", tone: .info)
+                    case .none: break
+                    }
+                }
+
+                if installed, tick % 4 == 1, processes?.signedIn == true,
+                   VMStore.shared?.configurations.first(where: { $0.id == configuration.id })?.wantsSavedScreenReaderSetup == true,
+                   var stored = VMStore.shared?.configurations.first(where: { $0.id == configuration.id }) {
+                    stored.wantsSavedScreenReaderSetup = nil
+                    VMStore.shared?.save(stored)
+                    if self.hasSavedScreenReaderSetup { await self.applyScreenReaderSetup() }
                 }
 
                 // A screen reader that stopped.
