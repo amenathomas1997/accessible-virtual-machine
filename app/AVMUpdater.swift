@@ -158,6 +158,13 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.22", changes: [
+            "Put a machine's sound in one ear, so its screen reader and VoiceOver don't talk over each other, and set its own volume. It's in the machine's Settings, under Display and Sound, and it changes as soon as you save.",
+            "If a machine stops answering and its screen stops changing for 10 minutes, AVM now says it looks stuck and what to do, and tells you when it's moving again.",
+            "Check This Machine, Command-Option-Shift-C, tells you what's working in a machine and what isn't, with what to do: its screen reader, sound, clipboard and shared folder.",
+            "Save Screen Reader Setup and Apply Saved Screen Reader Setup, in the Virtual Machine menu, carry your NVDA or Orca settings and add-ons to another machine. AVM can also put them in each new machine: turn that on in Settings, Watching Machines.",
+            "Automatic backups: choose every day or every week, and a folder, in a machine's Settings under Startup and Recovery. A machine that's running waits until it's shut down. AVM keeps the newest three of each machine and permanently removes older ones.",
+        ]),
         ReleaseNote(version: "0.4.21", changes: [
             "Experimental: DirectX 11 for Windows machines, for apps and games that won't start without it. Turn on 3D Graphics in the machine's Settings, under Display and Sound. AVM takes a restore point first and puts the driver in for you; the first restart after that can take several minutes. It's still unstable, so leave it off unless an app needs it. Read Screen and Describe Screen need the machine's window open while it's on.",
             "AVM's routine lines now wait only while your keyboard is in a machine and its screen reader is talking. Warnings and questions, such as another window taking the keyboard, are said at once. A machine's screen text is no longer written to the log that Report a Problem sends.",
