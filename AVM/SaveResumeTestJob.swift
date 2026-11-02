@@ -1119,7 +1119,7 @@ enum SaveResumeTestJob {
         check("the service took it", error == nil)
         var arrived = false
         let look = guest == .windows
-            ? "Get-ChildItem -Force -Path C:\\Users\\*\\Downloads -Filter '\(name)' | ForEach-Object { 'found' }"
+            ? "Get-ChildItem -Force -Directory C:\\Users | ForEach-Object { if (Test-Path -LiteralPath (Join-Path $_.FullName 'Downloads\\\(name)')) { 'found' } }"
             : "ls /home/*/Downloads/'\(name)' 2>/dev/null && echo found"
         for _ in 0..<20 where !arrived {
             try? await Task.sleep(for: .seconds(3))
