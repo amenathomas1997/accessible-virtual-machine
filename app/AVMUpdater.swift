@@ -158,6 +158,9 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.24", changes: [
+            "Websites should open faster in Windows machines on a network without IPv6. Windows was waiting about a fifth of a second on every new connection. AVM now checks for IPv6 each time a Windows machine starts, and leaves it on where your network has it. If you change networks, shut the machine down and start it again.",
+        ]),
         ReleaseNote(version: "0.4.23", changes: [
             "If Control-Left Arrow and Control-Right Arrow never reach Windows, your Mac is probably keeping them for moving between Spaces. AVM now tells you, once each time it opens, as a Windows machine starts, and Check This Machine says so too, with where to turn those shortcuts off.",
         ]),
