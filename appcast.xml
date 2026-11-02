@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.25</title>
+            <sparkle:version>45</sparkle:version>
+            <sparkle:shortVersionString>0.4.25</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>A machine with many internet connections open, as a speed test makes, could stop responding and need a force restart. AVM could only keep track of about a thousand open files and connections at once, and that limit is gone. If a Windows machine still freezes on a busy website, please send your log from the Help menu.</li></ul>]]></description>
+            <pubDate>Mon, 02 Nov 2026 22:15:01 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.25/AVM-0.4.25.zip" sparkle:edSignature="wYYK3+J/iYnKXRFmfH4iMz/55y8K1omXufSVnyhHjZJxzQ+fi8MUcBqh9fT5lhHbauqNLi5l0IZL+gDosF88Dw==" length="106270160" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.24</title>
             <sparkle:version>44</sparkle:version>
             <sparkle:shortVersionString>0.4.24</sparkle:shortVersionString>
