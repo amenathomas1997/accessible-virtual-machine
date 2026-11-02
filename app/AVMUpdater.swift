@@ -158,6 +158,9 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.26", changes: [
+            "A machine can now keep far more internet connections open at once. Each time a machine starts, AVM checks how many your Mac allows and uses that, instead of stopping new connections at about ten thousand.",
+        ]),
         ReleaseNote(version: "0.4.25", changes: [
             "A machine with many internet connections open, as a speed test makes, could stop responding and need a force restart. AVM could only keep track of about a thousand open files and connections at once, and that limit is gone. If a Windows machine still freezes on a busy website, please send your log from the Help menu.",
         ]),
