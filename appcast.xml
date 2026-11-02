@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.26</title>
+            <sparkle:version>46</sparkle:version>
+            <sparkle:shortVersionString>0.4.26</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>A machine can now keep far more internet connections open at once. Each time a machine starts, AVM checks how many your Mac allows and uses that, instead of stopping new connections at about ten thousand.</li></ul>]]></description>
+            <pubDate>Mon, 02 Nov 2026 23:13:38 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.26/AVM-0.4.26.zip" sparkle:edSignature="Z6Grhm8B2Fd/G2zYSMkVXChWHhpl87jETU+sI1T3GGxw6HTzjbae6bFhhWtrFWTZmh24zzQv5uQTXuxweYfwBg==" length="106270623" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.25</title>
             <sparkle:version>45</sparkle:version>
             <sparkle:shortVersionString>0.4.25</sparkle:shortVersionString>
