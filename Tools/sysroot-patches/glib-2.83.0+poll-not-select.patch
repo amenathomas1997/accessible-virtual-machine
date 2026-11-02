@@ -1,0 +1,20 @@
+AVM: g_poll uses macOS's poll(), not the select() emulation
+
+select() ignores any fd of 1024 or above, so QEMU's main loop stopped hearing
+connections once a machine had opened enough of them.
+
+--- a/glib/gpoll.c
++++ b/glib/gpoll.c
+@@ -61,7 +61,11 @@
+ /* The poll() emulation on OS/X doesn't handle fds=NULL, nfds=0,
+  * so we prefer our own poll emulation.
+  */
+-#if defined(_POLL_EMUL_H_) || defined(BROKEN_POLL)
++/* AVM (2026-11-02): macOS's poll() on sockets and pipes, which is all AVM's
++ * processes watch. The select() emulation ignores any fd of 1024 or above, so
++ * a machine with many connections open stopped being heard.
++ */
++#if defined(_POLL_EMUL_H_) || (defined(BROKEN_POLL) && !defined(__APPLE__))
+ #undef HAVE_POLL
+ #endif
+ 
