@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.22</title>
+            <sparkle:version>42</sparkle:version>
+            <sparkle:shortVersionString>0.4.22</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>Put a machine&#x27;s sound in one ear, so its screen reader and VoiceOver don&#x27;t talk over each other, and set its own volume. It&#x27;s in the machine&#x27;s Settings, under Display and Sound, and it changes as soon as you save.</li><li>If a machine stops answering and its screen stops changing for 10 minutes, AVM now says it looks stuck and what to do, and tells you when it&#x27;s moving again.</li><li>Check This Machine, Command-Option-Shift-C, tells you what&#x27;s working in a machine and what isn&#x27;t, with what to do: its screen reader, sound, clipboard and shared folder.</li><li>Save Screen Reader Setup and Apply Saved Screen Reader Setup, in the Virtual Machine menu, carry your NVDA or Orca settings and add-ons to another machine. AVM can also put them in each new machine: turn that on in Settings, Watching Machines.</li><li>Automatic backups: choose every day or every week, and a folder, in a machine&#x27;s Settings under Startup and Recovery. A machine that&#x27;s running waits until it&#x27;s shut down. AVM keeps the newest three of each machine and permanently removes older ones.</li></ul>]]></description>
+            <pubDate>Mon, 02 Nov 2026 05:12:14 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.22/AVM-0.4.22.zip" sparkle:edSignature="78zoErNoV+fIjZeGhofs52FQ4t48IPcO5GsqAWmTSLir1oJn0TPtEtCuupkKecrZp3kv6Jjmjim8ZHzEoBMJAw==" length="106269990" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.21</title>
             <sparkle:version>41</sparkle:version>
             <sparkle:shortVersionString>0.4.21</sparkle:shortVersionString>
