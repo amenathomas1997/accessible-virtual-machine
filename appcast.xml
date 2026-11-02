@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.24</title>
+            <sparkle:version>44</sparkle:version>
+            <sparkle:shortVersionString>0.4.24</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>Websites should open faster in Windows machines on a network without IPv6. Windows was waiting about a fifth of a second on every new connection. AVM now checks for IPv6 each time a Windows machine starts, and leaves it on where your network has it. If you change networks, shut the machine down and start it again.</li></ul>]]></description>
+            <pubDate>Mon, 02 Nov 2026 20:40:30 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.24/AVM-0.4.24.zip" sparkle:edSignature="oy9YmvWYv9fflcCQoiiQKG3v/a8l8xm08vpX0/e/F70fZfIggmLTCoI0OhGpgP6AWQhZdZSqbJsrtih8rwl7BQ==" length="106270671" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.23</title>
             <sparkle:version>43</sparkle:version>
             <sparkle:shortVersionString>0.4.23</sparkle:shortVersionString>
