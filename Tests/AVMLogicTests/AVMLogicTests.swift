@@ -1769,10 +1769,40 @@ final class GuestWatchTests: XCTestCase {
         XCTAssertNil(GuestProcesses.parse("COMMAND\nsystemd\n", windows: false).boot)
     }
 
-    func testCountersAndRepeatsAreSaidOnce() {
-        let said = Set(["Working on updates 23%"].map(ScreenChange.key))
-        XCTAssertEqual(ScreenChange.newLines(["Working on updates 24%", "Don't turn off your computer", "5", "Don't turn off your computer"], after: said),
-                       ["Don't turn off your computer"])
+    func testOnlyAVMsKeysStayOutOfTheMachine() {
+        XCTAssertTrue(AVMKeysInMachine.isAVMs(keyCode: 31, modifiers: [.command, .shift]))
+        XCTAssertTrue(AVMKeysInMachine.isAVMs(keyCode: 31, modifiers: [.command, .shift, .capsLock]))
+        XCTAssertTrue(AVMKeysInMachine.isAVMs(keyCode: 8, modifiers: [.command, .option, .shift]))
+        XCTAssertFalse(AVMKeysInMachine.isAVMs(keyCode: 31, modifiers: [.command]), "Windows-O still goes to the machine")
+        XCTAssertFalse(AVMKeysInMachine.isAVMs(keyCode: 1, modifiers: [.command, .shift]), "Windows-Shift-S still goes to the machine")
+        XCTAssertFalse(AVMKeysInMachine.isAVMs(keyCode: 8, modifiers: [.command, .shift]))
+    }
+
+    func testControlWithMovingKeysGoesToTheMachine() {
+        XCTAssertTrue(AVMKeysInMachine.isControlMoving(keyCode: 119, modifiers: [.control, .function]), "Control-Fn-Right, Control-End")
+        XCTAssertTrue(AVMKeysInMachine.isControlMoving(keyCode: 124, modifiers: [.control, .function]))
+        XCTAssertTrue(AVMKeysInMachine.isControlMoving(keyCode: 115, modifiers: [.control, .shift, .function]))
+        XCTAssertFalse(AVMKeysInMachine.isControlMoving(keyCode: 119, modifiers: [.function]))
+        XCTAssertFalse(AVMKeysInMachine.isControlMoving(keyCode: 124, modifiers: [.control, .command, .function]), "the Windows key's own")
+        XCTAssertFalse(AVMKeysInMachine.isControlMoving(keyCode: 0, modifiers: [.control]))
+    }
+
+    func testTheFeedsNewestBuild() {
+        let feed = """
+        <channel><!-- <sparkle:version>99</sparkle:version> --><item><sparkle:channel>early</sparkle:channel><sparkle:version>48</sparkle:version></item>
+        <item><sparkle:version>47</sparkle:version></item><item><sparkle:version>46</sparkle:version></item></channel>
+        """
+        XCTAssertEqual(UpdateFeed.newestBuild(in: feed, channels: []), 47)
+        XCTAssertEqual(UpdateFeed.newestBuild(in: feed, channels: ["early"]), 48)
+        XCTAssertNil(UpdateFeed.newestBuild(in: "not a feed", channels: []))
+    }
+
+    func testEachVersionIsOfferedOnce() {
+        XCTAssertTrue(UpdateFeed.shouldOffer(newest: 48, current: 47, offered: nil))
+        XCTAssertFalse(UpdateFeed.shouldOffer(newest: 47, current: 47, offered: nil))
+        XCTAssertFalse(UpdateFeed.shouldOffer(newest: 48, current: 47, offered: 48))
+        XCTAssertTrue(UpdateFeed.shouldOffer(newest: 49, current: 47, offered: 48))
+        XCTAssertFalse(UpdateFeed.shouldOffer(newest: nil, current: 47, offered: nil))
     }
 
     func testStopScreenIsRecognised() {

@@ -2,15 +2,14 @@
 // AVM — Accessible Virtual Machine
 //
 // What GuestWatch.swift decides from (2026-10-31): its settings, what a
-// machine's process list says is running, and whether its screen changed
-// and which lines on it are new. Apart from the loop, so the logic tests
+// machine's process list says is running, and whether its screen changed. Apart from the loop, so the logic tests
 // reach it.
 
+import AppKit
 import CoreGraphics
 import Foundation
 
 nonisolated enum GuestWatchSettings {
-    static let speakScreenKey = "AVMSpeakScreenChanges"
     static let restartReaderKey = "AVMRestartStoppedScreenReader"
     static let pointBeforeUpdatesKey = "AVMRestorePointBeforeUpdates"
     /// AVM's updates held while the keyboard is in a machine whose screen
@@ -77,7 +76,57 @@ nonisolated struct GuestProcesses: Equatable {
     }
 }
 
-// MARK: - New text on the screen
+// MARK: - AVM's keys with the keyboard in a machine
+
+/// AVM's menu keys that answer or act from the Mac (2026-11-02): with the keyboard
+/// in a machine, the screens that need Read Screen are right there, and these
+/// reached Windows as Windows-Shift keys instead. Only these: the rest of Command
+/// is still the machine's Windows key.
+nonisolated enum AVMKeysInMachine {
+    private static let plain: Set<UInt16> = [31, 34, 9, 2]      // O, I, V, D
+    private static let withOption: Set<UInt16> = [31, 34, 8]    // O, I, C
+
+    /// Control with an arrow, Home, End, Page Up or Page Down, and no Command:
+    /// the machine's, not the Mac's Window menu.
+    static func isControlMoving(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
+        modifiers.contains(.control) && !modifiers.contains(.command) && movingKeys.contains(keyCode)
+    }
+    private static let movingKeys: Set<UInt16> = [123, 124, 125, 126, 115, 119, 116, 121]
+
+    static func isAVMs(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
+        switch modifiers.intersection([.control, .command, .option, .shift]) {
+        case [.command, .shift]: return plain.contains(keyCode)
+        case [.command, .option, .shift]: return withOption.contains(keyCode)
+        default: return false
+        }
+    }
+}
+
+// MARK: - The update feed
+
+nonisolated enum UpdateFeed {
+    /// The newest build the feed offers this copy: an early item only with its
+    /// channel allowed.
+    static func newestBuild(in feed: String, channels: Set<String>) -> Int? {
+        feed.components(separatedBy: "<item>").dropFirst().compactMap { item -> Int? in
+            if let channel = between("<sparkle:channel>", "</sparkle:channel>", in: item), !channels.contains(channel) { return nil }
+            return between("<sparkle:version>", "</sparkle:version>", in: item).flatMap(Int.init)
+        }.max()
+    }
+
+    /// Once per version: after that, Sparkle's own reminder has it.
+    static func shouldOffer(newest: Int?, current: Int, offered: Int?) -> Bool {
+        guard let newest else { return false }
+        return newest > max(current, offered ?? 0)
+    }
+
+    private static func between(_ open: String, _ close: String, in text: String) -> String? {
+        guard let start = text.range(of: open), let end = text.range(of: close, range: start.upperBound..<text.endIndex) else { return nil }
+        return String(text[start.upperBound..<end.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - A changed screen
 
 nonisolated enum ScreenChange {
     /// A screen as 64 by 36 grey levels, enough to tell a new page from a
@@ -103,25 +152,7 @@ nonisolated enum ScreenChange {
         return moved > a.count / 50
     }
 
-    /// A line as compared: lower case, letters only, so "Working on
-    /// updates 23%" and "... 24%" are the same line, said once.
-    static func key(_ line: String) -> String {
-        String(line.lowercased().unicodeScalars.filter { CharacterSet.letters.contains($0) })
-    }
-
-    /// The lines worth saying: new since the last screen said, and with
-    /// some words in them (not a lone digit or a stray mark).
-    static func newLines(_ lines: [String], after said: Set<String>) -> [String] {
-        var seen = Set<String>()
-        return lines.filter { line in
-            let k = key(line)
-            guard k.count >= 3, !said.contains(k), !seen.contains(k) else { return false }
-            seen.insert(k)
-            return true
-        }
-    }
-
-    /// Windows' stop screen, said as what it is.
+    /// Windows' stop screen.
     static func isStopScreen(_ lines: [String]) -> Bool {
         lines.contains { $0.localizedCaseInsensitiveContains("ran into a problem") }
             && lines.contains { $0.localizedCaseInsensitiveContains("stop code") }

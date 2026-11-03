@@ -576,6 +576,11 @@ of this is AVM.
 
 ### AVM's own commands (Mac side)
 
+These work with your keyboard on the Mac or in the machine: Command-Shift-O,
+Command-Option-Shift-O, Command-Shift-I, Command-Option-Shift-I,
+Command-Option-Shift-C, Command-Shift-V and Command-Shift-D. The others need your
+keyboard back on the Mac, since Command is the Windows key in a machine.
+
 - **Command-Shift-S** starts the virtual machine. Your keyboard is in
   Windows automatically once the machine's view appears.
 - **Command-Shift-E** is Enter Windows. It returns the keyboard to a
@@ -594,8 +599,8 @@ of this is AVM.
   (under Quick Actions or Services) does the same for the selected
   files.
 - While no screen reader runs in the machine (Setup, a restart, a blue
-  screen), AVM reads new text on its screen by itself. If NVDA or JAWS
-  stops, AVM presses its start key in Windows and tells you. Both can be
+  screen), press Command-Shift-O to hear its screen. If NVDA or JAWS
+  stops, AVM presses its start key in Windows and tells you. That can be
   turned off in AVM's Settings (Command-Comma), Watching Machines. The
   restore point before updates is there too, off unless you turn it on:
   in testing, Windows sometimes didn't come back from the restart after
