@@ -164,6 +164,13 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.27", changes: [
+            "3D graphics in Windows is now clearly marked experimental. A machine with it on may freeze or stop, so don't turn it on for a machine you rely on.",
+            "AVM now keeps an eye on the program that runs each machine, and warns you if it's running short of files or memory, or has reported a fault. Check This Machine says so too.",
+            "When AVM says a machine looks stuck, it saves what the machine was doing, and Report a Problem sends that along. Please send one if it happens.",
+            "Testers can get new versions early: turn on Get new versions early, as a tester, in AVM's Settings. Those versions have had less testing.",
+            "Windows apps may now take up to 12 seconds to appear in Command-Tab when nothing has changed for a while, which keeps Windows' own log much quieter.",
+        ]),
         ReleaseNote(version: "0.4.26", changes: [
             "A machine can now keep far more internet connections open at once. Each time a machine starts, AVM checks how many your Mac allows and uses that, instead of stopping new connections at about ten thousand.",
         ]),
