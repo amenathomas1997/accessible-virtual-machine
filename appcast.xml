@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.28</title>
+            <sparkle:version>48</sparkle:version>
+            <sparkle:shortVersionString>0.4.28</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>AVM no longer reads a machine&#x27;s screen by itself. Press Command-Shift-O to hear it, including during Setup or a restart. The one exception: if Windows stops answering and shows a blue screen, AVM says so.</li><li>AVM looks for a new version every 15 minutes, not once a day, so you hear about one soon after it comes out. It says so once for each version.</li><li>Command-Shift-O and AVM&#x27;s other keys that answer or act now work with your keyboard in the machine: Describe Screen, Speak Status, Speak Updates and Disk, Check This Machine, Type Clipboard and Send Ctrl-Alt-Delete. Before, they reached Windows as Windows key shortcuts.</li><li>Control-Fn-Right now reaches the machine, so it goes to the end of a document, as do Control with the other arrows, Home, End, Page Up and Page Down. Before, the Mac&#x27;s window tiling could take them.</li><li>AVM keeps its last ten logs, not three, so a problem&#x27;s log is still there after a few restarts.</li></ul>]]></description>
+            <pubDate>Tue, 03 Nov 2026 04:17:14 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.28/AVM-0.4.28.zip" sparkle:edSignature="7GTR0K0Zql+JuSsvGrWeoQD9tNvyy7YStbbWa8ya9LDs1uS6Fnz9/txjZ2luQhRzjLqDMbyiubjkqd1YujJtDg==" length="106304886" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.27</title>
             <sparkle:version>47</sparkle:version>
             <sparkle:shortVersionString>0.4.27</sparkle:shortVersionString>
