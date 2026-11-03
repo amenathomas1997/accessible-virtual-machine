@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.30</title>
+            <sparkle:version>50</sparkle:version>
+            <sparkle:shortVersionString>0.4.30</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>The categories in the toolbar of a machine&#x27;s Settings and AVM&#x27;s Settings are now there as soon as the window opens. VoiceOver sometimes missed them before, and this should stop that. If it still happens, please report it.</li></ul>]]></description>
+            <pubDate>Tue, 03 Nov 2026 18:20:23 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.30/AVM-0.4.30.zip" sparkle:edSignature="Afc7wfOhvo8jJysWa6NFGj3Wj3tjF3bsR3+cg6y5GZX0wSfhmpEccJKj2Np14H/j2A6O2juqlOkg54YtAXpbCA==" length="106340974" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.29</title>
             <sparkle:version>49</sparkle:version>
             <sparkle:shortVersionString>0.4.29</sparkle:shortVersionString>
