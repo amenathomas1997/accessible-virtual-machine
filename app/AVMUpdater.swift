@@ -222,6 +222,9 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.30", changes: [
+            "VoiceOver finds the categories in the toolbar of a machine's Settings and AVM's Settings every time you open them. Before, it sometimes missed them.",
+        ]),
         ReleaseNote(version: "0.4.29", changes: [
             "Install Apps, in the Virtual Machine menu: tick Chrome, Firefox, Thunderbird, LibreOffice, Zoom, VLC, Audacity, 7-Zip, Notepad++, Visual Studio Code, Git or Python, and they install in a running Windows machine one at a time, with no questions. AVM says each as it finishes, and you can keep working meanwhile.",
         ]),
