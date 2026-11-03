@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.29</title>
+            <sparkle:version>49</sparkle:version>
+            <sparkle:shortVersionString>0.4.29</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>Install Apps, in the Virtual Machine menu: tick Chrome, Firefox, Thunderbird, LibreOffice, Zoom, VLC, Audacity, 7-Zip, Notepad++, Visual Studio Code, Git or Python, and they install in a running Windows machine one at a time, with no questions. AVM says each as it finishes, and you can keep working meanwhile.</li></ul>]]></description>
+            <pubDate>Tue, 03 Nov 2026 15:05:48 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.29/AVM-0.4.29.zip" sparkle:edSignature="ZPGkPbCk4MXiYtaCnEaKHWo3ZaRgrggUkorVpZctIt0uz4PTWjKv5QkPcR74GSnBLs9p1Q/t7Q4OdHzE3RKIAA==" length="106341641" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.28</title>
             <sparkle:version>48</sparkle:version>
             <sparkle:shortVersionString>0.4.28</sparkle:shortVersionString>
