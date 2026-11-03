@@ -222,6 +222,9 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.29", changes: [
+            "Install Apps, in the Virtual Machine menu: tick Chrome, Firefox, Thunderbird, LibreOffice, Zoom, VLC, Audacity, 7-Zip, Notepad++, Visual Studio Code, Git or Python, and they install in a running Windows machine one at a time, with no questions. AVM says each as it finishes, and you can keep working meanwhile.",
+        ]),
         ReleaseNote(version: "0.4.28", changes: [
             "AVM no longer reads a machine's screen by itself. Press Command-Shift-O to hear it, including during Setup or a restart. The one exception: if Windows stops answering and shows a blue screen, AVM says so.",
             "AVM looks for a new version every 15 minutes, not once a day, so you hear about one soon after it comes out. It says so once for each version.",
