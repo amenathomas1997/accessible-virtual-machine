@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.27</title>
+            <sparkle:version>47</sparkle:version>
+            <sparkle:shortVersionString>0.4.27</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>3D graphics in Windows is now clearly marked experimental. A machine with it on may freeze or stop, so don&#x27;t turn it on for a machine you rely on.</li><li>AVM now keeps an eye on the program that runs each machine, and warns you if it&#x27;s running short of files or memory, or has reported a fault. Check This Machine says so too.</li><li>When AVM says a machine looks stuck, it saves what the machine was doing, and Report a Problem sends that along. Please send one if it happens.</li><li>Testers can get new versions early: turn on Get new versions early, as a tester, in AVM&#x27;s Settings. Those versions have had less testing.</li><li>Windows apps may now take up to 12 seconds to appear in Command-Tab when nothing has changed for a while, which keeps Windows&#x27; own log much quieter.</li></ul>]]></description>
+            <pubDate>Tue, 03 Nov 2026 01:24:29 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.27/AVM-0.4.27.zip" sparkle:edSignature="rGoOK0DIkLUUZi96L4bqQb6w7n6Qq6XROAwnp1tAZRofjrTzBR0mVgo3gtX84q9eNaBREKCLsrIdGeMlypl7Bw==" length="106290484" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.26</title>
             <sparkle:version>46</sparkle:version>
             <sparkle:shortVersionString>0.4.26</sparkle:shortVersionString>
