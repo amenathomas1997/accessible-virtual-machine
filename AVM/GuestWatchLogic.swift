@@ -278,6 +278,80 @@ nonisolated enum MacSpacesShortcuts {
     }
 }
 
+/// Which of the feed's early releases this copy of AVM takes.
+nonisolated enum UpdateChannels {
+    static let earlyKey = "AVMEarlyUpdates"
+    static var allowed: Set<String> {
+        UserDefaults.standard.bool(forKey: earlyKey) ? ["early"] : []
+    }
+}
+
+/// How a running QEMU is doing on the Mac, and what's worth saying about it.
+nonisolated struct MachineHealth: Sendable {
+    struct Reading: Sendable {
+        var openFiles: Int
+        var fileLimit: Int
+        var memoryBytes: UInt64
+        var macMemoryBytes: UInt64
+        var faults: Int
+    }
+    struct Warning: Equatable, Sendable {
+        let kind: String
+        let words: String
+    }
+    let warnings: [Warning]
+
+    init(_ reading: Reading) {
+        var found: [Warning] = []
+        if reading.fileLimit > 0, reading.openFiles * 10 >= reading.fileLimit * 8 {
+            found.append(Warning(kind: "files", words: "it's near the most connections and files your Mac allows it, \(reading.openFiles) of \(reading.fileLimit). New connections may fail. Next: close what's using the network in it, or restart it."))
+        }
+        if reading.macMemoryBytes > 0, reading.memoryBytes * 10 >= reading.macMemoryBytes * 9 {
+            found.append(Warning(kind: "memory", words: "it's using nearly all your Mac's memory. Next: shut it down and give it less, in its Settings."))
+        }
+        if reading.faults > 0 {
+            found.append(Warning(kind: "faults", words: "the program that runs it, QEMU, has reported a fault since it started. It may stop working. Next: save your work, and choose Report a Problem in the Help menu."))
+        }
+        warnings = found
+    }
+
+    /// For Check This Machine.
+    var words: String {
+        warnings.isEmpty ? "AVM's own health check found nothing wrong." : "AVM's own health check: " + warnings.map(\.words).joined(separator: " ")
+    }
+}
+
+/// QEMU's messages that say nothing's wrong (2026-11-02): a 3D session's log was
+/// nine tenths these. DXMT's unimplemented Windows calls and virglrenderer's
+/// debug lines, not its errors. Whole lines, so anything else still gets through.
+nonisolated enum QEMUStderrNoise {
+    private static let harmless = [
+        "warn:  GetCurrentThread not implemented", "warn:  SetThreadPriority not implemented",
+        "warn:  GetModuleHandle not implemented", "warn:  D3DKMTOpenAdapterFromLuid not implemented",
+        "warn:  Failed to open D3DKMT adapter", "warn:  D3D11Resource(tex2d): Unknown interface query",
+        "err:   Not implemented", "info:  ",
+    ]
+
+    static func isHarmless(_ line: String) -> Bool {
+        if harmless.contains(where: { line.hasPrefix($0) }) { return true }
+        guard line.contains("virgl_render_server["), line.contains("<Debug>:") else { return false }
+        let lower = line.lowercased()
+        if lower.contains("d3d12") { return true }
+        return !lower.contains("error") && !lower.contains("fail")
+    }
+
+    /// The chunk with its harmless lines out, and how many went. Nil when
+    /// nothing's left.
+    static func filter(_ chunk: String) -> (kept: String?, dropped: Int) {
+        let lines = chunk.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let kept = lines.filter { !isHarmless($0) }
+        let dropped = lines.count - kept.count
+        if dropped == 0 { return (chunk, 0) }
+        let text = kept.joined(separator: "\n")
+        return (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text, dropped)
+    }
+}
+
 /// Whether the Mac can reach the IPv6 internet, and QEMU's network line from it.
 nonisolated enum MacIPv6 {
     /// A global address, 2000::/3. A router's own fd00:: addresses aren't one:

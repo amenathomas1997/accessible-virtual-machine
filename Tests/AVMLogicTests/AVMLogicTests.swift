@@ -2271,6 +2271,35 @@ final class OpenSUSEInstallTests: XCTestCase {
         XCTAssertEqual(BackupSchedule.oldOnes(in: names, base: "A", ext: "avmvm"), ["A backup 2026-01-01 0000.avmvm"])
     }
 
+    func testMachineHealthWarnsBeforeTheLimit() {
+        func reading(files: Int = 600, memory: UInt64 = 32, faults: Int = 0) -> MachineHealth.Reading {
+            MachineHealth.Reading(openFiles: files, fileLimit: 10000, memoryBytes: memory << 30, macMemoryBytes: 64 << 30, faults: faults)
+        }
+        XCTAssertTrue(MachineHealth(reading()).warnings.isEmpty)
+        XCTAssertTrue(MachineHealth(reading()).words.contains("nothing wrong"))
+        XCTAssertEqual(MachineHealth(reading(files: 7999)).warnings, [])
+        XCTAssertEqual(MachineHealth(reading(files: 8000)).warnings.map(\.kind), ["files"])
+        XCTAssertEqual(MachineHealth(reading(memory: 58)).warnings.map(\.kind), ["memory"])
+        XCTAssertEqual(MachineHealth(reading(faults: 1)).warnings.map(\.kind), ["faults"])
+        XCTAssertTrue(MachineHealth(reading(faults: 1)).words.contains("Next:"))
+        XCTAssertTrue(MachineHealth(MachineHealth.Reading(openFiles: 5, fileLimit: 0, memoryBytes: 1, macMemoryBytes: 0, faults: 0)).warnings.isEmpty)
+    }
+
+    func testQEMUNoiseGoesAndErrorsStay() {
+        XCTAssertTrue(QEMUStderrNoise.isHarmless("warn:  GetCurrentThread not implemented."))
+        XCTAssertTrue(QEMUStderrNoise.isHarmless("Nov  2 13:45:47  virgl_render_server[10416] <Debug>: npt: shared: exported blob_id=4"))
+        XCTAssertTrue(QEMUStderrNoise.isHarmless("Nov  2 13:13:26  virgl_render_server[6991] <Debug>: npt: failed to load D3D12CreateDevice: dlsym"))
+        XCTAssertFalse(QEMUStderrNoise.isHarmless("Nov  2 13:13:26  virgl_render_server[6991] <Debug>: npt: failed to map a blob"))
+        XCTAssertFalse(QEMUStderrNoise.isHarmless("virtio_gpu_virgl_process_cmd: ctrl 0x102, error 0x1203"))
+        XCTAssertFalse(QEMUStderrNoise.isHarmless("usb-camera: the Mac's camera went on"))
+        XCTAssertFalse(QEMUStderrNoise.isHarmless("AVM: open file limit 245760"))
+        XCTAssertNil(QEMUStderrNoise.filter("warn:  GetCurrentThread not implemented.\n").kept)
+        let mixed = QEMUStderrNoise.filter("warn:  SetThreadPriority not implemented.\nreal trouble\n")
+        XCTAssertEqual(mixed.kept, "real trouble\n")
+        XCTAssertEqual(mixed.dropped, 1)
+        XCTAssertEqual(QEMUStderrNoise.filter("real trouble").kept, "real trouble")
+    }
+
     /// IPv6 follows the Mac for Windows; a router's own addresses don't count.
     func testIPv6FollowsTheMac() {
         func bytes(_ text: String) -> [UInt8] {

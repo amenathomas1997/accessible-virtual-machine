@@ -484,6 +484,8 @@ final class VMManager: ObservableObject {
     /// QEMU's pid while it runs, for the helper to check it's the one
     /// listening on a machine's socket (2026-10-28); 0 when there's none.
     var qemuPID: Int { Int(qemuProcess?.processIdentifier ?? 0) }
+    /// When this machine last started, for the health check's fault reports.
+    var startedAt: Date?
     private var qemuStdErrPipe: Pipe?
 
     // MARK: Private — QMP
@@ -1558,6 +1560,7 @@ final class VMManager: ObservableObject {
         }
 
         state = .running
+        startedAt = Date()
         appendConsole("AVM: VM is running.\n")
         beginQMPEventMonitoring()
         // Before the guest makes a sound, and after a resume too: QEMU doesn't
@@ -2918,7 +2921,7 @@ final class VMManager: ObservableObject {
                 handle.readabilityHandler = nil
                 return
             }
-            if let raw = String(data: data, encoding: .utf8), let text = gate.admit(raw) {
+            if let raw = String(data: data, encoding: .utf8), let kept = QEMUStderrNoise.filter(raw).kept, let text = gate.admit(kept) {
                 avmLog("QEMU stderr: \(text)")
                 Task { @MainActor [weak self] in
                     self?.appendConsole("QEMU: \(text)")
