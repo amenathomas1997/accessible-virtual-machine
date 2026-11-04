@@ -222,6 +222,9 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.32", changes: [
+            "The dashboard's Disk column now has a figure for a machine that hasn't reported how full it is yet, even when it's off, and for macOS machines: how much room its disk takes on your Mac, such as 84 GB on this Mac, of 514 GB. That figure also holds restore points, and doesn't shrink when you delete files in the machine. Once a Windows or Linux machine has run for a couple of minutes, the column says how much is used inside it instead.",
+        ]),
         ReleaseNote(version: "0.4.31", changes: [
             "The dashboard's Disk column now says how full each machine is, such as 120 of 404 GB used. A machine that's shut down shows what it last reported, and says so. This is for Windows and Linux machines.",
             "When you make a Windows machine's disk larger in Settings, AVM gives drive C the new space the next time Windows starts, and tells you its new size. There's no command to type any more.",
