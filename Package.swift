@@ -27,6 +27,7 @@ let package = Package(
         .target(
             name: "AVMLogic",
             path: ".",
+            exclude: ["ios"],
             sources: [
                 "AVMLog.swift",
                 "Announcer.swift",
@@ -46,6 +47,7 @@ let package = Package(
                 "AVM/GuestAgent.swift",
                 "AVM/SetupReport.swift",
                 "AVM/HIDKeyMap.swift",
+                "AVM/ReceiverWire.swift",
                 "AVM/HIDReportDescriptor.swift",
                 "AVM/MacGuestFiles.swift",
                 "AVM/MachineArchive.swift",

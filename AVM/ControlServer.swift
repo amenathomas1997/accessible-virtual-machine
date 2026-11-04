@@ -116,8 +116,16 @@ final class ControlServer {
     private func fail(_ message: String) -> [String: Any] { ["ok": false, "message": message] }
 
     private func handle(_ line: Data) async -> [String: Any] {
-        guard let request = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              let command = request["command"] as? String else {
+        guard let request = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else {
+            return fail("AVM didn't understand the request.")
+        }
+        return await handle(request: request)
+    }
+
+    /// The same requests for the AVM Receiver (2026-11-04, ReceiverServer):
+    /// a phone gets the dashboard's refusals and words too.
+    func handle(request: [String: Any]) async -> [String: Any] {
+        guard let command = request["command"] as? String else {
             return fail("AVM didn't understand the request.")
         }
         let store = VMStore.shared

@@ -1,0 +1,137 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* ReceiverWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* ReceiverWire.swift */; };
+		A10000000000000000000002 /* ReceiverSound.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000012 /* ReceiverSound.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A10000000000000000000010 /* AVM Receiver.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "AVM Receiver.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000010 /* AVM Receiver UI Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "AVM Receiver UI Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000011 /* ReceiverWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReceiverWire.swift; path = ../AVM/ReceiverWire.swift; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000012 /* ReceiverSound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReceiverSound.swift; path = ../AVM/ReceiverSound.swift; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A10000000000000000000020 /* AVMReceiver */ = {isa = PBXFileSystemSynchronizedRootGroup; path = AVMReceiver; sourceTree = "<group>"; };
+		B10000000000000000000020 /* AVMReceiverUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = AVMReceiverUITests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A10000000000000000000030 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		B10000000000000000000030 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A10000000000000000000040 = {isa = PBXGroup; children = (A10000000000000000000020 /* AVMReceiver */, B10000000000000000000020 /* AVMReceiverUITests */, A10000000000000000000041 /* Shared with the Mac */, A10000000000000000000042 /* Products */); sourceTree = "<group>"; };
+		A10000000000000000000041 /* Shared with the Mac */ = {isa = PBXGroup; children = (A10000000000000000000011, A10000000000000000000012); name = "Shared with the Mac"; sourceTree = "<group>"; };
+		A10000000000000000000042 /* Products */ = {isa = PBXGroup; children = (A10000000000000000000010, B10000000000000000000010); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000000000000000000050 /* AVM Receiver */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000060;
+			buildPhases = (A10000000000000000000031 /* Sources */, A10000000000000000000030 /* Frameworks */, A10000000000000000000032 /* Resources */);
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (A10000000000000000000020 /* AVMReceiver */);
+			name = "AVM Receiver";
+			productName = "AVM Receiver";
+			productReference = A10000000000000000000010;
+			productType = "com.apple.product-type.application";
+		};
+		B10000000000000000000050 /* AVM Receiver UI Tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B10000000000000000000060;
+			buildPhases = (B10000000000000000000031, B10000000000000000000030, B10000000000000000000032);
+			buildRules = ();
+			dependencies = (B10000000000000000000090);
+			fileSystemSynchronizedGroups = (B10000000000000000000020);
+			name = "AVM Receiver UI Tests";
+			productName = "AVM Receiver UI Tests";
+			productReference = B10000000000000000000010;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A10000000000000000000070 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 2600; LastUpgradeCheck = 2600;};
+			buildConfigurationList = A10000000000000000000061;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = A10000000000000000000040;
+			minimizedProjectReferenceProxies = 1;
+			productRefGroup = A10000000000000000000042;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (A10000000000000000000050, B10000000000000000000050);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A10000000000000000000032 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		B10000000000000000000032 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000031 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002); runOnlyForDeploymentPostprocessing = 0; };
+		B10000000000000000000031 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		B10000000000000000000091 = {isa = PBXContainerItemProxy; containerPortal = A10000000000000000000070; proxyType = 1; remoteGlobalIDString = A10000000000000000000050; remoteInfo = "AVM Receiver"; };
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		B10000000000000000000090 = {isa = PBXTargetDependency; target = A10000000000000000000050; targetProxy = B10000000000000000000091; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A10000000000000000000080 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+			ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES; GCC_OPTIMIZATION_LEVEL = 0;
+			GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)"); IPHONEOS_DEPLOYMENT_TARGET = 17.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = iphoneos; SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)"; SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+		}; name = Debug; };
+		A10000000000000000000081 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+			ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_COMPILATION_MODE = wholemodule; VALIDATE_PRODUCT = YES;
+		}; name = Release; };
+		A10000000000000000000082 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = 9G2D7CDZ5D; ENABLE_PREVIEWS = NO; GENERATE_INFOPLIST_FILE = YES;
+			INFOPLIST_KEY_CFBundleDisplayName = "AVM Receiver";
+			INFOPLIST_FILE = "AVMReceiver-Info.plist";
+			INFOPLIST_KEY_NSLocalNetworkUsageDescription = "AVM Receiver finds your Mac on your network and connects to the virtual machines running in AVM on it.";
+			INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+			"INFOPLIST_KEY_UISupportedInterfaceOrientations" = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
+			LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; MARKETING_VERSION = 0.1; PRODUCT_BUNDLE_IDENTIFIER = com.fullcircleat.AVMReceiver; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2";
+		}; name = Debug; };
+		A10000000000000000000083 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = 9G2D7CDZ5D; ENABLE_PREVIEWS = NO; GENERATE_INFOPLIST_FILE = YES;
+			INFOPLIST_KEY_CFBundleDisplayName = "AVM Receiver";
+			INFOPLIST_FILE = "AVMReceiver-Info.plist";
+			INFOPLIST_KEY_NSLocalNetworkUsageDescription = "AVM Receiver finds your Mac on your network and connects to the virtual machines running in AVM on it.";
+			INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+			"INFOPLIST_KEY_UISupportedInterfaceOrientations" = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
+			LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; MARKETING_VERSION = 0.1; PRODUCT_BUNDLE_IDENTIFIER = com.fullcircleat.AVMReceiver; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2";
+		}; name = Release; };
+		B10000000000000000000082 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = 9G2D7CDZ5D; GENERATE_INFOPLIST_FILE = YES; PRODUCT_BUNDLE_IDENTIFIER = com.fullcircleat.AVMReceiver.UITests; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = "AVM Receiver"; IPHONEOS_DEPLOYMENT_TARGET = 17.0;}; name = Debug; };
+		B10000000000000000000083 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = 9G2D7CDZ5D; GENERATE_INFOPLIST_FILE = YES; PRODUCT_BUNDLE_IDENTIFIER = com.fullcircleat.AVMReceiver.UITests; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = "AVM Receiver"; IPHONEOS_DEPLOYMENT_TARGET = 17.0;}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A10000000000000000000060 = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000082, A10000000000000000000083); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000061 = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000080, A10000000000000000000081); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		B10000000000000000000060 = {isa = XCConfigurationList; buildConfigurations = (B10000000000000000000082, B10000000000000000000083); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = A10000000000000000000070 /* Project object */;
+}

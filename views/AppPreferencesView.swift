@@ -13,7 +13,7 @@ import Combine
 import SwiftUI
 
 enum PreferencesCategory: String, CaseIterable, Identifiable, SettingsCategoryItem {
-    case general, startup, watching, keyboard, devices
+    case general, startup, watching, keyboard, devices, receiver
 
     var id: Self { self }
 
@@ -24,6 +24,7 @@ enum PreferencesCategory: String, CaseIterable, Identifiable, SettingsCategoryIt
         case .watching: return "Watching Machines"
         case .keyboard: return "Keyboard"
         case .devices: return "Devices"
+        case .receiver: return "iPhone Receiver"
         }
     }
 
@@ -34,6 +35,7 @@ enum PreferencesCategory: String, CaseIterable, Identifiable, SettingsCategoryIt
         case .watching: return "eye"
         case .keyboard: return "keyboard"
         case .devices: return "cable.connector"
+        case .receiver: return "iphone"
         }
     }
 }
@@ -100,6 +102,7 @@ struct AppPreferencesView: View {
                     case .watching: watching
                     case .keyboard: keyboard
                     case .devices: devices
+                    case .receiver: ReceiverSettingsView()
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

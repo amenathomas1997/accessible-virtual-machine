@@ -779,6 +779,9 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
             // Pause a running VM before the Mac sleeps (2026-10-26).
             SleepCoordinator.shared.start()
             ControlServer.shared.start()
+            // The iPhone receiver (2026-11-04), if it's been turned on; not for
+            // a test run, whose machines aren't the user's.
+            if !testRun { ReceiverServer.shared.startIfEnabled() }
             // Windows apps in Command-Tab (2026-10-29, WindowsApps.swift);
             // not for a test run, whose machines aren't the user's.
             if !testRun { WindowsApps.shared.start() }
