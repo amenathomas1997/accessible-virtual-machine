@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.31</title>
+            <sparkle:version>51</sparkle:version>
+            <sparkle:shortVersionString>0.4.31</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>The dashboard&#x27;s Disk column now says how full each machine is, such as 120 of 404 GB used. A machine that&#x27;s shut down shows what it last reported, and says so. This is for Windows and Linux machines.</li><li>When you make a Windows machine&#x27;s disk larger in Settings, AVM gives drive C the new space the next time Windows starts, and tells you its new size. There&#x27;s no command to type any more.</li><li>You can add a second drive to a Windows or Linux machine in Settings, like putting another drive in a PC. Windows shows it as a new drive such as D, and Linux at /mnt/avm-data. Restore points put it back along with the rest of the machine. It can&#x27;t be removed yet, except by deleting the machine.</li></ul>]]></description>
+            <pubDate>Wed, 04 Nov 2026 00:46:07 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.31/AVM-0.4.31.zip" sparkle:edSignature="C2jnZ7BGGxC2yeISXmsFCkLmIiKETp7HKZnGfm+RkM0i1kcrm3JOod68U/39sqNvAPJXYXhbYwxHxO58dp3tAA==" length="106400944" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.30</title>
             <sparkle:version>50</sparkle:version>
             <sparkle:shortVersionString>0.4.30</sparkle:shortVersionString>
