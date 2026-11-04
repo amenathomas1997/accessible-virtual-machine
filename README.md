@@ -90,7 +90,8 @@ The **Virtual Machine** menu can also:
   comes from its maker to Windows, checked against the SHA-256 in Microsoft's
   public package list. What's already installed is marked.
 - **Speak Updates and Disk** (Command-Option-Shift-I): how full the
-  machine's disk is and how many updates are waiting.
+  machine's disk is and how many updates are waiting. The dashboard's Disk
+  column shows how full it is too, from when it last ran if it's shut down.
 
 A machine's Settings, under Display and Sound, has **Sound Output**: play
 the machine through its own output, headphones say, so its screen reader
@@ -141,29 +142,30 @@ Windows starts running out of room, you can raise it.
    makes the disk larger, checks that it worked, and tells you the new
    size. A disk can grow but never shrink.
 
-Windows won't use the new space until you extend drive C:
+The next time Windows starts, AVM gives drive C the new space and tells you
+its new size. On Linux, make the main partition larger yourself.
 
-1. Start the virtual machine.
-2. Press Command-X, which Windows receives as Windows-X, then press A to
-   open Terminal (Admin). When Windows asks whether to allow changes,
-   press Option-Y, which Windows receives as Alt-Y.
-3. Type this command and press Enter. It prints nothing when it works.
+If drive C can't take the space, AVM says so. A recovery partition may be in
+the way if you installed Windows some other way. Please open an issue rather
+than deleting partitions yourself.
 
-   ```
-   Resize-Partition -DriveLetter C -Size (Get-PartitionSupportedSize -DriveLetter C).SizeMax
-   ```
+## Adding a second drive
 
-4. To check, type this command and press Enter. It shows drive C's size
-   in gigabytes.
+Like putting another drive in a PC. It takes only as much space on your Mac as
+you use on it.
 
-   ```
-   [math]::Round((Get-Partition -DriveLetter C).Size / 1GB)
-   ```
+1. Shut down the virtual machine.
+2. In its Settings, under General, turn on **Add a second drive**, choose a
+   size, then choose Save Settings. If the machine was saved with its apps
+   open, AVM asks first, because its next Start is then a normal start.
+3. Start the machine. AVM makes the drive ready and tells you where it is:
+   the next free letter in Windows, such as D, or `/mnt/avm-data` on Linux.
 
-This works for virtual machines AVM created, because AVM puts drive C
-last on the disk. If you installed Windows some other way and the command
-reports an error, a recovery partition may be in the way. Please open an
-issue rather than deleting partitions yourself.
+Restore points put the second drive back too, along with the rest of the
+machine. A restore point from before you added it leaves the drive as it is,
+and starts as after a power cut if it was taken with apps open. The drive
+goes along when you duplicate or export the machine. It can't be removed yet,
+except by deleting the machine. macOS machines can't have one.
 
 ## USB devices
 

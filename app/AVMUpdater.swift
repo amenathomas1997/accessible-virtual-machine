@@ -222,6 +222,11 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.31", changes: [
+            "The dashboard's Disk column now says how full each machine is, such as 120 of 404 GB used. A machine that's shut down shows what it last reported, and says so. This is for Windows and Linux machines.",
+            "When you make a Windows machine's disk larger in Settings, AVM gives drive C the new space the next time Windows starts, and tells you its new size. There's no command to type any more.",
+            "You can add a second drive to a Windows or Linux machine in Settings, like putting another drive in a PC. Windows shows it as a new drive such as D, and Linux at /mnt/avm-data. Restore points put it back along with the rest of the machine. It can't be removed yet, except by deleting the machine.",
+        ]),
         ReleaseNote(version: "0.4.30", changes: [
             "The categories in the toolbar of a machine's Settings and AVM's Settings are now there as soon as the window opens. VoiceOver sometimes missed them before, and this should stop that. If it still happens, please report it.",
         ]),

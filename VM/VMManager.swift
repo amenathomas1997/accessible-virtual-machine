@@ -1606,6 +1606,10 @@ final class VMManager: ObservableObject {
         if installComplete, configuration.diskBusSwitch != nil {
             Task { [weak self] in await self?.continueDiskSwitch(configuration: configuration) }
         }
+        if installComplete, configuration.extendDriveC == true || configuration.secondDriveNeedsFormat == true
+            || (configuration.secondDriveGB != nil && configuration.guestOS.isLinux) {
+            Task { [weak self] in await self?.finishDiskChanges(configuration: configuration) }
+        }
 
         // Tap Enter across the boot window to satisfy Windows' "Press any key to
         // boot from CD or DVD..." prompt (REQUIRED — see startBootKeypressTask).
@@ -2573,6 +2577,9 @@ final class VMManager: ObservableObject {
                 "-device", disk
             ]
         }
+        // Never during an install (2026-11-03): Setup's answer file names its disk
+        // by number, and a second one must not be in the way.
+        if !attachInstallMedia { args += secondDriveArguments(configuration: configuration) }
 
         // REINSTALL GUARD: attachInstallMedia is false when the install-complete
         // marker (AVMDONE.TAG) was found on the UNATTEND volume — Windows is on
@@ -4523,7 +4530,7 @@ extension VMManager {
         do {
             let node = try await diskNodeName()
             try await runQMPJob("snapshot-save", id: "avm-point",
-                                arguments: ["tag": tag, "vmstate": node, "devices": [node]])
+                                arguments: ["tag": tag, "vmstate": node, "devices": try await snapshotDevices(node)])
         } catch {
             RestorePoints.removeFolder(vmDirectory: runtimeDir, tag: tag)
             throw error
@@ -4590,7 +4597,7 @@ extension VMManager {
         do {
             let node = try await diskNodeName()
             try await runQMPJob("snapshot-save", id: "avm-save",
-                                arguments: ["tag": QEMUSavedState.tag, "vmstate": node, "devices": [node]])
+                                arguments: ["tag": QEMUSavedState.tag, "vmstate": node, "devices": try await snapshotDevices(node)])
         } catch {
             avmLog("saveStateAndStop: save failed: \(error.localizedDescription)")
             // A save QEMU finished after AVM gave up would be carried on
@@ -4598,7 +4605,7 @@ extension VMManager {
             if let node = try? await diskNodeName() {
                 _ = try? await sendQMPCommand("job-dismiss", arguments: ["id": "avm-save"])
                 try? await runQMPJob("snapshot-delete", id: "avm-unsave",
-                                     arguments: ["tag": QEMUSavedState.tag, "devices": [node]], limit: .seconds(120))
+                                     arguments: ["tag": QEMUSavedState.tag, "devices": try await snapshotDevices(node)], limit: .seconds(120))
             }
             // snapshot-save lets a running machine go again by itself; a
             // paused one stays paused. A QEMU that died during the save was
@@ -4654,7 +4661,7 @@ extension VMManager {
         do {
             node = try await diskNodeName()
             try await runQMPJob("snapshot-load", id: "avm-load",
-                                arguments: ["tag": plan.tag, "vmstate": node, "devices": [node]])
+                                arguments: ["tag": plan.tag, "vmstate": node, "devices": try await snapshotDevices(node)])
             _ = try await sendQMPCommand("cont", arguments: nil)
             avmLog("resumeSavedState: carried on in \(String(format: "%.1f", Date().timeIntervalSince(started))) s")
             carriedOn = true
@@ -4698,7 +4705,7 @@ extension VMManager {
         if plan.isSavedState, !node.isEmpty {
             do {
                 try await runQMPJob("snapshot-delete", id: "avm-delete",
-                                    arguments: ["tag": QEMUSavedState.tag, "devices": [node]])
+                                    arguments: ["tag": QEMUSavedState.tag, "devices": try await snapshotDevices(node)])
                 try? fm.removeItem(at: marker)
             } catch {
                 avmLog("resumeSavedState: couldn't delete the saved state (\(error.localizedDescription)); the marker makes the next Start delete it")
@@ -4769,6 +4776,18 @@ extension VMManager {
         }
     }
 
+    /// A change to the saved machine and the running one's copy (MachineDrives.swift).
+    func storeDiskChange(_ configuration: VMConfiguration, _ change: (inout VMConfiguration) -> Void) {
+        if var updated = VMStore.shared?.configurations.first(where: { $0.id == configuration.id }) {
+            change(&updated)
+            VMStore.shared?.save(updated)
+        }
+        if activeConfiguration?.id == configuration.id, var active = activeConfiguration {
+            change(&active)
+            activeConfiguration = active
+        }
+    }
+
     private func storeDiskSwitch(_ configuration: VMConfiguration, bus: String?, step: String?) {
         if var updated = VMStore.shared?.configurations.first(where: { $0.id == configuration.id }) {
             updated.diskBus = bus
@@ -4782,7 +4801,7 @@ extension VMManager {
         diskSwitchResult = step == "firstBoot" ? "ready" : (bus == "virtio" ? "switched" : "nvme")
     }
 
-    private func waitForGuestAgent(limit: Duration) async -> Bool {
+    func waitForGuestAgent(limit: Duration) async -> Bool {
         let clock = ContinuousClock()
         let deadline = clock.now + limit
         while clock.now < deadline {
@@ -5073,6 +5092,7 @@ extension VMManager {
             var hostSpoken: Int64?
             var guestSpoken: Set<String> = []
             var minute = 0
+            var heardDrives = false
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard let self, !Task.isCancelled else { return }
@@ -5103,10 +5123,15 @@ extension VMManager {
                         ?? "\(machine) has paused: your Mac's disk is full. Next: free some space on your Mac, then choose Resume in \(machine)'s row.", tone: .failure)
                 }
 
-                if installed, minute % 5 == 0, self.state == .running, let path = self.guestAgentSocketPath,
+                // Each minute until it first answers, for the dashboard.
+                if installed, !heardDrives || minute % 5 == 0, self.state == .running, let path = self.guestAgentSocketPath,
                    let reply = try? await Task.detached(operation: { try GuestAgent.run([#"{"execute":"guest-get-fsinfo"}"#], socketPath: path, timeout: 10) }).value.first,
                    let json = try? JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any] {
                     let drives = DiskWatch.drives(fromFsinfo: json["return"])
+                    if !drives.isEmpty {
+                        heardDrives = true
+                        DiskUsage.shared.note(drives, machine: configuration.id, folder: runtimeDir)
+                    }
                     let guest = DiskWatch.guestWarnings(drives, spoken: guestSpoken)
                     guestSpoken = guest.spoken
                     for drive in guest.speak {
