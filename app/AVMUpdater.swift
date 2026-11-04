@@ -222,6 +222,10 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.33", changes: [
+            "New in AVM's Settings: iPhone Receiver, off until you turn it on. With the AVM Receiver app on an iPhone or iPad, you can list your machines, start and stop them, and open a Windows or Linux one: you hear it on the device, type on a Bluetooth keyboard, and see its screen. While a device has a machine open, its sound goes there and not to the Mac.",
+            "You pair each device with a code from Settings, and you can remove a device there. The app is still being tested: it has run in Apple's simulator but not yet on a real iPhone or with VoiceOver on, so expect rough edges. It can't open macOS machines yet, and has no microphone, mouse or braille.",
+        ]),
         ReleaseNote(version: "0.4.32", changes: [
             "The dashboard's Disk column now has a figure for a machine that hasn't reported how full it is yet, even when it's off, and for macOS machines: how much room its disk takes on your Mac, such as 84 GB on this Mac, of 514 GB. That figure also holds restore points, and doesn't shrink when you delete files in the machine. Once a Windows or Linux machine has run for a couple of minutes, the column says how much is used inside it instead.",
         ]),
