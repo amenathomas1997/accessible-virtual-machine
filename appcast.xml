@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.33</title>
+            <sparkle:version>53</sparkle:version>
+            <sparkle:shortVersionString>0.4.33</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>New in AVM&#x27;s Settings: iPhone Receiver, off until you turn it on. With the AVM Receiver app on an iPhone or iPad, you can list your machines, start and stop them, and open a Windows or Linux one: you hear it on the device, type on a Bluetooth keyboard, and see its screen. While a device has a machine open, its sound goes there and not to the Mac.</li><li>You pair each device with a code from Settings, and you can remove a device there. The app is still being tested: it has run in Apple&#x27;s simulator but not yet on a real iPhone or with VoiceOver on, so expect rough edges. It can&#x27;t open macOS machines yet, and has no microphone, mouse or braille.</li></ul>]]></description>
+            <pubDate>Wed, 04 Nov 2026 18:47:28 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.33/AVM-0.4.33.zip" sparkle:edSignature="JSxRUdzD6zL+pS4F7ZixWiWwqcaBtHAMK2/EiQCLbSI6kkvlFyzi1bix/ptf7H+OYAV5pW2WaIx+UfVK8Sw7Cw==" length="106488276" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.32</title>
             <sparkle:version>52</sparkle:version>
             <sparkle:shortVersionString>0.4.32</sparkle:shortVersionString>
