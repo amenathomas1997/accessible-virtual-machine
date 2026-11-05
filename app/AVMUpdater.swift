@@ -222,6 +222,9 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.34", changes: [
+            "Fixed: with VoiceOver on, choosing Pair a Device in Settings, iPhone Receiver, made AVM quit as soon as the code appeared. The code can no longer be selected with the mouse; VoiceOver still reads it letter by letter, and Copy Code copies it.",
+        ]),
         ReleaseNote(version: "0.4.33", changes: [
             "New in AVM's Settings: iPhone Receiver, off until you turn it on. With the AVM Receiver app on an iPhone or iPad, you can list your machines, start and stop them, and open a Windows or Linux one: you hear it on the device, type on a Bluetooth keyboard, and see its screen. While a device has a machine open, its sound goes there and not to the Mac.",
             "You pair each device with a code from Settings, and you can remove a device there. The app is still being tested: it has run in Apple's simulator but not yet on a real iPhone or with VoiceOver on, so expect rough edges. It can't open macOS machines yet, and has no microphone, mouse or braille.",
