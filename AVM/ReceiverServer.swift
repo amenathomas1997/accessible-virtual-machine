@@ -99,6 +99,10 @@ final class ReceiverServer: ObservableObject {
     private var pairingEnd: Task<Void, Never>?
     private var clients: [ObjectIdentifier: ReceiverClient] = [:]
     private var attachments: [UUID: ReceiverAttachment] = [:]
+    /// A closed attachment's last QMP commands, which the next one for the
+    /// same machine waits for (2026-11-05): otherwise its "sound back to
+    /// the Mac" could land after the new one's "sound to the device".
+    private var stopping: [UUID: Task<Void, Never>] = [:]
     private var sleepAssertion: IOPMAssertionID = 0
 
     func startIfEnabled() {
@@ -275,9 +279,12 @@ final class ReceiverServer: ObservableObject {
         }
         // Another device had it: this one takes over, as a new window would.
         if let earlier = attachments[id] {
-            earlier.client?.send(ReceiverWire.message(["event": "closed", "machine": id.uuidString, "message": "Another device opened this machine."]))
+            // Not to the same device opening it again (2026-11-05): the app
+            // took that for its own machine closing.
+            if earlier.client !== client { earlier.client?.send(ReceiverWire.message(["event": "closed", "machine": id.uuidString, "message": "Another device opened this machine."])) }
             close(id)
         }
+        await stopping[id]?.value
         let attachment = ReceiverAttachment(machine: id, manager: session.manager, client: client, picture: picture)
         guard await attachment.start() else {
             return ["ok": false, "message": "AVM couldn't send this machine's sound to your device."]
@@ -291,7 +298,9 @@ final class ReceiverServer: ObservableObject {
     func close(_ id: UUID) {
         guard let attachment = attachments.removeValue(forKey: id) else { return }
         openMachines.remove(id)
-        attachment.stop()
+        let previous = stopping[id]
+        let done = attachment.stop()
+        stopping[id] = Task { await previous?.value; await done?.value }
         holdAwake()
     }
 
@@ -508,6 +517,7 @@ final class ReceiverAttachment {
     private var translator = WindowsKeyTranslator()
     private var lastKey: Task<Void, Never>?
     private var stopped = false
+    private var saidNoPicture = false
     private static let hdaPath = "/machine/peripheral/avmhda"
 
     init(machine: UUID, manager: VMManager, client: ReceiverClient, picture: Bool) {
@@ -523,8 +533,9 @@ final class ReceiverAttachment {
         return true
     }
 
-    func stop() {
-        guard !stopped else { return }
+    @discardableResult
+    func stop() -> Task<Void, Never>? {
+        guard !stopped else { return nil }
         stopped = true
         watch?.cancel()
         let keys = translator.releaseAll()
@@ -534,7 +545,7 @@ final class ReceiverAttachment {
         let source = soundSource
         let path = soundPath
         soundSource = nil
-        Task { @MainActor in
+        return Task { @MainActor in
             await previous?.value
             // The Mac's own output again, as the guest left it.
             _ = try? await manager.sendQMPCommand("qom-set", arguments: ["path": Self.hdaPath, "property": "avm-stream", "value": ""])
@@ -546,8 +557,10 @@ final class ReceiverAttachment {
     private func startSound() -> Bool {
         guard let folder = try? VMManager.privateSocketDirectory(for: machine),
               let encoder = ReceiverSoundEncoder() else { return false }
-        let path = folder.appendingPathComponent("rx.sock").path
-        unlink(path)
+        // Its own name each time (2026-11-05): a machine opened again, on the
+        // same device or another, unlinked the new socket when the earlier
+        // open finished closing, and its sound stopped reaching the device.
+        let path = folder.appendingPathComponent("rx-\(UUID().uuidString.prefix(8)).sock").path
         var address = sockaddr_un()
         address.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8CString)
@@ -630,11 +643,20 @@ final class ReceiverAttachment {
                 ReceiverServer.shared.close(machine)
                 return
             }
-            if wantsPicture, session.vmState == .running, await takePicture(to: path) {
-                let jpeg = await Task.detached(priority: .utility) { Self.jpeg(ofFile: path) }.value
-                if let jpeg, jpeg != lastPicture {
-                    lastPicture = jpeg
-                    client?.send(ReceiverWire.frame(.picture, jpeg))
+            if wantsPicture, session.vmState == .running {
+                if await takePicture(to: path) {
+                    let jpeg = await Task.detached(priority: .utility) { Self.jpeg(ofFile: path) }.value
+                    if let jpeg, jpeg != lastPicture {
+                        lastPicture = jpeg
+                        client?.send(ReceiverWire.frame(.picture, jpeg))
+                    }
+                } else if manager.drawsOnGPU, !saidNoPicture {
+                    // A machine with 3D graphics on (2026-11-05, the user's
+                    // Windows machine): its picture only comes from its window
+                    // on the Mac. Said once, so the device isn't left guessing.
+                    saidNoPicture = true
+                    client?.send(ReceiverWire.message(["event": "problem", "machine": machine.uuidString,
+                        "message": "No picture: this machine uses 3D graphics, so AVM can only see its screen while its window is open on the Mac. Sound and keys still work."]))
                 }
             }
             try? await Task.sleep(for: .milliseconds(350))

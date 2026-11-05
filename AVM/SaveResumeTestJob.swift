@@ -1181,6 +1181,9 @@ enum SaveResumeTestJob {
         }
         check("sound arrived and decodes (\(Int(number("packets"))) packets)", number("packets") > 100 && number("decoded") > 48000)
         check("the sound isn't silence (loudest \(number("peak")))", number("peak") > 0.02)
+        let eventLine = result.out.split(whereSeparator: \.isNewline).first { $0.hasPrefix("RESULT") } ?? ""
+        check("opening the machine again kept its sound", !eventLine.contains("sound can't reach"))
+        check("opening it again on the same device didn't close it there", !eventLine.contains("Another device opened"))
         check("pictures arrived (\(Int(number("pictures"))))", number("pictures") >= 1 && FileManager.default.fileExists(atPath: picture))
         if guest != .windows {
             check("the A key reached the machine, down and up", keysSeen?.contains("30 1") == true && keysSeen?.contains("30 0") == true)

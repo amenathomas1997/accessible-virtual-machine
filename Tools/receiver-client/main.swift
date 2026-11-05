@@ -141,6 +141,11 @@ link.onEvent = { e in events.append("\(e)") }
 let opened = link.ask(["op": "open", "machine": id, "picture": true])
 print("OPEN \(opened)")
 guard opened["ok"] as? Bool == true else { die("open") }
+// Opened again straight away, as the phone does when someone opens it twice
+// (2026-11-05): the first open's closing removed the second's sound socket.
+let again = link.ask(["op": "open", "machine": id, "picture": true])
+print("OPEN-AGAIN \(again)")
+guard again["ok"] as? Bool == true else { die("open again") }
 FileManager.default.createFile(atPath: until + ".opened", contents: nil)
 var presses = 0
 let deadline = Date().addingTimeInterval(900)
