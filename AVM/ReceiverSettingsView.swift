@@ -40,9 +40,12 @@ struct ReceiverSettingsView: View {
             Text("In AVM Receiver on your device, enter this code. It works once, for two minutes.")
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
+            // Not selectable, Copy Code is right below (2026-11-05): in 0.4.33
+            // .textSelection with .accessibilityLabel on one Text sent SwiftUI's
+            // label lookup round in circles when VoiceOver read it, and AVM
+            // crashed as soon as the code appeared.
             Text(code)
                 .font(.system(.title2, design: .monospaced))
-                .textSelection(.enabled)
                 .accessibilityLabel("Pairing code: \(code.map { String($0) }.joined(separator: " "))")
             HStack {
                 Button("Copy Code") {
