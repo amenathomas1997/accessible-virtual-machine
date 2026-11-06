@@ -779,9 +779,7 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
             // Pause a running VM before the Mac sleeps (2026-10-26).
             SleepCoordinator.shared.start()
             ControlServer.shared.start()
-            // The iPhone receiver (2026-11-04), if it's been turned on; not for
-            // a test run, whose machines aren't the user's.
-            if !testRun { ReceiverServer.shared.startIfEnabled() }
+            if !testRun { Self.forgetReceiver() }
             // Windows apps in Command-Tab (2026-10-29, WindowsApps.swift);
             // not for a test run, whose machines aren't the user's.
             if !testRun { WindowsApps.shared.start() }
@@ -874,6 +872,20 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
             NSLog("AVM: Updates — quitting for the update; asking the USB helper to exit.")
             USBHelperClient.askHelperToExitNow(wait: 3)
         }
+    }
+
+    /// The iPhone Receiver was taken out after 0.4.35 (2026-11-05): it wasn't
+    /// working well. A Mac that paired a device kept that device's key in the
+    /// keychain (a Debug build in a file), so it goes, with the setting.
+    private static func forgetReceiver() {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: "receiverEnabled") != nil else { return }
+        defaults.removeObject(forKey: "receiverEnabled")
+        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "AVM Receiver"] as CFDictionary)
+        if let file = try? AVMPaths.supportDirectory().appendingPathComponent("receiver-devices.json") {
+            try? FileManager.default.removeItem(at: file)
+        }
+        AVMLog.write("AVM: the iPhone Receiver's setting and paired devices were removed.")
     }
 }
 

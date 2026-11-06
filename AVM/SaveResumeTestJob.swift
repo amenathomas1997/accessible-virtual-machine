@@ -130,7 +130,7 @@ enum SaveResumeTestJob {
     static let flag = "--test-save-resume"
 
     static func runIfAsked(arguments: [String] = CommandLine.arguments) {
-        guard arguments.contains(flag) || arguments.contains("--test-microphone") || arguments.contains("--test-two-machines") || arguments.contains("--test-stress") || arguments.contains("--test-blue-screen") || arguments.contains("--test-machine-drives") || arguments.contains("--test-install-apps") || arguments.contains("--test-receiver") || arguments.contains("--serve-receiver")
+        guard arguments.contains(flag) || arguments.contains("--test-microphone") || arguments.contains("--test-two-machines") || arguments.contains("--test-stress") || arguments.contains("--test-blue-screen") || arguments.contains("--test-machine-drives") || arguments.contains("--test-install-apps")
                 || arguments.contains("--test-duplicate") || arguments.contains("--test-send-file")
                 || arguments.contains("--test-linux-share") || arguments.contains("--test-ctl")
                 || arguments.contains("--test-disk-info") || arguments.contains("--run-in-guest")
@@ -206,12 +206,6 @@ enum SaveResumeTestJob {
             let folderURL = URL(fileURLWithPath: folder, isDirectory: true)
             if arguments.contains("--test-install-apps") {
                 await finish(await installApps(folderURL))
-            }
-            if arguments.contains("--serve-receiver") {
-                await finish(await serveReceiver(folderURL, guest))
-            }
-            if arguments.contains("--test-receiver") {
-                await finish(await receiverTest(folderURL, guest, client: value("--receiver-client") ?? ""))
             }
             if arguments.contains("--test-machine-drives") {
                 await finish(await machineDrives(folderURL, guest))
@@ -1027,179 +1021,6 @@ enum SaveResumeTestJob {
         check("it shut down", MachineSessions.shared.session(for: config.id) == nil)
         let unknown = await run(["status", "No Such Machine"])
         check("an unknown machine is refused", !unknown.ok && unknown.out.contains("no virtual machine called"))
-        return ok
-    }
-
-    /// For trying the iOS app (2026-11-04): AVM's receiver on its usual ports
-    /// with one test machine and its own data, a new pairing code written to
-    /// /tmp/avm-receiver-code.txt whenever there's none open, until the file
-    /// /tmp/avm-receiver-stop exists.
-    private static func serveReceiver(_ folder: URL, _ guest: GuestOS) async -> Bool {
-        let support = URL(fileURLWithPath: "/tmp/avm-rx-serve")
-        try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
-        AVMPaths.supportDirectoryOverride = support
-        let store = VMStore()
-        var config = configuration(folder: folder, guest: guest)
-        config.name = guest == .windows ? "Test Windows" : "Test Debian"
-        store.save(config)
-        let server = ReceiverServer.shared
-        server.startListening()
-        let codeFile = "/tmp/avm-receiver-code.txt"
-        let stopFile = "/tmp/avm-receiver-stop"
-        try? FileManager.default.removeItem(atPath: stopFile)
-        while !FileManager.default.fileExists(atPath: stopFile) {
-            if server.pairingCode == nil, let code = server.beginPairing() {
-                try? code.write(toFile: codeFile, atomically: true, encoding: .utf8)
-                print("   pairing code \(code)")
-                if let problem = server.problem { print("   \(problem)") }
-            }
-            try? await Task.sleep(for: .seconds(1))
-        }
-        MachineSessions.shared.session(for: config.id)?.forceStop()
-        try? await Task.sleep(for: .seconds(2))
-        return true
-    }
-
-    /// The AVM Receiver from pairing to stopping the machine (2026-11-04),
-    /// with Tools/receiver-client in the phone's place: a wrong code and a used
-    /// code are refused, a paired device starts a machine and opens it, its
-    /// sound and picture arrive, its keys reach the machine, and a removed
-    /// device can't get back in. Run on a clone: Tools/test-receiver.sh.
-    private static func receiverTest(_ folder: URL, _ guest: GuestOS, client: String) async -> Bool {
-        let support = URL(fileURLWithPath: "/tmp/avm-rx-\(UUID().uuidString.prefix(6))")
-        try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
-        AVMPaths.supportDirectoryOverride = support
-        defer { try? FileManager.default.removeItem(at: support) }
-        let store = VMStore()
-        var config = configuration(folder: folder, guest: guest)
-        config.name = "Receiver Test"
-        store.save(config)
-        let server = ReceiverServer.shared
-        server.usesFixedPorts = false
-        server.startListening()
-        func runClient(_ arguments: [String], output: URL? = nil) async -> (ok: Bool, out: String) {
-            let log = output ?? support.appendingPathComponent("client-\(UUID().uuidString.prefix(6)).txt")
-            FileManager.default.createFile(atPath: log.path, contents: nil)
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: client)
-            process.arguments = arguments
-            let handle = try? FileHandle(forWritingTo: log)
-            process.standardOutput = handle
-            process.standardError = handle
-            let status: Int32 = await withCheckedContinuation { done in
-                process.terminationHandler = { done.resume(returning: $0.terminationStatus) }
-                do { try process.run() } catch { done.resume(returning: 127) }
-            }
-            let out = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
-            print(out.split(whereSeparator: \.isNewline).map { "     " + $0.prefix(300) }.joined(separator: "\n"))
-            return (status == 0, out)
-        }
-        func waitForPort(_ port: () -> UInt16?) async -> UInt16? {
-            for _ in 0..<40 {
-                if let value = port() { return value }
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            return nil
-        }
-        let state = support.appendingPathComponent("device.json").path
-
-        print("== Pairing")
-        guard let code = server.beginPairing(), let pairPort = await waitForPort({ server.pairingPort }) else {
-            check("pairing opens", false); return false
-        }
-        check("the code has twelve letters", ReceiverWire.normalized(code: code).count == 12)
-        let wrong = await runClient(["pair", "--port", "\(pairPort)", "--code", "AAAA-BBBB-CCCC", "--state", state])
-        check("a wrong code is refused", !wrong.ok && !FileManager.default.fileExists(atPath: state))
-        check("pairing stays open after a wrong code", server.pairingCode == code)
-        let right = await runClient(["pair", "--port", "\(pairPort)", "--code", code.lowercased(), "--state", state])
-        check("the right code pairs, in any case", right.ok && server.devices.count == 1)
-        check("pairing closes after one device", server.pairingCode == nil)
-        let again = await runClient(["pair", "--port", "\(pairPort)", "--code", code, "--state", support.appendingPathComponent("second.json").path])
-        check("the code doesn't work twice", !again.ok && server.devices.count == 1)
-        guard let port = await waitForPort({ server.mainPort }) else { check("it listens for paired devices", false); return false }
-
-        print("== A machine, from the device")
-        let until = support.appendingPathComponent("until").path
-        let picture = FileManager.default.temporaryDirectory.appendingPathComponent("avm-receiver-test-screen.jpg").path
-        let sessionLog = support.appendingPathComponent("session.txt")
-        async let finished = runClient(["session", "--port", "\(port)", "--state", state, "--machine", "Receiver Test", "--until", until, "--picture", picture], output: sessionLog)
-        var opened = false
-        for _ in 0..<480 {
-            if FileManager.default.fileExists(atPath: until + ".opened") { opened = true; break }
-            try? await Task.sleep(for: .milliseconds(250))
-        }
-        check("it started and opened the machine", opened && server.attachment(config.id) != nil)
-        guard let session = MachineSessions.shared.session(for: config.id), opened else {
-            FileManager.default.createFile(atPath: until, contents: nil)
-            _ = await finished
-            return false
-        }
-        guard let agent = session.manager.guestAgentSocketPath, await waitForAgent(agent, seconds: 300) else {
-            check("its guest agent answers", false)
-            FileManager.default.createFile(atPath: until, contents: nil)
-            _ = await finished
-            session.forceStop()
-            return false
-        }
-        var keysSeen: String?
-        if guest != .windows {
-            // Every keyboard's events inside the machine, as they arrive.
-            _ = await exec(agent, program: "/bin/sh", args: ["-c", #"""
-            cat > /tmp/rxkeys.py <<'P'
-            import glob,os,select,struct,time
-            f=[os.open(p,os.O_RDONLY|os.O_NONBLOCK) for p in glob.glob('/dev/input/event*')]
-            e=time.time()+50; o=open('/tmp/rxkeys.txt','w')
-            while time.time()<e:
-                r,_,_=select.select(f,[],[],1)
-                for x in r:
-                    d=os.read(x,24*64)
-                    for i in range(0,len(d)-23,24):
-                        _,_,t,c,v=struct.unpack('qqHHi',d[i:i+24])
-                        if t==1: o.write(f'{c} {v}\n'); o.flush()
-            P
-            setsid nohup python3 /tmp/rxkeys.py >/tmp/rxkeys.err 2>&1 </dev/null &
-            echo started
-            """#])
-            FileManager.default.createFile(atPath: until + ".keys", contents: nil)
-            try? await Task.sleep(for: .seconds(40))
-            _ = await exec(agent, program: "/bin/sh", args: ["-c", #"export PATH=/usr/sbin:/usr/bin:/sbin:/bin; U=$(getent passwd 1000 | cut -d: -f1); runuser -u "$U" -- env XDG_RUNTIME_DIR=/run/user/1000 sh -c 'wpctl set-mute @DEFAULT_AUDIO_SINK@ 0; wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.7' >/dev/null 2>&1; runuser -u "$U" -- env XDG_RUNTIME_DIR=/run/user/1000 timeout 5 speaker-test -t sine -f 440 -c 2 -l 1 >/dev/null 2>&1; echo played"#])
-            try? await Task.sleep(for: .seconds(3))
-            keysSeen = await exec(agent, program: "/bin/cat", args: ["/tmp/rxkeys.txt"])
-            print("   keys seen in the machine: \((keysSeen ?? "nothing").split(whereSeparator: \.isNewline).prefix(6).joined(separator: ", "))")
-        } else {
-            // NVDA's and Windows' own sounds while it signs in. The keys
-            // aren't checked here: nothing in the machine logs them.
-            try? await Task.sleep(for: .seconds(60))
-        }
-        FileManager.default.createFile(atPath: until, contents: nil)
-        let result = await finished
-        check("the session ran", result.ok)
-        func number(_ name: String) -> Double {
-            guard let line = result.out.split(whereSeparator: \.isNewline).first(where: { $0.hasPrefix("RESULT") }),
-                  let word = line.split(separator: " ").first(where: { $0.hasPrefix(name + "=") }) else { return 0 }
-            return Double(word.dropFirst(name.count + 1)) ?? 0
-        }
-        check("sound arrived and decodes (\(Int(number("packets"))) packets)", number("packets") > 100 && number("decoded") > 48000)
-        check("the sound isn't silence (loudest \(number("peak")))", number("peak") > 0.02)
-        let eventLine = result.out.split(whereSeparator: \.isNewline).first { $0.hasPrefix("RESULT") } ?? ""
-        check("opening the machine again kept its sound", !eventLine.contains("sound can't reach"))
-        check("opening it again on the same device didn't close it there", !eventLine.contains("Another device opened"))
-        check("pictures arrived (\(Int(number("pictures"))))", number("pictures") >= 1 && FileManager.default.fileExists(atPath: picture))
-        if guest != .windows {
-            check("the A key reached the machine, down and up", keysSeen?.contains("30 1") == true && keysSeen?.contains("30 0") == true)
-        }
-        let screenText = result.out.split(whereSeparator: \.isNewline).first { $0.hasPrefix("READ-SCREEN") }?.dropFirst(12) ?? ""
-        check("Read Screen finds text on the screen", !screenText.trimmingCharacters(in: .whitespaces).isEmpty)
-        check("closing ends the attachment", server.attachment(config.id) == nil)
-        for _ in 0..<240 where MachineSessions.shared.session(for: config.id) != nil { try? await Task.sleep(for: .milliseconds(500)) }
-        check("the device's Stop shut it down", MachineSessions.shared.session(for: config.id) == nil)
-
-        print("== Removing the device")
-        let before = await runClient(["hello", "--port", "\(port)", "--state", state])
-        check("a paired device gets in", before.ok)
-        if let device = server.devices.first { server.forget(device) }
-        let after = await runClient(["hello", "--port", "\(port)", "--state", state])
-        check("a removed device doesn't", !after.ok)
         return ok
     }
 

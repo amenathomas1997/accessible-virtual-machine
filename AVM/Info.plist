@@ -12,8 +12,6 @@
 	     of the guest with nothing said. -->
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_avm-receiver._tcp</string>
-		<string>_avm-pairing._tcp</string>
 		<string>_ipp._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
@@ -21,7 +19,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>AVM lets a virtual machine use your Mac's microphone, when you turn that on in its Settings, for dictation, calls and recordings inside it.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>AVM needs local network access so Windows inside your virtual machine can connect to the internet, and so a paired iPhone or iPad can reach your machines if you turn on the iPhone Receiver.</string>
+	<string>AVM needs local network access so Windows inside your virtual machine can connect to the internet.</string>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>AVM needs access to removable drives to store virtual machines on them, and to send them to your Windows virtual machine.</string>
 	<key>NSAppTransportSecurity</key>

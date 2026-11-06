@@ -443,30 +443,6 @@ there is one (Debian 13, Ubuntu 24.04 and newer), so the remote session
 has sound there and is silent elsewhere; it should use an account other
 than the one signed in at the machine's screen.
 
-## AVM Receiver for iPhone and iPad
-
-AVM Receiver, in `ios/`, is a VoiceOver-first app for the machines running
-in AVM on your Mac. The machine stays on the Mac. The app lists your
-machines, starts, saves and stops them, and opens a Windows or Linux one: you
-hear it, including its screen reader, type on a Bluetooth keyboard, and see
-its screen a few times a second. It's the session at the Mac, so unlike
-Remote Desktop it needs no Windows Pro and no second account. While a device
-has a machine open, its sound goes to that device and not to the Mac, also
-with a MacBook's lid closed.
-
-Turn it on in AVM's Settings, under iPhone Receiver, choose Pair a Device, and
-enter the code in the app. A code works once, for two minutes. Everything is
-encrypted (TLS with a key for each device, on ports 49661 and 49662), and a
-device can be removed there at any time. At home the app finds the Mac by
-itself. Away from home it needs the Mac's address: install Tailscale on both,
-and AVM shows the address to enter. The Mac has to stay on and awake; AVM keeps
-it from sleeping on its own while a machine is open, but a MacBook with its lid
-closed sleeps unless macOS has a reason not to.
-
-Not there yet: opening a macOS machine (it can be started and stopped), the
-phone's microphone, the mouse or touch, and braille from the phone.
-`Tools/test-receiver.sh` tests the Mac's side with a stand-in client.
-
 ## Restore points
 
 A restore point saves a virtual machine as it is, so you can put it back
