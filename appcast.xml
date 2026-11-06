@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.38</title>
+            <sparkle:version>58</sparkle:version>
+            <sparkle:shortVersionString>0.4.38</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>AVM no longer keeps a machine in a folder iCloud syncs, and won&#x27;t start a machine whose disk iCloud has moved off your Mac: before, that could reinstall Windows over it. If a drive is disconnected while a machine runs, the machine pauses and AVM says so; a new Check the Disk button in Settings, Startup and Recovery, checks a machine&#x27;s disk and offers to repair it.</li><li>A drive that connects under a different name, such as its name and a 1, is found again. A second drive left half-made keeps its real size, and Windows finds it. If AVM can&#x27;t read your list of machines, Help, Restore the Machine List from a Copy puts back the copy it kept.</li><li>Restore points: one made while a machine is stopped is now written safely; one missing its firmware copy is listed as incomplete and can&#x27;t be restored. AVM checks for free space before saving a machine&#x27;s memory, and Restore waits for a save that began meanwhile.</li><li>Fixed: a time limit could run out while your Mac slept, so AVM said a disk change or an app install had failed when it hadn&#x27;t. A stuck USB helper could hold Save, Shut Down and Quit for good. Deleting a machine or old backups on a drive with no Trash now works.</li><li>Inside Windows, AVM&#x27;s folder is now owned by the system, and exporting a machine that is still being set up is refused, because its setup answers hold the account password. Choosing NVDA or JAWS at setup now turns the other off: installed together, both talked at sign-in. A Bluetooth braille display&#x27;s capabilities can now be read by Windows.</li></ul>]]></description>
+            <pubDate>Fri, 06 Nov 2026 04:30:42 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.38/AVM-0.4.38.zip" sparkle:edSignature="MZ2Et0mnk2CEy0PpSreplW9lo+8BJK+rBiNaiX283n4jGG0qilqh1Djdzu0mbXbp5UXF305PEQnfEFrGpadnCA==" length="106488589" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.37</title>
             <sparkle:version>57</sparkle:version>
             <sparkle:shortVersionString>0.4.37</sparkle:shortVersionString>
