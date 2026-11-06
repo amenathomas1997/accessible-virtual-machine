@@ -222,6 +222,9 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.36", changes: [
+            "AVM Receiver and Settings, iPhone Receiver, have been removed: they weren't working well enough. AVM forgets any iPhone or iPad you paired, and you can delete the AVM Receiver app from your device. Nothing else changes.",
+        ]),
         ReleaseNote(version: "0.4.35", changes: [
             "Fixed for AVM Receiver: opening a machine again from your iPhone or iPad lost its sound, and the device said the sound couldn't reach it. Opening a machine the device already had open also closed it there.",
             "A machine with 3D graphics on only has a picture while its window is open on the Mac. The device now says so once, instead of just showing no picture. Sound and keys work either way.",
