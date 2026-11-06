@@ -87,7 +87,7 @@ nonisolated enum GuestAgent {
             // The whole line within the timeout, not each read (2026-11-05
             // audit): a guest sending a byte every few seconds kept a call, its
             // machine's agent lock and a shared thread, for good.
-            let deadline = Date().addingTimeInterval(timeout)
+            var deadline = Date().addingTimeInterval(timeout)
             while true {
                 if let newline = pending.firstIndex(of: 0x0a) {
                     let line = String(decoding: pending[..<newline], as: UTF8.self)
@@ -101,6 +101,9 @@ nonisolated enum GuestAgent {
                 let n = read(fd, &chunk, chunk.count)
                 guard n > 0 else { throw AgentError(n == 0 ? "closed" : "no answer") }
                 pending.append(contentsOf: chunk[0..<n])
+                // A reply arriving in earnest gets more time (2026-11-05, second
+                // audit): a long guest-exec output could otherwise be cut off.
+                if n >= 4096 { deadline = max(deadline, Date().addingTimeInterval(timeout)) }
                 guard Date() < deadline || pending.contains(0x0a) else { throw AgentError("no answer") }
             }
         }

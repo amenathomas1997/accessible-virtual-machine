@@ -95,6 +95,16 @@ enum MacAutoSetup {
     static func run(machine: VZVirtualMachine, files: MacGuestFiles, answers: MacSetupAnswers,
                     say: @escaping @MainActor (String) -> Void) async -> Bool {
         defer { try? FileManager.default.removeItem(at: files.setupAnswers) }
+        // Once (2026-11-05, second audit): if AVM died mid-setup the answers
+        // stayed, and the next start typed them at the login window and read
+        // the screen aloud, the account's name with it.
+        let begun = files.setupAnswers.deletingLastPathComponent().appendingPathComponent("mac-setup-begun")
+        if FileManager.default.fileExists(atPath: begun.path) {
+            AVMLog.write("AVM: MacAutoSetup — an earlier run had begun; not running again.")
+            say("AVM began setting up macOS for you earlier and was interrupted, so it won't try again. Sign in with the password you chose.")
+            return false
+        }
+        FileManager.default.createFile(atPath: begun.path, contents: nil)
         guard isAvailable,
               let serverClass = NSClassFromString("_VZVNCServer"),
               let passwordClass = NSClassFromString("_VZVNCAuthenticationSecurityConfiguration") else {
@@ -363,7 +373,7 @@ enum MacAutoSetup {
                         // typed into the name). The end first.
                         if replacing {
                             try client.press(0xff57)   // End
-                            for _ in 0..<40 { try client.press(RFBClient.backspace) }
+                            for _ in 0..<100 { try client.press(RFBClient.backspace) }
                         }
                         try client.type(text)
                     }

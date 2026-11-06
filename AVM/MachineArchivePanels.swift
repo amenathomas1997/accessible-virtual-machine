@@ -229,7 +229,11 @@ final class MachineArchiveController: ObservableObject {
                 do {
                     try FileManager.default.trashItem(at: folder.appendingPathComponent(old), resultingItemURL: nil)
                 } catch {
-                    AVMLog.write("AVM: Backup — \(old) couldn't go to the Trash, so it stays: \(error.localizedDescription)")
+                    // No Trash on a share (2026-11-05, second audit): left, they
+                    // piled up one a day until "there isn't room". A newer backup
+                    // is whole, so this one goes outright.
+                    AVMLog.write("AVM: Backup — \(old) couldn't go to the Trash (\(error.localizedDescription)); removing it")
+                    try? FileManager.default.removeItem(at: folder.appendingPathComponent(old))
                 }
             }
             AVMLog.write("AVM: Backup — '\(name)' done")

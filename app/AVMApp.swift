@@ -667,6 +667,12 @@ struct AVMApp: App {
                 Button("What's New in AVM") {
                     ReleaseNotes.showRecent()
                 }
+                // The machine list from its kept copy (2026-11-05, second audit):
+                // an unreadable configurations.json was copied aside and the
+                // next save replaced it, with nothing in AVM to bring it back.
+                Button("Restore the Machine List from a Copy…") {
+                    VMStore.shared?.restoreListFromCopy()
+                }
                 // Report a Problem… (2026-10-26, ProblemReporter.swift).
                 Button("Report a Problem…") {
                     ProblemReporter.reportAProblem()
@@ -1154,6 +1160,9 @@ enum QuitCoordinator {
         // Apple event is still current (2026-10-29, seventh audit): every
         // Cancel below stops it, and only the Windows branch said so.
         let stop = macStop
+        // A cancelled quit forgets the update's relaunch (2026-11-05, second
+        // audit): the flag stayed set, and a later ordinary quit asked the
+        // helper to exit as if updating. Set on every Cancel below.
         func stopCancelled(_ why: String) {
             guard let stop else { return }
             Announcer.shared.announce("The Mac's \(stop.word) is stopped; \(why) Choose \(stop.item) again when you're ready.", tone: .info)
@@ -1170,7 +1179,7 @@ enum QuitCoordinator {
             guard ask(alert) == .alertSecondButtonReturn else {
                 AVMLog.write("AVM: Quit — cancelled while a macOS machine was being made.")
                 stopCancelled("AVM keeps making the macOS machine.")
-                return .terminateCancel
+                UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
             }
         }
         // An export or import in progress (2026-10-26): quitting stops it.
@@ -1186,7 +1195,7 @@ enum QuitCoordinator {
             guard ask(alert) == .alertSecondButtonReturn else {
                 AVMLog.write("AVM: Quit — cancelled while \(activity).")
                 stopCancelled("AVM goes on \(activity).")
-                return .terminateCancel
+                UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
             }
             AVMLog.write("AVM: Quit — chosen while \(activity).")
         }
@@ -1201,7 +1210,7 @@ enum QuitCoordinator {
             guard ask(alert) == .alertSecondButtonReturn else {
                 AVMLog.write("AVM: Quit — cancelled while a restore point was put back.")
                 stopCancelled("AVM goes on putting \(machine) back.")
-                return .terminateCancel
+                UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
             }
             AVMLog.write("AVM: Quit — chosen while a restore point was put back.")
         }
@@ -1243,7 +1252,7 @@ enum QuitCoordinator {
                     // A save began meanwhile (avmctl): it finishes first.
                     Announcer.shared.announce("macOS is being saved. Quit AVM again when it's done.", tone: .info)
                     stopCancelled("macOS is being saved.")
-                    return .terminateCancel
+                    UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
                 } else if !otherActive {
                     // The reply comes a turn later at the soonest (sixth
                     // audit): a save that ends at once replied inside this
@@ -1260,11 +1269,11 @@ enum QuitCoordinator {
                         if saved { NSApp.terminate(nil) }
                     }
                     stopCancelled("macOS is being saved first, and AVM asks about the other machine when it's done.")
-                    return .terminateCancel
+                    UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
                 }
             default:
                 stopCancelled("macOS keeps running. Shut it down in its window first.")
-                return .terminateCancel
+                UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
             }
         }
         let vmActive = vmIsActive
@@ -1367,7 +1376,7 @@ enum QuitCoordinator {
                     Announcer.shared.announce("The Mac's \(stop.word) is stopped while \(guest) \(several ? "shut" : "shuts") down. When AVM has quit, choose \(stop.item) again.", tone: .info)
                 }
                 beginShutDownThenQuit(guest: guest)
-                return .terminateCancel
+                UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
             } else if quitNow {
                 AVMLog.write("AVM: Quit — Quit Now chosen with \(active.count) machine(s) active.")
             } else {
@@ -1377,7 +1386,7 @@ enum QuitCoordinator {
                 if let stop {
                     Announcer.shared.announce("The Mac's \(stop.word) is stopped; \(guest) \(several ? "keep" : "keeps") running. Shut \(several ? "them" : "it") down, then choose \(stop.item) again.", tone: .info)
                 }
-                return .terminateCancel
+                UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
             }
         }
 

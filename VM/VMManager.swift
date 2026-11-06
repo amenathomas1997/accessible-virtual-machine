@@ -734,6 +734,14 @@ final class VMManager: ObservableObject {
         }
         // At every start, so machines made before this are private too.
         try VMConfiguration.makePrivate(machineFolder: dir)
+        // The drive's UUID, for machines made before it was recorded
+        // (2026-11-05, second audit; VMConfiguration.storageVolumeUUID).
+        if configuration.isStoredElsewhere, configuration.storageVolumeUUID == nil,
+           let uuid = VMConfiguration.volumeUUID(of: dir),
+           var saved = VMStore.shared?.configurations.first(where: { $0.id == configuration.id }) {
+            saved.storageVolumeUUID = uuid
+            VMStore.shared?.save(saved)
+        }
         avmLog("prepareRuntimeDirectory: \(dir.path)")
         return dir
     }
@@ -941,6 +949,18 @@ final class VMManager: ObservableObject {
         let disk = runtimeDir.appendingPathComponent("disk.qcow2")
         let values = try? disk.resourceValues(forKeys: [.totalFileAllocatedSizeKey])
         return (values?.totalFileAllocatedSize ?? 0) > 4 << 30
+    }
+
+    /// A disk iCloud or another file provider has moved off this Mac
+    /// (2026-11-05, second audit): a big file with next to nothing allocated,
+    /// or one iCloud says isn't downloaded. diskLooksInstalled read it as
+    /// empty, and the start went down the install path and formatted it.
+    private func diskIsOffloaded(runtimeDir: URL) -> Bool {
+        let disk = runtimeDir.appendingPathComponent("disk.qcow2")
+        guard let values = try? disk.resourceValues(forKeys: [.fileSizeKey, .totalFileAllocatedSizeKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]) else { return false }
+        if values.isUbiquitousItem == true, let status = values.ubiquitousItemDownloadingStatus, status != .current { return true }
+        let logical = values.fileSize ?? 0, allocated = values.totalFileAllocatedSize ?? 0
+        return logical > 4 << 30 && allocated < logical / 100
     }
 
     /// The UNATTEND volume's root listing, from the bundled mdir. nil when
@@ -1277,6 +1297,10 @@ final class VMManager: ObservableObject {
 
     func startVM(configuration: VMConfiguration) async throws {
         avmLog("startVM: called for \(configuration.name)")
+        // Not while Reinstall Windows swaps its disk (2026-11-05, second audit).
+        if WindowsReinstall.preparing.contains(configuration.id) {
+            throw AVMError.refused("\(configuration.name) is being prepared to reinstall Windows. Next: wait for AVM to say it's ready, then start it.")
+        }
 
         guard case .stopped = state else {
             avmLog("startVM: not stopped, aborting")
@@ -1366,6 +1390,21 @@ final class VMManager: ObservableObject {
         // skip the media build, do not attach install media, and do not start
         // the boot keypress task, so this start cannot re-enter Setup and let
         // the answer file wipe the installed disk.
+        // One disk (2026-11-05, second audit): QEMU boots diskImagePath while
+        // restore points, growth and the installed check use the folder's
+        // disk.qcow2. Two different files that both exist is a machine AVM
+        // can't reason about, so it says so rather than guess.
+        if !configuration.diskImagePath.isEmpty {
+            let booted = URL(fileURLWithPath: configuration.diskImagePath).resolvingSymlinksInPath().standardizedFileURL.path
+            let folderDisk = runtimeDir.appendingPathComponent("disk.qcow2").resolvingSymlinksInPath().standardizedFileURL.path
+            if booted.caseInsensitiveCompare(folderDisk) != .orderedSame,
+               FileManager.default.fileExists(atPath: booted), FileManager.default.fileExists(atPath: folderDisk) {
+                throw AVMError.refused("\(configuration.name)'s settings name a disk, \(booted), that isn't the one in its folder, \(folderDisk), so AVM won't start it. Next: report the problem from the Help menu.")
+            }
+        }
+        if diskIsOffloaded(runtimeDir: runtimeDir) {
+            throw AVMError.refused("\(configuration.name)'s disk has been moved off this Mac by iCloud or another file provider, so AVM won't start it: starting would treat it as a new machine. Next: in Finder, download \(runtimeDir.path), then start it again, and keep machines out of folders iCloud syncs.")
+        }
         let installComplete = checkInstallCompleteMarker(configuration: configuration, runtimeDir: runtimeDir)
         // USB 2c: start-time devices wait for setup to finish (2026-10-18).
         installCompleteAtStart = installComplete
@@ -1740,6 +1779,12 @@ final class VMManager: ObservableObject {
         }
     }
 
+    /// The QEMU a force stop sent SIGTERM (2026-11-05, second audit), so a
+    /// restore that follows can wait for the process itself: where the disk
+    /// has no file locking (some shares), qemu-img couldn't tell it was still
+    /// flushing.
+    private(set) var forceStoppedProcess: Process?
+
     func forceStopVM() {
         // A Force Stop while AVM restarts Ubuntu after its install is the
         // user's choice: the restart stands down (restartAfterInstall).
@@ -1758,6 +1803,7 @@ final class VMManager: ObservableObject {
         // detached task escalates to SIGKILL if the process survives 2s.
         let doomed = qemuProcess
         qemuProcess = nil
+        forceStoppedProcess = doomed
         doomed?.terminate()
         if let proc = doomed {
             let pid = proc.processIdentifier
@@ -2278,9 +2324,11 @@ final class VMManager: ObservableObject {
             avmLog("sampleQEMUCPUPercent: ps failed to launch: \(error)")
             return nil
         }
+        // Read before waiting, as everywhere else (2026-11-05, second audit).
+        let psData = pipe.fileHandleForReading.readDataToEndOfFile()
         ps.waitUntilExit()
         let out = String(
-            data: pipe.fileHandleForReading.readDataToEndOfFile(),
+            data: psData,
             encoding: .utf8
         ) ?? ""
         return Double(out.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -2576,7 +2624,10 @@ final class VMManager: ObservableObject {
                 : "nvme,drive=disk0,serial=avmdisk0,bootindex=1"
             args += [
                 "-drive",
-                "if=none,id=disk0,file=\(Self.qemuOptionValue(configuration.diskImagePath)),format=qcow2,cache=writeback,discard=unmap,detect-zeroes=unmap",
+                // Paused on any disk error, not only a full disk (2026-11-05,
+                // second audit): a pulled drive gave the guest errors while
+                // qcow2's own tables were half-written. The disk watch says why.
+                "if=none,id=disk0,file=\(Self.qemuOptionValue(configuration.diskImagePath)),format=qcow2,cache=writeback,discard=unmap,detect-zeroes=unmap,werror=stop,rerror=stop",
                 "-device", disk
             ]
         }
@@ -4477,7 +4528,10 @@ extension VMManager {
         args["job-id"] = id
         // The answer can wait for the whole save or load (see sendQMPCommand).
         _ = try await sendQMPCommand(command, arguments: args, timeout: TimeInterval(limit.components.seconds))
-        let clock = ContinuousClock()
+        // A clock that stops while the Mac sleeps (2026-11-05, second audit):
+        // SleepCoordinator pauses the guest then, and a continuous clock ran the
+        // deadline out, so a resize or install that worked was called a failure.
+        let clock = SuspendingClock()
         let deadline = clock.now + limit
         while true {
             try await Task.sleep(for: .milliseconds(200))
@@ -4511,6 +4565,7 @@ extension VMManager {
         guard canSaveState, let configuration = activeConfiguration, let runtimeDir = vmRuntimeDir else {
             throw AVMError.refused("\(machineName) can't take a restore point while it runs.")
         }
+        try Self.checkRoomForMemory(of: configuration, in: runtimeDir, for: "a restore point")
         takingRestorePoint = true
         defer { takingRestorePoint = false }
         // Devices passed through go back to the Mac first, as for Save
@@ -4535,7 +4590,15 @@ extension VMManager {
             try await runQMPJob("snapshot-save", id: "avm-point",
                                 arguments: ["tag": tag, "vmstate": node, "devices": try await snapshotDevices(node)])
         } catch {
-            RestorePoints.removeFolder(vmDirectory: runtimeDir, tag: tag)
+            // Only if QEMU didn't finish it (2026-11-05, second audit): a QEMU
+            // force-stopped just after writing the snapshot left one with no
+            // label, firmware or TPM copy, which a restore then half-applied.
+            let disk = URL(fileURLWithPath: configuration.diskImagePath)
+            if await QEMUSavedState.snapshotTags(disk: disk)?.contains(tag) == true {
+                avmLog("createRunningRestorePoint: \(tag) landed although the job failed (\(error.localizedDescription)); its folder stays")
+            } else {
+                RestorePoints.removeFolder(vmDirectory: runtimeDir, tag: tag)
+            }
             throw error
         }
         avmLog("createRunningRestorePoint: \(tag) taken with memory")
@@ -4581,9 +4644,28 @@ extension VMManager {
         return await task.value
     }
 
+    /// Room for the machine's memory on the disk's volume (2026-11-05, second
+    /// audit): a with-memory point writes up to the RAM size into the qcow2,
+    /// and AVM takes some on its own; without room the save hit a full disk
+    /// part way and the machine paused "disk full".
+    nonisolated static func checkRoomForMemory(of configuration: VMConfiguration, in runtimeDir: URL, for what: String) throws {
+        guard let free = MachineFileCopier.availableBytes(at: runtimeDir) else { return }
+        let needed = UInt64(configuration.ramSizeGB) << 30 + (2 << 30)
+        if free < needed {
+            throw AVMError.refused("\(configuration.name) can't be saved for \(what): its drive has \(free >> 30) gigabytes free, and saving its memory needs about \(needed >> 30). Next: free some space there, or shut it down instead.")
+        }
+    }
+
     private func performSaveStateAndStop() async -> Bool {
         guard let configuration = activeConfiguration, let runtimeDir = vmRuntimeDir else { return false }
         let guest = configuration.name
+        do {
+            try Self.checkRoomForMemory(of: configuration, in: runtimeDir, for: "its open apps")
+        } catch {
+            Announcer.shared.announce(error.localizedDescription, tone: .failure)
+            avmLog("saveStateAndStop: \(error.localizedDescription)")
+            return false
+        }
         // A USB device passed through was added after the start; a fresh
         // QEMU wouldn't have it to load into, so it goes back to the Mac.
         for device in USBRedirectController.shared.devices(for: self) {
@@ -4805,7 +4887,10 @@ extension VMManager {
     }
 
     func waitForGuestAgent(limit: Duration) async -> Bool {
-        let clock = ContinuousClock()
+        // A clock that stops while the Mac sleeps (2026-11-05, second audit):
+        // SleepCoordinator pauses the guest then, and a continuous clock ran the
+        // deadline out, so a resize or install that worked was called a failure.
+        let clock = SuspendingClock()
         let deadline = clock.now + limit
         while clock.now < deadline {
             guard state == .running || state == .paused || state == .starting else { return false }
@@ -4859,7 +4944,10 @@ extension VMManager {
         guard let pid = (started as? [String: Any])?["pid"] as? Int else {
             throw AVMError.qmpCommandFailed("the guest didn't start \(program)")
         }
-        let clock = ContinuousClock()
+        // A clock that stops while the Mac sleeps (2026-11-05, second audit):
+        // SleepCoordinator pauses the guest then, and a continuous clock ran the
+        // deadline out, so a resize or install that worked was called a failure.
+        let clock = SuspendingClock()
         let deadline = clock.now + limit
         while clock.now < deadline {
             try await Task.sleep(for: .seconds(1))
@@ -4895,11 +4983,14 @@ extension VMManager {
                 guard let source = bundledBinaryURL(named: "virtio")?.appendingPathComponent("viostor") else {
                     throw AVMError.binaryNotFound("virtio/viostor")
                 }
-                _ = try await agentRun("cmd.exe", ["/c", "mkdir C:\\ProgramData\\AVM\\viostor"])
+                // Under Windows\Temp, in a folder only SYSTEM makes (2026-11-05,
+                // second audit): in ProgramData a standard user could own it first.
+                let staging = "C:\\Windows\\Temp\\AVM-viostor-\(UUID().uuidString.prefix(8))"
+                _ = try await agentRun("cmd.exe", ["/c", "mkdir \(staging)"])
                 for name in ["viostor.inf", "viostor.sys", "viostor.cat"] {
-                    try await agentWrite(source.appendingPathComponent(name), to: "C:\\ProgramData\\AVM\\viostor\\\(name)")
+                    try await agentWrite(source.appendingPathComponent(name), to: "\(staging)\\\(name)")
                 }
-                let installed = try await agentRun("pnputil.exe", ["/add-driver", "C:\\ProgramData\\AVM\\viostor\\viostor.inf", "/install"])
+                let installed = try await agentRun("pnputil.exe", ["/add-driver", "\(staging)\\viostor.inf", "/install"])
                 avmLog("diskSwitch: pnputil said: \(installed.replacingOccurrences(of: "\r\n", with: " | "))")
                 let service = try await agentRun("reg.exe", ["query", "HKLM\\SYSTEM\\CurrentControlSet\\Services\\viostor", "/v", "Start"])
                 guard service.contains("0x0") else {
@@ -5120,10 +5211,17 @@ extension VMManager {
                 if self.state == .running,
                    let status = try? await self.sendQMPCommand("query-status", arguments: nil) as? [String: Any],
                    status["status"] as? String == "io-error" {
-                    avmLog("diskWatch: QEMU paused the machine with an I/O error (its disk's volume is full)")
                     self.state = .paused
-                    Announcer.shared.announce(drive.map { "\(machine) has paused: the drive \($0) is full. Next: free some space on \($0), then choose Resume in \(machine)'s row." }
-                        ?? "\(machine) has paused: your Mac's disk is full. Next: free some space on your Mac, then choose Resume in \(machine)'s row.", tone: .failure)
+                    // A drive that's gone, or a disk that's full (2026-11-05,
+                    // second audit: QEMU now pauses on every disk error).
+                    let gone = self.activeConfiguration?.storageIsMissing == true
+                    avmLog("diskWatch: QEMU paused the machine with an I/O error (\(gone ? "its drive is disconnected" : "its disk's volume is full"))")
+                    if gone, let drive {
+                        Announcer.shared.announce("\(machine) has paused: the drive \(drive) was disconnected. Next: connect \(drive) again, then choose Resume in \(machine)'s row. If \(machine) won't start later, choose Check the Disk in its Settings.", tone: .failure)
+                    } else {
+                        Announcer.shared.announce(drive.map { "\(machine) has paused: the drive \($0) is full. Next: free some space on \($0), then choose Resume in \(machine)'s row." }
+                            ?? "\(machine) has paused: your Mac's disk is full. Next: free some space on your Mac, then choose Resume in \(machine)'s row.", tone: .failure)
+                    }
                 }
 
                 // Each minute until it first answers, for the dashboard.

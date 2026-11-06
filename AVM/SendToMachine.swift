@@ -68,7 +68,9 @@ final class SendToMachineService: NSObject {
         let file = file.resolvingSymlinksInPath().standardizedFileURL
         guard let mine = identity(file.path) else { return true }
         // Another drive than the Mac's own: an external disk, a share, a DMG.
-        if let system = identity(home), mine.dev != system.dev { return true }
+        // The boot volume or the home's (2026-11-05, second audit: a home on
+        // its own volume made every file on the boot disk ask).
+        if let system = identity(home), let root = identity("/"), mine.dev != system.dev, mine.dev != root.dev { return true }
         var folder = file.deletingLastPathComponent()
         for _ in 0..<64 {
             if let id = identity(folder.path), kept.contains(where: { $0.dev == id.dev && $0.ino == id.ino }) { return true }

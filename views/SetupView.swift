@@ -480,6 +480,10 @@ struct SetupView: View {
         panel.prompt = "Store Here"
         panel.message = "Choose a drive or folder to store this virtual machine in. Windows needs 64 gigabytes or more."
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        if VMConfiguration.isInICloud(url) {
+            Announcer.shared.announce("That folder is synced by iCloud, so AVM won't keep a virtual machine there: iCloud can move the machine's disk off this Mac to make room, and copies of it would upload as it runs. Next: choose a folder iCloud doesn't sync, or a drive.", tone: .failure)
+            return
+        }
         storageFolder = url
         // Keep the disk size within what the new drive can hold, and say so
         // when it changes (2026-10-29, sixth audit: lowered in silence).
@@ -534,15 +538,17 @@ struct SetupView: View {
             Text("Screen Readers")
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
-            Text("Windows Setup speaks with Narrator. AVM can also install these, downloaded from their makers, so one is talking when you first sign in. If you choose both, NVDA starts at sign-in.")
+            Text("Windows Setup speaks with Narrator. AVM can also install one of these, downloaded from its maker, so it's talking when you first sign in. Choosing one turns the other off: installed together, both started at every sign-in and talked over each other.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Toggle("Install NVDA (free, from NV Access)", isOn: $installNVDA)
+                .onChange(of: installNVDA) { on in if on, installJAWS { installJAWS = false } }
             if installNVDA {
                 Toggle("NVDA uses its laptop keyboard layout", isOn: $nvdaLaptopLayout)
                     .accessibilityHint("Recommended on a Mac keyboard, which has no Insert key or number pad. NVDA's key is then Caps Lock.")
             }
             Toggle("Install JAWS for ARM (from Freedom Scientific)", isOn: $installJAWS)
+                .onChange(of: installJAWS) { on in if on, installNVDA { installNVDA = false } }
                 .accessibilityHint("A 1.5 gigabyte download. Without a license, JAWS runs for 40 minutes at a time; activate it in Windows with your own license.")
         }
     }
@@ -921,6 +927,7 @@ struct SetupView: View {
             guestOSName: isUbuntu ? linuxGuestOS.rawValue : nil,
             windowsEditionName: isUbuntu ? nil : windowsEdition.rawValue,
             storageFolderPath: storagePath,
+            storageVolumeUUID: storageFolder.flatMap(VMConfiguration.volumeUUID),
             // Secure Boot for every new Windows VM (2026-10-25): with the
             // TPM AVM already gives it, Windows sees a PC that meets its
             // requirements, Insider builds included.

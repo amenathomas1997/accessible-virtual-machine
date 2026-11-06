@@ -418,13 +418,11 @@ final class USBHelperClient: NSObject, ObservableObject {
         if let problem = await ensureCurrentHelper() { return .failure(problem) }
         bluetoothHeld.insert(id)
         let c = connect()
-        let result: Result<Void, USBHelperError> = await withCheckedContinuation { cont in
-            let proxy = c.remoteObjectProxyWithErrorHandler { error in
-                cont.resume(returning: .failure(USBHelperError.fromXPC(error)))
-            } as? AVMUSBHelperProtocol
-            guard let proxy else { cont.resume(returning: .failure(.xpc("could not build the helper proxy"))); return }
+        // Within a limit (2026-11-05, second audit): a helper that stopped
+        // answering held a Save for good, and Shut Down and Quit with it.
+        let result: Result<Void, USBHelperError> = await ask(c, within: 30) { proxy, give in
             proxy.holdBluetoothDevice(id, streamSocketPath: socketPath, peerPID: peerPID) { ok, reason in
-                cont.resume(returning: ok ? .success(()) : .failure(.helper(step: "taking the Bluetooth device", detail: reason ?? "")))
+                give(ok ? .success(()) : .failure(.helper(step: "taking the Bluetooth device", detail: reason ?? "")))
             }
         }
         if case .failure = result {
@@ -442,10 +440,8 @@ final class USBHelperClient: NSObject, ObservableObject {
 
     func releaseBluetooth(_ id: String) async {
         guard bluetoothHeld.contains(id), let c = connection else { bluetoothHeld.remove(id); return }
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            let proxy = c.remoteObjectProxyWithErrorHandler { _ in cont.resume() } as? AVMUSBHelperProtocol
-            guard let proxy else { cont.resume(); return }
-            proxy.releaseBluetoothDevice(id) { cont.resume() }
+        let _: Result<Void, USBHelperError> = await ask(c, within: 15) { proxy, give in
+            proxy.releaseBluetoothDevice(id) { give(.success(())) }
         }
         bluetoothHeld.remove(id)
         disconnectIfIdle()
@@ -762,6 +758,20 @@ final class USBHelperClient: NSObject, ObservableObject {
     /// or .noAnswer once `limit` has passed, whichever comes first.
     private func ask<Value>(_ c: NSXPCConnection, within limit: TimeInterval,
                             _ call: (AVMUSBHelperProtocol, @escaping (Result<Value, USBHelperError>) -> Void) -> Void) async -> Result<Value, USBHelperError> {
+        let first = await askOnce(c, within: limit, call)
+        // Once more if the helper's idle exit cut the call (2026-11-05, second
+        // audit): a connection accepted as its 30 s timer fired was dropped,
+        // and the user heard "the helper didn't answer" for a microsecond race.
+        if case .failure(.xpc(let words)) = first, words.localizedCaseInsensitiveContains("interrupted") {
+            log("ask: the helper's connection was interrupted; asking once more")
+            try? await Task.sleep(for: .milliseconds(500))
+            return await askOnce(connect(), within: limit, call)
+        }
+        return first
+    }
+
+    private func askOnce<Value>(_ c: NSXPCConnection, within limit: TimeInterval,
+                                _ call: (AVMUSBHelperProtocol, @escaping (Result<Value, USBHelperError>) -> Void) -> Void) async -> Result<Value, USBHelperError> {
         await withCheckedContinuation { cont in
             let answer = HelperAnswer(cont)
             DispatchQueue.global().asyncAfter(deadline: .now() + limit) { answer.give(.failure(.noAnswer)) }
@@ -834,13 +844,9 @@ final class USBHelperClient: NSObject, ObservableObject {
         keyboardActive = true
         keyboardGeneration += 1
         let c = connect()
-        let result: Result<Void, USBHelperError> = await withCheckedContinuation { cont in
-            let proxy = c.remoteObjectProxyWithErrorHandler { error in
-                cont.resume(returning: .failure(USBHelperError.fromXPC(error)))
-            } as? AVMUSBHelperProtocol
-            guard let proxy else { cont.resume(returning: .failure(.xpc("could not build the helper proxy"))); return }
+        let result: Result<Void, USBHelperError> = await ask(c, within: 30) { proxy, give in
             proxy.holdKeyboard(keyboardID) { ok, reason in
-                cont.resume(returning: ok ? .success(()) : .failure(.helper(step: "holding the keyboard", detail: reason ?? "")))
+                give(ok ? .success(()) : .failure(.helper(step: "holding the keyboard", detail: reason ?? "")))
             }
         }
         if case .failure = result {
@@ -877,10 +883,8 @@ final class USBHelperClient: NSObject, ObservableObject {
     func releaseKeyboard() async {
         guard keyboardActive, let c = connection else { keyboardActive = false; return }
         let generation = keyboardGeneration
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            let proxy = c.remoteObjectProxyWithErrorHandler { _ in cont.resume() } as? AVMUSBHelperProtocol
-            guard let proxy else { cont.resume(); return }
-            proxy.releaseKeyboard { cont.resume() }
+        let _: Result<Void, USBHelperError> = await ask(c, within: 15) { proxy, give in
+            proxy.releaseKeyboard { give(.success(())) }
         }
         guard generation == keyboardGeneration else { return }
         keyboardActive = false
@@ -917,21 +921,9 @@ final class USBHelperClient: NSObject, ObservableObject {
             }
         }
 
-        let result: Result<Void, USBHelperError> = await withCheckedContinuation { cont in
-            let proxy = c.remoteObjectProxyWithErrorHandler { error in
-                cont.resume(returning: .failure(USBHelperError.fromXPC(error)))
-            } as? AVMUSBHelperProtocol
-            guard let proxy else {
-                cont.resume(returning: .failure(.xpc("could not build the helper proxy")))
-                return
-            }
+        let result: Result<Void, USBHelperError> = await ask(c, within: 45) { proxy, give in
             proxy.attach(device, streamSocketPath: socketPath, peerPID: peerPID) { ok, step, detail in
-                if ok {
-                    cont.resume(returning: .success(()))
-                } else {
-                    cont.resume(returning: .failure(.helper(step: step ?? "unknown step",
-                                                            detail: detail ?? "")))
-                }
+                give(ok ? .success(()) : .failure(.helper(step: step ?? "unknown step", detail: detail ?? "")))
             }
         }
 
@@ -972,20 +964,9 @@ final class USBHelperClient: NSObject, ObservableObject {
         let c = connect()
         log("detach: \(device.description)")
 
-        let result: Result<Void, USBHelperError> = await withCheckedContinuation { cont in
-            let proxy = c.remoteObjectProxyWithErrorHandler { error in
-                cont.resume(returning: .failure(USBHelperError.fromXPC(error)))
-            } as? AVMUSBHelperProtocol
-            guard let proxy else {
-                cont.resume(returning: .failure(.xpc("could not build the helper proxy")))
-                return
-            }
+        let result: Result<Void, USBHelperError> = await ask(c, within: 20) { proxy, give in
             proxy.detach(device) { ok, detail in
-                if ok {
-                    cont.resume(returning: .success(()))
-                } else {
-                    cont.resume(returning: .failure(.helper(step: "release", detail: detail ?? "")))
-                }
+                give(ok ? .success(()) : .failure(.helper(step: "release", detail: detail ?? "")))
             }
         }
 

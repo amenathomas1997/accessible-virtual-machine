@@ -283,6 +283,7 @@ struct SettingsView: View {
             if configuration.guestOS != .macOS { saveWithAppsSection }
             restorePointsSection
             backupsSection
+            if configuration.guestOS != .macOS { diskCheckSection }
             if configuration.guestOS == .windows { reinstallSection }
         }
     }
@@ -631,6 +632,60 @@ struct SettingsView: View {
     }
 
     /// Automatic backups (2026-11-01, MachineBackups.swift).
+    /// qemu-img check on a stopped machine's disks (2026-11-05, second audit):
+    /// after a drive was pulled while the machine ran, the disk could be
+    /// unopenable with nothing in AVM to do about it.
+    @State private var checkingDisk = false
+    private var diskCheckSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Disk Check").font(.headline).accessibilityAddTraits(.isHeader)
+            Text("If \(guest) won't start after a drive was disconnected or your Mac lost power, AVM can check its disk and repair what it can.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button(checkingDisk ? "Checking…" : "Check the Disk…") { checkDisk() }
+                .disabled(isRunning || checkingDisk || saved.storageIsMissing)
+                .accessibilityHint(isRunning ? "Stop \(guest) first." : "Checks the disk's structure and offers to repair it. The machine's files inside aren't read.")
+        }
+        .padding(.horizontal)
+    }
+
+    private func checkDisk() {
+        if MachineArchiveController.shared.refusesWhileBusy(saved) { return }
+        guard let dir = try? vmStore.vmDirectoryURL(for: saved) else { return }
+        var disks = [dir.appendingPathComponent("disk.qcow2")]
+        if let second = RestorePoints.secondDrive(dir) { disks.append(second) }
+        checkingDisk = true
+        Announcer.shared.announce("Checking \(saved.name)'s disk. This can take a few minutes.", tone: .info)
+        Task { @MainActor in
+            defer { checkingDisk = false }
+            for disk in disks {
+                let name = disk == disks.first ? "disk" : "second drive"
+                // Exit 0: fine. 1: couldn't check. 2: corrupt. 3: leaked clusters only.
+                let (status, output) = await RestorePoints.qemuImgStatus(["check", disk.path])
+                if status == 0 {
+                    Announcer.shared.announce("\(saved.name)'s \(name) is fine.", tone: .success)
+                    continue
+                }
+                if status == 1 {
+                    Announcer.shared.announce("\(saved.name)'s \(name) couldn't be checked. \(output.suffix(200))", tone: .failure)
+                    continue
+                }
+                if startedMeanwhile { Announcer.shared.announce("\(saved.name) started, so its disk wasn't repaired.", tone: .failure); return }
+                let alert = NSAlert()
+                alert.messageText = "Repair \(saved.name)'s \(name)?"
+                alert.informativeText = status == 3
+                    ? "The check found leaked space, which is harmless but wasted. Repairing it is safe."
+                    : "The check found damage. Repairing can recover the disk, but what was being written when the damage happened may be lost, and in rare cases the repair makes things worse. If you have a backup or restore point from before, that is the safer way back."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Cancel")
+                alert.addButton(withTitle: "Repair")
+                guard alert.runModal() == .alertSecondButtonReturn, !startedMeanwhile else { continue }
+                let (fixed, words) = await RestorePoints.qemuImgStatus(["check", "-r", status == 3 ? "leaks" : "all", disk.path])
+                AVMLog.write("AVM: Disk check — repaired \(name) of '\(saved.name)': exit \(fixed)")
+                Announcer.shared.announce(fixed == 0 ? "\(saved.name)'s \(name) is repaired. Start it to see that it's well." : "The repair didn't finish. \(words.suffix(200)) Next: restore a backup or restore point.", tone: fixed == 0 ? .success : .failure)
+            }
+        }
+    }
+
     private var backupsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Automatic Backups")
@@ -690,6 +745,7 @@ struct SettingsView: View {
                         Spacer()
                         Button("Restore") { restoreTo(point) }
                             .accessibilityLabel("Restore \(point.label)")
+                            .disabled(restorePointsBusy || point.incomplete)
                             .accessibilityHint((point.withMemory ? "Puts the virtual machine back as it was then, open apps and all; its next Start carries on from there." : "Puts the virtual machine back as it was then.") + (runningSession != nil ? " It's turned off first and started again after." : "") + " Asks first.")
                             .disabled(restorePointsBusy)
                         Button("Rename…") { renameRestorePoint(point) }
@@ -1077,6 +1133,8 @@ struct SettingsView: View {
         } else if session != nil {
             // Said, not left out silently (2026-11-05 audit).
             alert.informativeText += " \(saved.name) can't be saved as it is now while it runs, so this can't be undone."
+        } else {
+            alert.informativeText += " \(saved.name) is saved mid-session or waiting to carry on from a restore point, so it can't be kept as it is now, and this can't be undone."
         }
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Cancel")
@@ -1092,13 +1150,24 @@ struct SettingsView: View {
             return
         }
         let keep = canKeepNow && keepNow.state == .on
+        // A save begun while the question was up (2026-11-05, second audit):
+        // the dashboard's Save, or the point AVM takes before updates. Waited
+        // out, up to two minutes, rather than force-stopped half way.
         restorePointsBusy = true
         RestorePoints.restoring = saved.name
         Task { @MainActor in
-            defer { RestorePoints.restoring = nil }
+            defer { RestorePoints.restoring = nil; restorePointsBusy = false }
             var turnedOff = false
             var undo = ""
             var keptLabel: String?
+            if let session, session.manager.isSaving {
+                Announcer.shared.announce("\(saved.name) is being saved; AVM waits for that to finish first.", tone: .info)
+                for _ in 0..<240 where session.manager.isSaving { try? await Task.sleep(for: .milliseconds(500)) }
+                if session.manager.isSaving || MachineSessions.shared.session(for: saved.id) !== session {
+                    Announcer.shared.announce("\(saved.name) is still being saved, or stopped meanwhile, so it wasn't restored. Choose Restore again.", tone: .failure)
+                    return
+                }
+            }
             do {
                 if keep {
                     Announcer.shared.announce("Saving \(saved.name) as it is now first.", tone: .info)
@@ -1111,6 +1180,10 @@ struct SettingsView: View {
                     session.forceStop()
                     turnedOff = true
                     for _ in 0..<120 where MachineSessions.shared.session(for: saved.id) != nil {
+                        try? await Task.sleep(for: .milliseconds(500))
+                    }
+                    // The process too, not only its lock (2026-11-05, second audit).
+                    for _ in 0..<60 where session.manager.forceStoppedProcess?.isRunning == true {
                         try? await Task.sleep(for: .milliseconds(500))
                     }
                     guard MachineSessions.shared.session(for: saved.id) == nil,
@@ -1179,6 +1252,12 @@ struct SettingsView: View {
     private func renameRestorePoint(_ point: RestorePoint) {
         let alert = NSAlert()
         alert.messageText = "Rename the restore point \(point.label)?"
+        if let dir = try? vmStore.vmDirectoryURL(for: saved) {
+            let folder = dir.appendingPathComponent(RestorePoints.folderName).appendingPathComponent(point.tag)
+            if ["automatic", "before-updates", RestorePoints.beforeRestoreMarker].contains(where: { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }) {
+                alert.informativeText = "AVM made this one itself. Once renamed, it's yours: AVM no longer replaces or tidies it away, so it keeps its disk space until you delete it."
+            }
+        }
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
         field.stringValue = point.label
         field.setAccessibilityLabel("Restore point name")
@@ -1202,6 +1281,7 @@ struct SettingsView: View {
     private func deleteRestorePoint(_ point: RestorePoint) {
         // Not while its files are being copied (sixth audit).
         if MachineArchiveController.shared.refusesWhileBusy(saved) { return }
+        let sessionAtQuestion = MachineSessions.shared.session(for: saved.id)
         let alert = NSAlert()
         alert.messageText = "Delete the restore point \(point.label)?"
         alert.informativeText = "This frees the disk space it uses. It can't be undone."
@@ -1218,10 +1298,11 @@ struct SettingsView: View {
         guard alert.runModal() == .alertSecondButtonReturn,
               let dir = try? vmStore.vmDirectoryURL(for: saved) else { return }
         // While it runs (2026-11-05), QEMU deletes it: qemu-img can't touch a
-        // disk in use.
+        // disk in use. Started or stopped under the question (second audit):
+        // either way, asked again, rather than qemu-img's own words.
         let session = MachineSessions.shared.session(for: saved.id)
-        if session != nil, session !== runningSession {
-            Announcer.shared.announce("\(saved.name) started while you were asked, so the restore point wasn't deleted. Choose Delete again.", tone: .failure)
+        if session !== sessionAtQuestion {
+            Announcer.shared.announce("\(saved.name) \(session == nil ? "stopped" : "started") while you were asked, so the restore point wasn't deleted. Choose Delete again.", tone: .failure)
             return
         }
         restorePointsBusy = true
@@ -1523,12 +1604,29 @@ struct SettingsView: View {
 
     // MARK: - Load Current Settings
 
+    /// A leftover second drive's size, adopted over the one chosen (above).
+    @State private var secondDriveSizeAdopted: Int?
+
     private func loadCurrentSettings() {
         let saved = self.saved
         vmName = saved.name
         cpuCount = saved.cpuCount
         ramSizeGB = saved.ramSizeGB
         diskSizeGB = saved.diskSizeGB
+        // The disk's real size (2026-11-05, second audit): grown but not
+        // recorded (a quit between), it couldn't be grown again and Windows
+        // never got the space.
+        if !isRunning, let dir = try? vmStore.vmDirectoryURL(for: saved) {
+            Task { @MainActor in
+                if let real = try? await RestorePoints.diskSizeGB(vmDirectory: dir), real > saved.diskSizeGB {
+                    var updated = self.saved
+                    updated.diskSizeGB = real
+                    if updated.guestOS == .windows { updated.extendDriveC = true }
+                    vmStore.save(updated)
+                    diskSizeGB = real
+                }
+            }
+        }
         usbMode = saved.effectiveUSBMode
         rememberedDevices = saved.usbRememberedDevices ?? []
         rememberedDevicesAtOpen = rememberedDevices
@@ -1734,8 +1832,16 @@ struct SettingsView: View {
                 do {
                     let file = try vmStore.vmDirectoryURL(for: configuration).appendingPathComponent(VMConfiguration.secondDriveFileName)
                     // A file left by a save that never finished has nothing on it.
+                    // Its size is the one recorded (2026-11-05, second audit): a
+                    // 20 GB leftover recorded as 50 was never found in Windows.
                     if !FileManager.default.fileExists(atPath: file.path) {
                         try await VMManager().createDiskImage(at: file.path, sizeGB: newSecondDrive)
+                    } else if let existing = try? await RestorePoints.diskSizeGB(of: file), existing > 0, existing != newSecondDrive {
+                        if existing < newSecondDrive {
+                            try await VMManager().growDiskImage(at: file.path, toGB: newSecondDrive)
+                        } else {
+                            secondDriveSizeAdopted = existing
+                        }
                     }
                 } catch {
                     let message = "The second drive could not be made. Nothing else was saved. \(error.localizedDescription)"
@@ -1773,7 +1879,7 @@ struct SettingsView: View {
                 }
             }
             if let newSecondDrive {
-                updated.secondDriveGB = newSecondDrive
+                updated.secondDriveGB = secondDriveSizeAdopted ?? newSecondDrive
                 updated.secondDriveNeedsFormat = true
             }
             updated.shareClipboard = shareClipboard ? nil : false

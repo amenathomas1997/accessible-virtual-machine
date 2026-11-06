@@ -111,7 +111,7 @@ extension VMManager {
             }
             let inGuest = windows ? #"C:\ProgramData\AVM\sr-setup.zip"# : "/tmp/avm-sr-setup.tgz"
             if windows {
-                _ = try await agentRun("cmd.exe", ["/c", #"if not exist C:\ProgramData\AVM mkdir C:\ProgramData\AVM"#], limit: .seconds(30))
+                _ = try await agentRun("powershell.exe", ["-NoProfile", "-Command", WindowsApps.lockDownScript], limit: .seconds(60))
             }
             try await copyToGuest(file, to: inGuest)
             let out = windows
@@ -122,7 +122,17 @@ extension VMManager {
                       Remove-Item -Recurse -Force "$d-before-avm" -ErrorAction SilentlyContinue
                       Move-Item $d "$d-before-avm"
                     }
-                    Expand-Archive -Force -Path '\(inGuest)' -DestinationPath $d
+                    Add-Type -AssemblyName System.IO.Compression.FileSystem
+                    $z = [IO.Compression.ZipFile]::OpenRead('\(inGuest)')
+                    try {
+                      foreach ($e in $z.Entries) {
+                        if ($e.FullName -match '^[\\\\/]|\\.\\.[\\\\/]|^[A-Za-z]:|\\.\\.$') { throw "unsafe entry $($e.FullName)" }
+                        $t = Join-Path $d $e.FullName
+                        if ($e.FullName -match '[\\\\/]$') { New-Item -ItemType Directory -Force $t | Out-Null; continue }
+                        New-Item -ItemType Directory -Force (Split-Path $t) | Out-Null
+                        [IO.Compression.ZipFileExtensions]::ExtractToFile($e, $t, $true)
+                      }
+                    } finally { $z.Dispose() }
                     Remove-Item -Force '\(inGuest)'
                     if (Test-Path "$d\\nvda.ini") { 'AVM-OK' }
                     """], limit: .seconds(180))

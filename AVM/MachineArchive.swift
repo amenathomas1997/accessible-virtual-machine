@@ -36,8 +36,8 @@
 // COPYING: an APFS clone (clonefile) when the destination is on the same
 // volume, which is instant and costs no space; otherwise a copy that skips
 // holes and all-zero blocks, so a sparse raw macOS disk stays sparse on
-// APFS and HFS+. On exFAT or FAT, which have no sparse files, the copy is
-// the disk's full size, and the free-space check counts it that way.
+// APFS. On HFS+, exFAT or FAT, which have no sparse files, the copy is the
+// disk's full size, and the free-space check counts it that way.
 
 import Foundation
 
@@ -79,6 +79,29 @@ enum MachineArchive {
 
     /// Why this machine can't be exported now, in words to speak; nil when
     /// it can. The caller has already refused a running machine.
+    /// Whether the UNATTEND image still carries autounattend.xml, read with the
+    /// bundled mdir (as VMManager.unattendListing does). True when it can't
+    /// be read: refusing is the safe side.
+    nonisolated static func answerFileOnMedia(_ image: URL) -> Bool {
+        guard let mdir = Bundle.main.resourceURL?.appendingPathComponent("mdir"),
+              FileManager.default.isExecutableFile(atPath: mdir.path) else { return true }
+        let process = Process()
+        process.executableURL = mdir
+        process.arguments = ["-i", image.path, "::"]
+        var env = ProcessInfo.processInfo.environment
+        env["MTOOLS_SKIP_CHECK"] = "1"
+        env.removeValue(forKey: "DYLD_LIBRARY_PATH")
+        process.environment = env
+        let out = Pipe()
+        process.standardOutput = out
+        process.standardError = out
+        do { try process.run() } catch { return true }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return true }
+        return String(decoding: data, as: UTF8.self).uppercased().contains("AUTOUNATTEND")
+    }
+
     static func exportProblem(for configuration: VMConfiguration, vmDirectory dir: URL) -> String? {
         let fm = FileManager.default
         if configuration.storageIsMissing {
@@ -114,6 +137,13 @@ enum MachineArchive {
             let guest = configuration.guestOS.displayName
             if !fm.fileExists(atPath: dir.appendingPathComponent("autounattend.img").path) {
                 return "\(guest) hasn't been installed in \(configuration.name) yet. Next: start it and let the install finish, then export it."
+            }
+            // Setup under way (2026-11-05, second audit): until its specialize
+            // pass deletes it, the answer file on the UNATTEND volume holds the
+            // account password's encoding, which went into the package.
+            if configuration.guestOS == .windows, configuration.installMarkerSeen != true,
+               answerFileOnMedia(dir.appendingPathComponent("autounattend.img")) {
+                return "Windows is still being set up in \(configuration.name), and its setup answers, with the account password, are still on the install media. Next: start it and let setup finish, then export it."
             }
             if fm.fileExists(atPath: dir.appendingPathComponent("install-avm.iso").path)
                 || fm.fileExists(atPath: dir.appendingPathComponent(UbuntuAccount.fileName).path) {
@@ -614,7 +644,10 @@ nonisolated enum MachineFileCopier {
             return 64 * 1_048_576
         }
         switch fileSystemName(destinationFolder) {
-        case "apfs", "hfs": return plan.allocatedBytes
+        // Not HFS+ (2026-11-05, second audit): it has no sparse files, so a
+        // machine's disk takes its full size there, and a backup that passed
+        // this check filled the drive.
+        case "apfs": return plan.allocatedBytes
         default: return plan.logicalBytes
         }
     }
