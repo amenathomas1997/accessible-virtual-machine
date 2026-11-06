@@ -222,6 +222,13 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.38", changes: [
+            "AVM no longer keeps a machine in a folder iCloud syncs, and won't start a machine whose disk iCloud has moved off your Mac: before, that could reinstall Windows over it. If a drive is disconnected while a machine runs, the machine pauses and AVM says so; a new Check the Disk button in Settings, Startup and Recovery, checks a machine's disk and offers to repair it.",
+            "A drive that connects under a different name, such as its name and a 1, is found again. A second drive left half-made keeps its real size, and Windows finds it. If AVM can't read your list of machines, Help, Restore the Machine List from a Copy puts back the copy it kept.",
+            "Restore points: one made while a machine is stopped is now written safely; one missing its firmware copy is listed as incomplete and can't be restored. AVM checks for free space before saving a machine's memory, and Restore waits for a save that began meanwhile.",
+            "Fixed: a time limit could run out while your Mac slept, so AVM said a disk change or an app install had failed when it hadn't. A stuck USB helper could hold Save, Shut Down and Quit for good. Deleting a machine or old backups on a drive with no Trash now works.",
+            "Inside Windows, AVM's folder is now owned by the system, and exporting a machine that is still being set up is refused, because its setup answers hold the account password. Choosing NVDA or JAWS at setup now turns the other off: installed together, both talked at sign-in. A Bluetooth braille display's capabilities can now be read by Windows.",
+        ]),
         ReleaseNote(version: "0.4.37", changes: [
             "Restore points can be undone: before going back, AVM saves the machine as it is now, as Before going back to and the point's name, so you can return. Untick the box in the question to skip it. AVM keeps the two newest of these.",
             "Restore points work while a Windows or Linux machine runs: save one with open apps, delete one, or restore, which turns the machine off, puts it back and starts it again. Each restore point can also be renamed.",
