@@ -222,6 +222,13 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.37", changes: [
+            "Restore points can be undone: before going back, AVM saves the machine as it is now, as Before going back to and the point's name, so you can return. Untick the box in the question to skip it. AVM keeps the two newest of these.",
+            "Restore points work while a Windows or Linux machine runs: save one with open apps, delete one, or restore, which turns the machine off, puts it back and starts it again. Each restore point can also be renamed.",
+            "Fixed: with two machines whose names began alike, such as Ubuntu and Ubuntu backup, automatic backups could delete the other machine's backups. Old backups now go to the Trash, and only a machine's own.",
+            "The question about using a second keyboard for Windows, and Describe Screen's question about Claude, no longer come up unheard while you're in a machine. Return now chooses Not Now and Use the Mac Only.",
+            "A machine's files can only be opened by your account on this Mac, also in a folder you chose. Before, other accounts could read them there.",
+        ]),
         ReleaseNote(version: "0.4.36", changes: [
             "AVM Receiver and Settings, iPhone Receiver, have been removed: they weren't working well enough. AVM forgets any iPhone or iPad you paired, and you can delete the AVM Receiver app from your device. Nothing else changes.",
         ]),
