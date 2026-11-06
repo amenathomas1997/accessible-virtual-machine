@@ -181,6 +181,15 @@ final class MachineArchiveController: ObservableObject {
 
     /// One backup, with no questions; true when it's done. A machine that's
     /// busy, running or saved is left for a later look, saying nothing.
+    /// The machine a package holds, from its manifest; nil if it can't be read.
+    nonisolated static func packageMachineID(_ package: URL) -> UUID? {
+        guard let data = try? Data(contentsOf: package.appendingPathComponent(MachineArchive.manifestName)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let configuration = json["configuration"] as? [String: Any],
+              let id = configuration["id"] as? String else { return nil }
+        return UUID(uuidString: id)
+    }
+
     func backUp(_ config: VMConfiguration, into folder: URL) async -> Bool {
         let name = config.name
         guard activity == nil, !Self.isRunningNow(config), !QEMUSavedState.looksSavedOrWaiting(config),
@@ -212,9 +221,16 @@ final class MachineArchiveController: ObservableObject {
             try result.get()
             // Only now that the new one is whole.
             let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-            for old in BackupSchedule.oldOnes(in: names, base: base, ext: ext) {
-                AVMLog.write("AVM: Backup — removing the older \(old)")
-                try? FileManager.default.removeItem(at: folder.appendingPathComponent(old))
+            // Only this machine's, by the id inside, and to the Trash (2026-11-05
+            // audit): "Win:11" and "Win-11" have the same file names.
+            let mine = names.filter { Self.packageMachineID(folder.appendingPathComponent($0)) == config.id }
+            for old in BackupSchedule.oldOnes(in: mine, base: base, ext: ext) {
+                AVMLog.write("AVM: Backup — moving the older \(old) to the Trash")
+                do {
+                    try FileManager.default.trashItem(at: folder.appendingPathComponent(old), resultingItemURL: nil)
+                } catch {
+                    AVMLog.write("AVM: Backup — \(old) couldn't go to the Trash, so it stays: \(error.localizedDescription)")
+                }
             }
             AVMLog.write("AVM: Backup — '\(name)' done")
             Announcer.shared.announce("\(name) is backed up to \(place).", tone: .info, routine: true)
@@ -408,6 +424,16 @@ final class MachineArchiveController: ObservableObject {
             }.result
             switch result {
             case .success(let folder):
+                // Again on the copy (2026-11-05 audit): a package on a drive
+                // someone else controls could swap its disk between the check
+                // above and the copy, and QEMU would open a Mac file with AVM's
+                // rights. The copy is AVM's own, so it can't change now.
+                if let problem = await MachineArchive.diskProblem(package: folder, config: original) {
+                    try? FileManager.default.removeItem(at: folder)
+                    self.end()
+                    self.refuse(problem, log: "copied disk refused")
+                    return
+                }
                 await MachineArchive.dropSavedState(in: folder, config: original)
                 self.end()
                 self.finishImport(original, id: id, folder: folder, into: store)

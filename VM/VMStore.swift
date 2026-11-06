@@ -639,6 +639,12 @@ nonisolated enum RestorePoints {
         guard point.secureBoot == currentSecureBoot else {
             throw RestorePointError.secureBootMismatch(madeWithSecureBoot: point.secureBoot)
         }
+        // Still on the disk (2026-11-05 audit): a list read earlier could name a
+        // point since deleted, and beforeRollback had let go of a saved session
+        // before qemu-img refused.
+        guard await QEMUSavedState.snapshotTags(disk: disk(dir))?.contains(point.tag) != false else {
+            throw RestorePointError.tool("That restore point isn't on the disk any more, so nothing was changed.")
+        }
         // ORDER (2026-10-26, code audit): this used to delete the live
         // firmware settings and TPM, then copy the saved ones, after the
         // disk was already rolled back; a failed copy (a full disk) left a
@@ -732,6 +738,11 @@ nonisolated enum RestorePoints {
             try label.write(to: folder.appendingPathComponent("label.txt"), atomically: true, encoding: .utf8)
         } catch {
             throw RestorePointError.tool("The new name could not be saved: \(error.localizedDescription)")
+        }
+        // Named by the user, it's theirs (2026-11-05 audit): AVM's tidy-up marks
+        // go, or the point was still deleted two restores later.
+        for mark in [beforeRestoreMarker, "automatic", "before-updates"] {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(mark))
         }
     }
 

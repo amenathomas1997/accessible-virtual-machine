@@ -737,7 +737,19 @@ struct SettingsView: View {
     private func saveRestorePoint() {
         if MachineArchiveController.shared.refusesWhileBusy(saved) { return }
         if let session = runningSession {
-            askRestorePointName(session) { await loadRestorePoints() }
+            // Only where it can (2026-11-05 audit): an NVMe or 3D machine, or
+            // one still installing, always failed after the name was asked.
+            guard session.canSave else {
+                Announcer.shared.announce("\(saved.name) can't save a restore point while it runs. Next: shut it down, then choose Save a Restore Point.", tone: .failure)
+                return
+            }
+            restorePointsBusy = true
+            askRestorePointName(session) {
+                await loadRestorePoints()
+                restorePointsBusy = false
+            } cancelled: {
+                restorePointsBusy = false
+            }
             return
         }
         // A saved machine's disk is mid-session (2026-10-27), as on macOS
@@ -1032,6 +1044,12 @@ struct SettingsView: View {
     private func restoreTo(_ point: RestorePoint) {
         if MachineArchiveController.shared.refusesWhileBusy(saved) { return }
         let session = runningSession
+        // Not in the middle of a save (2026-11-05 audit): the force stop could
+        // land between a saved state and its note, and the next Start loaded it.
+        if let session, session.manager.isSaving {
+            Announcer.shared.announce("\(saved.name) is being saved, so it wasn't restored. Next: choose Restore again once it's done.", tone: .failure)
+            return
+        }
         // Before anything is turned off (2026-11-05): RestorePoints.restore
         // refuses this too, but a running machine would be off by then.
         if point.secureBoot != saved.usesSecureBoot {
@@ -1054,7 +1072,12 @@ struct SettingsView: View {
         let canKeepNow = session.map(\.canSave) ?? !QEMUSavedState.looksSavedOrWaiting(saved)
         let keepNow = NSButton(checkboxWithTitle: "First save \(saved.name) as it is now, so this can be undone", target: nil, action: nil)
         keepNow.state = .on
-        if canKeepNow { alert.accessoryView = keepNow }
+        if canKeepNow {
+            alert.accessoryView = keepNow
+        } else if session != nil {
+            // Said, not left out silently (2026-11-05 audit).
+            alert.informativeText += " \(saved.name) can't be saved as it is now while it runs, so this can't be undone."
+        }
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Restore")
@@ -1070,17 +1093,23 @@ struct SettingsView: View {
         }
         let keep = canKeepNow && keepNow.state == .on
         restorePointsBusy = true
+        RestorePoints.restoring = saved.name
         Task { @MainActor in
+            defer { RestorePoints.restoring = nil }
+            var turnedOff = false
+            var undo = ""
+            var keptLabel: String?
             do {
-                var undo = ""
                 if keep {
                     Announcer.shared.announce("Saving \(saved.name) as it is now first.", tone: .info)
                     let kept = try await RestorePoints.keepBeforeRestore(to: point, configuration: saved, vmDirectory: dir, running: session?.manager)
                     undo = " To undo it, restore \(kept.label)."
+                    keptLabel = kept.label
                 }
                 if let session {
                     Announcer.shared.announce("Turning off \(saved.name) to put it back.", tone: .info)
                     session.forceStop()
+                    turnedOff = true
                     for _ in 0..<120 where MachineSessions.shared.session(for: saved.id) != nil {
                         try? await Task.sleep(for: .milliseconds(500))
                     }
@@ -1092,9 +1121,16 @@ struct SettingsView: View {
                 // The saved session goes only once the restore can't refuse
                 // (2026-10-29, sixth audit): a Secure Boot mismatch or a
                 // failed copy said "not restored", with the session gone.
-                let toDiscard = wasSaved ? saved : nil
+                // Any saved state on the disk goes too, not only one the list
+                // showed (2026-11-05 audit): a running machine force-stopped mid-
+                // resume or mid-save kept one, and the next Start loaded it over
+                // the point just put back.
+                let configuration = saved
+                let disk = URL(fileURLWithPath: configuration.diskImagePath)
                 try await RestorePoints.restore(point, vmDirectory: dir, currentSecureBoot: saved.usesSecureBoot) {
-                    if let toDiscard { await QEMUSavedState.discard(configuration: toDiscard) }
+                    if wasSaved || session != nil, await QEMUSavedState.snapshotTags(disk: disk)?.contains(QEMUSavedState.tag) != false {
+                        await QEMUSavedState.discard(configuration: configuration)
+                    }
                 }
                 // The disk bus comes back with it (2026-10-28, code review):
                 // a point from before the move to the virtio disk has no
@@ -1122,13 +1158,20 @@ struct SettingsView: View {
                 await loadRestorePoints()
                 if session != nil {
                     Announcer.shared.announce("\(saved.name) is back to \(point.label).\(sizeNote)\(busNote)\(undo) Starting it again.", tone: .success)
-                    MachineSessions.shared.start(saved, vmStore: vmStore, focusLock: FocusLockManager.shared, windowless: saved.startsWithoutWindow)
+                    // Not taking the keyboard (2026-11-05 audit): the user is in
+                    // Settings, and the machine takes it when they enter it.
+                    MachineSessions.shared.start(saved, vmStore: vmStore, focusLock: FocusLockManager.shared, windowless: saved.startsWithoutWindow, takesKeyboard: false)
                 } else {
                     Announcer.shared.announce("\(saved.name) is back to \(point.label).\(sizeNote)\(busNote)\(undo) Start it when you're ready.", tone: .success)
                 }
             } catch {
-                Announcer.shared.announce("\(saved.name) was not restored. Reason: \(error.localizedDescription)", tone: .failure)
+                // What state it's in (2026-11-05 audit): a running machine was
+                // already off, and the point kept first is still there.
+                let off = turnedOff ? " \(saved.name) is turned off and wasn't started again." : ""
+                let kept = keptLabel.map { " \($0) was saved first and is still there." } ?? ""
+                Announcer.shared.announce("\(saved.name) was not restored. Reason: \(error.localizedDescription)\(off)\(kept)", tone: .failure)
             }
+            await loadRestorePoints()
             restorePointsBusy = false
         }
     }
@@ -1162,6 +1205,13 @@ struct SettingsView: View {
         let alert = NSAlert()
         alert.messageText = "Delete the restore point \(point.label)?"
         alert.informativeText = "This frees the disk space it uses. It can't be undone."
+        // The point a stopped machine carries on from at its next Start
+        // (2026-11-05 audit): without it, Windows starts as after a power cut.
+        if let dir = try? vmStore.vmDirectoryURL(for: saved),
+           (try? String(contentsOf: dir.appendingPathComponent(QEMUSavedState.resumeFile), encoding: .utf8))?
+               .trimmingCharacters(in: .whitespacesAndNewlines) == point.tag {
+            alert.informativeText += " \(saved.name) was put back to it and carries on from it at its next Start. Without it, \(guest) starts as after a power cut."
+        }
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Delete")
@@ -2007,6 +2057,11 @@ final class CategoryButtonCell: NSButtonCell {
 }
 
 extension RestorePoints {
+    /// The machine being put back, for the quit question (2026-11-05 audit):
+    /// quitting part way left the disk back but the firmware settings and TPM
+    /// not, as after a failed restore.
+    @MainActor static var restoring: String?
+
     /// The machine as it is now, saved just before going back to `point`
     /// (2026-11-05), and marked so the oldest of these are tidied away. With
     /// its memory if it's running.
