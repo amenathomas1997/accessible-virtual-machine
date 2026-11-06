@@ -667,14 +667,16 @@ struct SettingsView: View {
             Text("Restore Points")
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
-            if isRunning {
+            // While it runs too (2026-11-05), for Windows and Linux: saving
+            // and deleting go through QEMU, and Restore turns it off first.
+            if isRunning && runningSession == nil {
                 Text("Stop \(guest) to save or use a restore point.")
                     .foregroundStyle(.secondary)
             } else if saved.storageIsMissing {
                 Text(saved.storageMissingMessage)
                     .foregroundStyle(.secondary)
             } else {
-                Text("A restore point saves this virtual machine as it is now, so you can put it back later, before a big update for example. Each one takes more disk space as \(guest) changes afterwards.")
+                Text("A restore point saves this virtual machine as it is now, so you can put it back later, before a big update for example.\(runningSession != nil ? " While it runs, a restore point keeps open apps too." : "") Each one takes more disk space as \(guest) changes afterwards.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if !restorePointsLoaded {
@@ -688,7 +690,11 @@ struct SettingsView: View {
                         Spacer()
                         Button("Restore") { restoreTo(point) }
                             .accessibilityLabel("Restore \(point.label)")
-                            .accessibilityHint(point.withMemory ? "Puts the virtual machine back as it was then, open apps and all; its next Start carries on from there. Asks first." : "Puts the virtual machine back as it was then. Asks first.")
+                            .accessibilityHint((point.withMemory ? "Puts the virtual machine back as it was then, open apps and all; its next Start carries on from there." : "Puts the virtual machine back as it was then.") + (runningSession != nil ? " It's turned off first and started again after." : "") + " Asks first.")
+                            .disabled(restorePointsBusy)
+                        Button("Rename…") { renameRestorePoint(point) }
+                            .accessibilityLabel("Rename \(point.label)")
+                            .accessibilityHint("Gives the restore point a new name. Nothing else changes.")
                             .disabled(restorePointsBusy)
                         Button("Delete") { deleteRestorePoint(point) }
                             .accessibilityLabel("Delete restore point \(point.label)")
@@ -711,8 +717,14 @@ struct SettingsView: View {
         date.formatted(date: .long, time: .shortened)
     }
 
+    /// The running machine's session, for a Windows or Linux machine.
+    private var runningSession: VMSession? {
+        isRunning ? MachineSessions.shared.session(for: saved.id) : nil
+    }
+
     private func loadRestorePoints() async {
-        guard !isRunning, !saved.storageIsMissing,
+        // Running too (2026-11-05): RestorePoints.list reads with -U.
+        guard isRunning ? runningSession != nil : true, !saved.storageIsMissing,
               let dir = try? vmStore.vmDirectoryURL(for: saved),
               FileManager.default.fileExists(atPath: dir.appendingPathComponent("disk.qcow2").path) else {
             restorePointsLoaded = true
@@ -724,6 +736,10 @@ struct SettingsView: View {
 
     private func saveRestorePoint() {
         if MachineArchiveController.shared.refusesWhileBusy(saved) { return }
+        if let session = runningSession {
+            askRestorePointName(session) { await loadRestorePoints() }
+            return
+        }
         // A saved machine's disk is mid-session (2026-10-27), as on macOS
         // machines: a restore point of it would start as after a power cut.
         // Or one waiting to resume a restore point (fifth audit).
@@ -1015,25 +1031,64 @@ struct SettingsView: View {
 
     private func restoreTo(_ point: RestorePoint) {
         if MachineArchiveController.shared.refusesWhileBusy(saved) { return }
+        let session = runningSession
+        // Before anything is turned off (2026-11-05): RestorePoints.restore
+        // refuses this too, but a running machine would be off by then.
+        if point.secureBoot != saved.usesSecureBoot {
+            Announcer.shared.announce("\(saved.name) was not restored. Reason: \(RestorePointError.secureBootMismatch(madeWithSecureBoot: point.secureBoot).localizedDescription)", tone: .failure)
+            return
+        }
         let alert = NSAlert()
         alert.messageText = "Put \(saved.name) back to \(point.label)?"
         alert.informativeText = "Everything since \(restorePointDate(point.date)) is lost: files, settings and installed updates. AVM keeps the restore point, so you can use it again."
-        let wasSaved = QEMUSavedState.looksSaved(saved)
+        if session != nil {
+            alert.informativeText = "\(saved.name) is running, so AVM turns it off, puts it back and starts it again. " + alert.informativeText
+        }
+        let wasSaved = session == nil && QEMUSavedState.looksSaved(saved)
         if wasSaved {
             alert.informativeText += " \(saved.name) is saved with its apps open; that is lost too."
         }
+        // A way back (2026-11-05): before, a restore couldn't be undone.
+        // Not for a stopped machine saved mid-session or waiting to carry on
+        // from a point: its disk alone would start as after a power cut.
+        let canKeepNow = session.map(\.canSave) ?? !QEMUSavedState.looksSavedOrWaiting(saved)
+        let keepNow = NSButton(checkboxWithTitle: "First save \(saved.name) as it is now, so this can be undone", target: nil, action: nil)
+        keepNow.state = .on
+        if canKeepNow { alert.accessoryView = keepNow }
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Restore")
         guard alert.runModal() == .alertSecondButtonReturn,
               let dir = try? vmStore.vmDirectoryURL(for: saved) else { return }
-        if startedMeanwhile {
+        if session == nil, startedMeanwhile {
             Announcer.shared.announce("\(saved.name) started while you were asked, so it wasn't restored. Shut it down first.", tone: .failure)
             return
         }
+        if let session, MachineSessions.shared.session(for: saved.id) !== session {
+            Announcer.shared.announce("\(saved.name) stopped or started again while you were asked, so it wasn't restored. Choose Restore again.", tone: .failure)
+            return
+        }
+        let keep = canKeepNow && keepNow.state == .on
         restorePointsBusy = true
         Task { @MainActor in
             do {
+                var undo = ""
+                if keep {
+                    Announcer.shared.announce("Saving \(saved.name) as it is now first.", tone: .info)
+                    let kept = try await RestorePoints.keepBeforeRestore(to: point, configuration: saved, vmDirectory: dir, running: session?.manager)
+                    undo = " To undo it, restore \(kept.label)."
+                }
+                if let session {
+                    Announcer.shared.announce("Turning off \(saved.name) to put it back.", tone: .info)
+                    session.forceStop()
+                    for _ in 0..<120 where MachineSessions.shared.session(for: saved.id) != nil {
+                        try? await Task.sleep(for: .milliseconds(500))
+                    }
+                    guard MachineSessions.shared.session(for: saved.id) == nil,
+                          await RestorePoints.waitUntilDiskIsFree(vmDirectory: dir) else {
+                        throw RestorePointError.tool("\(saved.name) didn't let go of its disk. Next: when it shows as stopped, choose Restore again.")
+                    }
+                }
                 // The saved session goes only once the restore can't refuse
                 // (2026-10-29, sixth audit): a Secure Boot mismatch or a
                 // failed copy said "not restored", with the session gone.
@@ -1063,12 +1118,42 @@ struct SettingsView: View {
                     diskSizeGB = size
                     sizeNote = " Its disk is \(size) gigabytes again, as it was then."
                 }
-                Announcer.shared.announce("\(saved.name) is back to \(point.label).\(sizeNote)\(busNote) Start it when you're ready.", tone: .success)
+                await RestorePoints.pruneBeforeRestore(vmDirectory: dir, keeping: point)
+                await loadRestorePoints()
+                if session != nil {
+                    Announcer.shared.announce("\(saved.name) is back to \(point.label).\(sizeNote)\(busNote)\(undo) Starting it again.", tone: .success)
+                    MachineSessions.shared.start(saved, vmStore: vmStore, focusLock: FocusLockManager.shared, windowless: saved.startsWithoutWindow)
+                } else {
+                    Announcer.shared.announce("\(saved.name) is back to \(point.label).\(sizeNote)\(busNote)\(undo) Start it when you're ready.", tone: .success)
+                }
             } catch {
                 Announcer.shared.announce("\(saved.name) was not restored. Reason: \(error.localizedDescription)", tone: .failure)
             }
             restorePointsBusy = false
         }
+    }
+
+    private func renameRestorePoint(_ point: RestorePoint) {
+        let alert = NSAlert()
+        alert.messageText = "Rename the restore point \(point.label)?"
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.stringValue = point.label
+        field.setAccessibilityLabel("Restore point name")
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn,
+              let dir = try? vmStore.vmDirectoryURL(for: saved) else { return }
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != point.label else { return }
+        do {
+            try RestorePoints.rename(point, to: name, vmDirectory: dir)
+            Announcer.shared.announce("Renamed to \(name).", tone: .success)
+        } catch {
+            Announcer.shared.announce("The restore point was not renamed. Reason: \(error.localizedDescription)", tone: .failure)
+        }
+        Task { await loadRestorePoints() }
     }
 
     private func deleteRestorePoint(_ point: RestorePoint) {
@@ -1082,14 +1167,21 @@ struct SettingsView: View {
         alert.addButton(withTitle: "Delete")
         guard alert.runModal() == .alertSecondButtonReturn,
               let dir = try? vmStore.vmDirectoryURL(for: saved) else { return }
-        if startedMeanwhile {
-            Announcer.shared.announce("\(saved.name) started while you were asked, so the restore point wasn't deleted. Shut it down first.", tone: .failure)
+        // While it runs (2026-11-05), QEMU deletes it: qemu-img can't touch a
+        // disk in use.
+        let session = MachineSessions.shared.session(for: saved.id)
+        if session != nil, session !== runningSession {
+            Announcer.shared.announce("\(saved.name) started while you were asked, so the restore point wasn't deleted. Choose Delete again.", tone: .failure)
             return
         }
         restorePointsBusy = true
         Task { @MainActor in
             do {
-                try await RestorePoints.delete(point, vmDirectory: dir)
+                if let session {
+                    try await session.manager.deleteRunningRestorePoint(point, runtimeDir: dir)
+                } else {
+                    try await RestorePoints.delete(point, vmDirectory: dir)
+                }
                 await loadRestorePoints()
                 Announcer.shared.announce("Restore point \(point.label) deleted.", tone: .success)
             } catch {
@@ -1912,4 +2004,22 @@ final class CategoryButtonCell: NSButtonCell {
     override func accessibilityLabel() -> String? { title }
     override func accessibilityValue() -> Any? { isChosen ? "selected" : "" }
     override func isAccessibilitySelected() -> Bool { isChosen }
+}
+
+extension RestorePoints {
+    /// The machine as it is now, saved just before going back to `point`
+    /// (2026-11-05), and marked so the oldest of these are tidied away. With
+    /// its memory if it's running.
+    @MainActor
+    static func keepBeforeRestore(to point: RestorePoint, configuration: VMConfiguration, vmDirectory dir: URL,
+                                  running manager: VMManager?) async throws -> RestorePoint {
+        let label = "Before going back to \(point.label), \(Date().formatted(date: .abbreviated, time: .shortened))"
+        let kept = if let manager {
+            try await manager.createRunningRestorePoint(label: label)
+        } else {
+            try await create(vmDirectory: dir, label: label, secureBoot: configuration.usesSecureBoot, diskBus: configuration.diskBus ?? "nvme")
+        }
+        markBeforeRestore(kept, vmDirectory: dir)
+        return kept
+    }
 }
