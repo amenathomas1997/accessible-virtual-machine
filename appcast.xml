@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.37</title>
+            <sparkle:version>57</sparkle:version>
+            <sparkle:shortVersionString>0.4.37</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>Restore points can be undone: before going back, AVM saves the machine as it is now, as Before going back to and the point&#x27;s name, so you can return. Untick the box in the question to skip it. AVM keeps the two newest of these.</li><li>Restore points work while a Windows or Linux machine runs: save one with open apps, delete one, or restore, which turns the machine off, puts it back and starts it again. Each restore point can also be renamed.</li><li>Fixed: with two machines whose names began alike, such as Ubuntu and Ubuntu backup, automatic backups could delete the other machine&#x27;s backups. Old backups now go to the Trash, and only a machine&#x27;s own.</li><li>The question about using a second keyboard for Windows, and Describe Screen&#x27;s question about Claude, no longer come up unheard while you&#x27;re in a machine. Return now chooses Not Now and Use the Mac Only.</li><li>A machine&#x27;s files can only be opened by your account on this Mac, also in a folder you chose. Before, other accounts could read them there.</li></ul>]]></description>
+            <pubDate>Fri, 06 Nov 2026 03:14:34 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.37/AVM-0.4.37.zip" sparkle:edSignature="qgwtjHn1C1B4rxN3MVs1s+zhQwffQOWhUdCoAfjmWhMOSQJSEd5ubNBXVrDzBq2AKluSz/75ISWD3VPCQiH8Aw==" length="106444875" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.36</title>
             <sparkle:version>56</sparkle:version>
             <sparkle:shortVersionString>0.4.36</sparkle:shortVersionString>
