@@ -48,8 +48,9 @@ final class WindowsApps {
     /// Keyboard removed again; 5: a file per request, launches waited for
     /// apart, the task started safely before sign-in; 6: launch requests
     /// only, one look at the windows a pass, the old helper gone before the
-    /// new one is compiled, 2026-10-30).
-    static let helperVersion = "6"
+    /// new one is compiled, 2026-10-30; 7: a list that can't be written goes
+    /// to running-stuck.txt with the reason, 2026-11-07).
+    static let helperVersion = "7"
     static let guestFolder = #"C:\ProgramData\AVM"#
 
     /// What a Mac app stands for: an app open in Windows, one kept in the
@@ -81,6 +82,8 @@ final class WindowsApps {
     private var installing: Set<UUID> = []
     private var timer: Timer?
     private var lastList: [UUID: String] = [:]
+    private var nextStuckRead: [UUID: Date] = [:]
+    private var stuckReason: [UUID: String] = [:]
     private var listWait: [UUID: TimeInterval] = [:]
     private var nextListRead: [UUID: Date] = [:]
     private var ticking = false
@@ -150,10 +153,30 @@ final class WindowsApps {
                 // minute (2026-11-02). Every 3 s while the list moves, easing
                 // to every 12 s while it doesn't.
                 if let next = nextListRead[id], Date() < next { continue }
-                guard let list = try? await Self.readGuestFile(manager, Self.guestFolder + #"\apps\running.txt"#) else { continue }
+                guard var list = try? await Self.readGuestFile(manager, Self.guestFolder + #"\apps\running.txt"#) else { continue }
                 listWait[id] = list == lastList[id] ? min((listWait[id] ?? 3) * 2, 12) : 3
                 lastList[id] = list
                 nextListRead[id] = Date().addingTimeInterval((listWait[id] ?? 3) - 0.5)
+                // A list standing still may be one the helper can't write
+                // (2026-11-07: a file handle AVM left open through the agent
+                // kept Windows from replacing it for seven hours). Helper 7
+                // then writes running-stuck.txt, the reason first; that list
+                // is used, and read once a minute while the other stands.
+                if listWait[id] == 12, Date() >= (nextStuckRead[id] ?? .distantPast) {
+                    nextStuckRead[id] = Date().addingTimeInterval(60)
+                    if let stuck = try? await Self.readGuestFile(manager, Self.guestFolder + #"\apps\running-stuck.txt"#),
+                       stuck.hasPrefix("# ") {
+                        let why = stuck.split(separator: "\n", maxSplits: 1).first.map { String($0.dropFirst(2)) } ?? ""
+                        if why != stuckReason[id] {
+                            stuckReason[id] = why
+                            AVMLog.write("Windows apps: \(session.configuration.name) can't update its list of open apps (\(why)); using the copy its helper put beside it", category: "WindowsApps")
+                        }
+                        list = stuck
+                    } else if stuckReason[id] != nil {
+                        stuckReason[id] = nil
+                        AVMLog.write("Windows apps: \(session.configuration.name) updates its list of open apps again", category: "WindowsApps")
+                    }
+                }
                 await sync(machine: id, machineName: session.configuration.name, list: list)
             }
         }
@@ -758,11 +781,15 @@ final class WindowsApps {
     /// and own it, so a standard user who made AVM's first could swap what
     /// SYSTEM then ran from it, or plant a DLL beside the helper. Applied to
     /// everything inside too, before the one folder Users may write to.
+    /// That folder's own files get their write access back (2026-11-07):
+    /// the reset reached them too and took it, and an existing running.txt
+    /// could no longer be replaced, so the Command-Tab list stood still.
     static let lockDownScript = #"""
         $avm = 'C:\ProgramData\AVM'
         New-Item -ItemType Directory -Force $avm | Out-Null
         icacls $avm /setowner '*S-1-5-18' /t /c /q | Out-Null
         icacls $avm /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' /t /c /q | Out-Null
+        if (Test-Path "$avm\apps") { icacls "$avm\apps" /grant '*S-1-5-32-545:(OI)(CI)M' /t /c /q | Out-Null }
         """#
 
     private static let prepareScript = lockDownScript + #"""
@@ -806,18 +833,18 @@ final class WindowsApps {
     // MARK: Files in Windows, through the agent
 
     nonisolated static func readGuestFile(_ manager: VMManager, _ path: String) async throws -> String? {
-        guard let handle = try await manager.agentCall(["execute": "guest-file-open", "arguments": ["path": path, "mode": "rb"]]) as? Int else { return nil }
+        guard let handle = try await manager.openGuestFile(path, mode: "rb") else { return nil }
         let read = try? await manager.agentCall(["execute": "guest-file-read", "arguments": ["handle": handle, "count": 262_144]]) as? [String: Any]
-        _ = try? await manager.agentCall(["execute": "guest-file-close", "arguments": ["handle": handle]])
+        try? await manager.closeGuestFile(handle)
         guard let base64 = read?["buf-b64"] as? String, let data = Data(base64Encoded: base64) else { return nil }
         return String(decoding: data, as: UTF8.self)
     }
 
     nonisolated static func writeGuestFile(_ manager: VMManager, _ path: String, _ text: String) async throws {
-        guard let handle = try await manager.agentCall(["execute": "guest-file-open", "arguments": ["path": path, "mode": "wb"]]) as? Int else {
+        guard let handle = try await manager.openGuestFile(path, mode: "wb") else {
             throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "Windows couldn't make \(path)"])
         }
         _ = try await manager.agentCall(["execute": "guest-file-write", "arguments": ["handle": handle, "buf-b64": Data(text.utf8).base64EncodedString()]])
-        _ = try await manager.agentCall(["execute": "guest-file-close", "arguments": ["handle": handle]])
+        try await manager.closeGuestFile(handle)
     }
 }

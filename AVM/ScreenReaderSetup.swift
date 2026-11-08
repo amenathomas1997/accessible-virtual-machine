@@ -28,7 +28,7 @@ extension VMManager {
 
     /// A file from the guest onto the Mac, through its agent, up to `limit`.
     func copyFromGuest(_ path: String, to file: URL, limit: Int) async throws {
-        guard let handle = try await agentCall(["execute": "guest-file-open", "arguments": ["path": path, "mode": "rb"]]) as? Int else {
+        guard let handle = try await openGuestFile(path, mode: "rb") else {
             throw AVMError.qmpCommandFailed("couldn't open \(path)")
         }
         var data = Data()
@@ -40,10 +40,10 @@ extension VMManager {
                 if reply?["eof"] as? Bool == true || reply == nil { break }
             }
         } catch {
-            _ = try? await agentCall(["execute": "guest-file-close", "arguments": ["handle": handle]])
+            try? await closeGuestFile(handle)
             throw error
         }
-        _ = try await agentCall(["execute": "guest-file-close", "arguments": ["handle": handle]])
+        try await closeGuestFile(handle)
         try data.write(to: file, options: .atomic)
     }
 

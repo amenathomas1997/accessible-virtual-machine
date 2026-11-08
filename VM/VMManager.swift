@@ -484,6 +484,10 @@ final class VMManager: ObservableObject {
     /// QEMU's pid while it runs, for the helper to check it's the one
     /// listening on a machine's socket (2026-10-28); 0 when there's none.
     var qemuPID: Int { Int(qemuProcess?.processIdentifier ?? 0) }
+
+    /// Guest file handles a close didn't confirm; see openGuestFile.
+    var leakedGuestHandles: Set<Int> = []
+    var leakedGuestHandlesPID = 0
     /// When this machine last started, for the health check's fault reports.
     var startedAt: Date?
     private var qemuStdErrPipe: Pipe?
@@ -1955,7 +1959,7 @@ final class VMManager: ObservableObject {
     func copyToGuest(_ file: URL, to target: String) async throws {
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
-        guard let guestHandle = try await agentCall(["execute": "guest-file-open", "arguments": ["path": target, "mode": "wb"]]) as? Int else {
+        guard let guestHandle = try await openGuestFile(target, mode: "wb") else {
             throw AVMError.qmpCommandFailed("couldn't make \(target)")
         }
         do {
@@ -1963,10 +1967,10 @@ final class VMManager: ObservableObject {
                 _ = try await agentCall(["execute": "guest-file-write", "arguments": ["handle": guestHandle, "buf-b64": data.base64EncodedString()]])
             }
         } catch {
-            _ = try? await agentCall(["execute": "guest-file-close", "arguments": ["handle": guestHandle]])
+            try? await closeGuestFile(guestHandle)
             throw error
         }
-        _ = try await agentCall(["execute": "guest-file-close", "arguments": ["handle": guestHandle]])
+        try await closeGuestFile(guestHandle)
     }
 
     // MARK: - Install Watchdog
@@ -4904,6 +4908,37 @@ extension VMManager {
         return false
     }
 
+    // MARK: Files in the guest
+
+    /// Handles the agent opened that a close didn't confirm (2026-11-07).
+    /// The Windows agent opens a file sharing reads only, so one left open
+    /// (a close lost to a timeout was ignored) kept Windows from replacing
+    /// apps\running.txt: the Command-Tab list froze at noon while launches,
+    /// new files each, still worked. Closed again before the next open;
+    /// forgotten with QEMU's process, which took them with it.
+    /// Opens a file in the guest; its handle, or nil when the agent gave none.
+    func openGuestFile(_ path: String, mode: String) async throws -> Int? {
+        if leakedGuestHandlesPID != qemuPID { leakedGuestHandles = []; leakedGuestHandlesPID = qemuPID }
+        for handle in leakedGuestHandles { try? await closeGuestFile(handle) }
+        return try await agentCall(["execute": "guest-file-open", "arguments": ["path": path, "mode": mode]]) as? Int
+    }
+
+    /// Closes a guest file. A close that fails is remembered and tried again
+    /// before the next open; one the agent no longer knows is forgotten.
+    func closeGuestFile(_ handle: Int) async throws {
+        do {
+            try await closeGuestFile(handle)
+            leakedGuestHandles.remove(handle)
+        } catch AVMError.qmpCommandFailed(let why) where why.contains("has not been found") {
+            leakedGuestHandles.remove(handle)
+        } catch {
+            if leakedGuestHandles.insert(handle).inserted {
+                AVMLog.write("GuestAgent — \(machineName) didn't confirm closing file handle \(handle): \(error.localizedDescription); closing it again before the next file")
+            }
+            throw error
+        }
+    }
+
     /// One guest-agent command; its "return", or throws its error.
     func agentCall(_ command: [String: Any], timeout: TimeInterval = 10) async throws -> Any? {
         guard let path = guestAgentSocketPath else { throw AVMError.qmpCommandFailed("no guest agent") }
@@ -4963,11 +4998,11 @@ extension VMManager {
 
     private func agentWrite(_ file: URL, to guestPath: String) async throws {
         let data = try Data(contentsOf: file)
-        guard let handle = try await agentCall(["execute": "guest-file-open", "arguments": ["path": guestPath, "mode": "wb"]]) as? Int else {
+        guard let handle = try await openGuestFile(guestPath, mode: "wb") else {
             throw AVMError.qmpCommandFailed("the guest couldn't make \(guestPath)")
         }
         _ = try await agentCall(["execute": "guest-file-write", "arguments": ["handle": handle, "buf-b64": data.base64EncodedString()]], timeout: 30)
-        _ = try await agentCall(["execute": "guest-file-close", "arguments": ["handle": handle]])
+        try await closeGuestFile(handle)
     }
 
     private func prepareForVirtioDisk(configuration: VMConfiguration) async {
@@ -5109,7 +5144,7 @@ extension VMManager {
 
             let handle = try FileHandle(forReadingFrom: file)
             defer { try? handle.close() }
-            guard let guestHandle = try await agentCall(["execute": "guest-file-open", "arguments": ["path": target, "mode": "wb"]]) as? Int else {
+            guard let guestHandle = try await openGuestFile(target, mode: "wb") else {
                 throw AVMError.qmpCommandFailed("\(machine) couldn't make the file")
             }
             var sent: Int64 = 0
@@ -5125,9 +5160,9 @@ extension VMManager {
                         if !Announcer.isHoldingRoutineLines { Announcer.shared.announce("Sending \(name), \(tenth * 10) percent.", tone: .info) }
                     }
                 }
-                _ = try await agentCall(["execute": "guest-file-close", "arguments": ["handle": guestHandle]])
+                try await closeGuestFile(guestHandle)
             } catch {
-                _ = try? await agentCall(["execute": "guest-file-close", "arguments": ["handle": guestHandle]])
+                try? await closeGuestFile(guestHandle)
                 throw error
             }
             if let owner {
@@ -5162,12 +5197,12 @@ extension VMManager {
     private func guestFileExists(_ path: String, windows: Bool) async throws -> Bool {
         let opened: Any?
         do {
-            opened = try await agentCall(["execute": "guest-file-open", "arguments": ["path": path, "mode": "r"]])
+            opened = try await openGuestFile(path, mode: "r")
         } catch AVMError.qmpCommandFailed(_) {
             return false
         }
         guard let handle = opened as? Int else { return false }
-        _ = try? await agentCall(["execute": "guest-file-close", "arguments": ["handle": handle]])
+        try? await closeGuestFile(handle)
         return true
     }
 }

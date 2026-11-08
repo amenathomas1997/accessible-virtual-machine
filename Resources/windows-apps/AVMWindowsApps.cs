@@ -38,6 +38,12 @@ static class AVMWindowsApps
 {
     static readonly string Folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), @"AVM\apps");
     static readonly string RunningFile = Path.Combine(Folder, "running.txt");
+    /// The list when running.txt can't be replaced (2026-11-07: AVM had
+    /// left it open through the guest agent, which shares reads only, and
+    /// the list stood still for hours while the failure was swallowed
+    /// here). Its first line is "# " and the reason; AVM reads it when
+    /// running.txt stands still, and it goes once running.txt is written.
+    static readonly string StuckFile = Path.Combine(Folder, "running-stuck.txt");
 
     sealed class Pending { public string Id, Key; public DateTime Until; }
     /// Apps started for a launch, whose window hasn't opened yet.
@@ -51,7 +57,7 @@ static class AVMWindowsApps
         {
             if (!first) return;
             Directory.CreateDirectory(Folder);
-            string last = null;
+            string last = null, lastStuck = null;
             int ticks = 0;
             while (true)
             {
@@ -70,12 +76,24 @@ static class AVMWindowsApps
                 if (ticks % 240 == 0) { try { DeleteOldReplies(); } catch { } }
                 if (ticks++ % 4 == 0)
                 {
+                    string now = null;
                     try
                     {
-                        string now = RunningList();
-                        if (now != last) { Write(RunningFile, now); last = now; }
+                        now = RunningList();
+                        if (now != last)
+                        {
+                            Write(RunningFile, now);
+                            last = now;
+                            if (lastStuck != null) { lastStuck = null; try { File.Delete(StuckFile); } catch { } }
+                        }
                     }
-                    catch { }
+                    catch (Exception e)
+                    {
+                        // Tried again next pass; meanwhile the list and the
+                        // reason go where AVM looks when the list stands still.
+                        string stuck = now == null ? null : "# " + e.Message.Replace('\n', ' ').Replace('\r', ' ') + "\n" + now;
+                        if (stuck != null && stuck != lastStuck) { try { Write(StuckFile, stuck); lastStuck = stuck; } catch { } }
+                    }
                 }
                 Thread.Sleep(250);
             }
