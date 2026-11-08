@@ -222,6 +222,10 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.39", changes: [
+            "Fixed: the Windows apps in Command-Tab could stop changing, so apps you opened or closed in Windows were not added or removed, while opening one from Command-Tab still worked. A file AVM had left open in Windows was keeping its helper from updating the list; AVM now closes it, and the helper tells AVM when it can't update the list so AVM can use the latest one anyway. Every Windows machine gets the new helper when it next starts.",
+            "Fixed: applying a saved screen reader setup, or reinstalling the Command-Tab helper, could leave that list unable to update for the same reason.",
+        ]),
         ReleaseNote(version: "0.4.38", changes: [
             "AVM no longer keeps a machine in a folder iCloud syncs, and won't start a machine whose disk iCloud has moved off your Mac: before, that could reinstall Windows over it. If a drive is disconnected while a machine runs, the machine pauses and AVM says so; a new Check the Disk button in Settings, Startup and Recovery, checks a machine's disk and offers to repair it.",
             "A drive that connects under a different name, such as its name and a 1, is found again. A second drive left half-made keeps its real size, and Windows finds it. If AVM can't read your list of machines, Help, Restore the Machine List from a Copy puts back the copy it kept.",
