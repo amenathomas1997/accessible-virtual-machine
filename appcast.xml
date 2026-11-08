@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.39</title>
+            <sparkle:version>59</sparkle:version>
+            <sparkle:shortVersionString>0.4.39</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>Fixed: the Windows apps in Command-Tab could stop changing, so apps you opened or closed in Windows were not added or removed, while opening one from Command-Tab still worked. A file AVM had left open in Windows was keeping its helper from updating the list; AVM now closes it, and the helper tells AVM when it can&#x27;t update the list so AVM can use the latest one anyway. Every Windows machine gets the new helper when it next starts.</li><li>Fixed: applying a saved screen reader setup, or reinstalling the Command-Tab helper, could leave that list unable to update for the same reason.</li></ul>]]></description>
+            <pubDate>Sun, 08 Nov 2026 02:03:41 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.39/AVM-0.4.39.zip" sparkle:edSignature="2w9lfa20FDW1rMu5rxzYL6JrSh/JB+v1ag5G9kfqlLBZOuwfK2DyEXw0EC8qvz6glSsWtwIetFBqTqMw3/ciDg==" length="106489746" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.38</title>
             <sparkle:version>58</sparkle:version>
             <sparkle:shortVersionString>0.4.38</sparkle:shortVersionString>
