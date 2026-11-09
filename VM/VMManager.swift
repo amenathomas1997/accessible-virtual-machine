@@ -4927,7 +4927,11 @@ extension VMManager {
     /// before the next open; one the agent no longer knows is forgotten.
     func closeGuestFile(_ handle: Int) async throws {
         do {
-            try await closeGuestFile(handle)
+            // The agent's own close, by name: 0.4.39 shipped this line as a
+            // call to this method itself, and the first close after Windows
+            // came up recursed without end, each frame on the heap, until
+            // AVM held gigabytes and had to be force-quit (2026-11-08).
+            _ = try await agentCall(["execute": "guest-file-close", "arguments": ["handle": handle]])
             leakedGuestHandles.remove(handle)
         } catch AVMError.qmpCommandFailed(let why) where why.contains("has not been found") {
             leakedGuestHandles.remove(handle)
