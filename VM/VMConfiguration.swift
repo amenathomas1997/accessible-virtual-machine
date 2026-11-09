@@ -261,7 +261,7 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
     var secondDriveGB: Int?
     /// true until the guest has made the second drive ready to use.
     var secondDriveNeedsFormat: Bool?
-    static let secondDriveFileName = "drive2.qcow2"
+    nonisolated static let secondDriveFileName = "drive2.qcow2"
 
     // MARK: - Templates (2026-10-27)
 
@@ -387,6 +387,24 @@ extension VMConfiguration {
     }
 
     var isStoredElsewhere: Bool { storageFolderPath != nil }
+
+    /// Where the disk is now, for everything outside startVM (2026-11-09,
+    /// fifth audit #12). startVM repairs a path left dead by a drive mounted
+    /// under a new name, but a Restore before that Start worked on the dead
+    /// path, kept the saved state, and the next Start loaded the old session
+    /// over the point just put back.
+    var resolvedDiskImagePath: String {
+        guard isStoredElsewhere, let folder = try? directoryURL() else { return diskImagePath }
+        return Self.resolvedDiskPath(diskImagePath, inFolder: folder)
+    }
+
+    /// `path`, or the file of that name in `folder` when `path` is gone and
+    /// the folder has it. No actor: StorageWatch calls it off the main thread.
+    nonisolated static func resolvedDiskPath(_ path: String, inFolder folder: URL) -> String {
+        guard !path.isEmpty, !FileManager.default.fileExists(atPath: path) else { return path }
+        let moved = folder.appendingPathComponent(URL(fileURLWithPath: path).lastPathComponent)
+        return FileManager.default.fileExists(atPath: moved.path) ? moved.path : path
+    }
 
     /// Only this account can open a machine's folder (2026-11-05 audit). In a
     /// folder the user chose, it was 0755 with the disk and firmware settings

@@ -1167,6 +1167,8 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
     /// folder and keyboard, not the current machine's.
     private let machineID: UUID?
     private weak var manager: VMManager?
+    /// Set on the main thread before connect; read by spiceConnected.
+    private var shareForConnection: (path: String, readOnly: Bool)?
 
     init(focusLock: FocusLockManager, machineID: UUID? = nil, manager: VMManager? = nil) {
         self.focusLock = focusLock
@@ -1296,6 +1298,15 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         // SPICE worker until the VM restarted.
         conn.audioEnabled = false
         self.connection = conn
+
+        // What spiceConnected shares (2026-11-09, fourth audit #11).
+        let id = machineID ?? VMSession.current?.configuration.id
+        let saved = id.flatMap { id in VMStore.shared?.configurations.first { $0.id == id } }
+        if let folder = saved?.sharedFolderURL {
+            shareForConnection = (folder.path, saved?.sharedFolderIsReadOnly ?? false)
+        } else {
+            shareForConnection = (Self.emptyShare.path, true)
+        }
 
         guard conn.connect() else {
             avmPublicLog("CSConnection.connect() returned false for socket: \(socketPath)")
@@ -2170,10 +2181,12 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         connection.session.pasteboardDelegate = AVMPasteboard.shared
         // Shared folder (2026-10-26). Always set: CocoaSpice's own default
         // is ~/Documents/Public, read and write.
-        let id = machineID ?? VMSession.current?.configuration.id
-        let saved = id.flatMap { id in VMStore.shared?.configurations.first { $0.id == id } }
-        if let folder = saved?.sharedFolderURL {
-            connection.session.setSharedDirectory(folder.path, readOnly: saved?.sharedFolderIsReadOnly ?? false)
+        // Read on the main thread before connecting (2026-11-09, fourth audit
+        // #11): this runs on SPICE's thread, while the main thread may be
+        // changing the machine list. Not fetched from here with a hop, as
+        // CocoaSpice's default share would be open in the gap.
+        if let share = shareForConnection {
+            connection.session.setSharedDirectory(share.path, readOnly: share.readOnly)
         } else {
             connection.session.setSharedDirectory(Self.emptyShare.path, readOnly: true)
         }
@@ -2240,13 +2253,14 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         // for a future where guest tools exist. Same context rule as the
         // transfer: read AppKit bounds on the Apple main thread, then run
         // requestResolution on CocoaSpice's GLib main context.
-        if primaryDisplay === display {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, let mtkView = self.mtkView, mtkView.bounds.size != .zero else { return }
-                let size = mtkView.bounds.size
-                CSMain.shared.async {
-                    display.requestResolution(CGRect(origin: .zero, size: size))
-                }
+        // The slot is read on the main thread too, after the win queued
+        // above (2026-11-09, fourth audit #11).
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.primaryDisplay === display,
+                  let mtkView = self.mtkView, mtkView.bounds.size != .zero else { return }
+            let size = mtkView.bounds.size
+            CSMain.shared.async {
+                display.requestResolution(CGRect(origin: .zero, size: size))
             }
         }
     }
@@ -2267,32 +2281,35 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         // A non-holder display's destroy is a NORMAL event now (the impostor
         // head dies at every generation teardown); it is logged as lifecycle
         // evidence, not flagged as an anomaly.
-        if primaryDisplay === display {
-            // UNLOCK-FREEZE FIX (same rule as disconnect()): removeRenderer is a
-            // CocoaSpice display op — run it on the SPICE context, with a strong
-            // capture so the renderer outlives the field nil-out below. Safe even
-            // if this callback already arrives on the SPICE context (async onto
-            // the current context just runs the block there).
-            if let rendererToDetach = renderer {
-                CSMain.shared.async {
-                    display.removeRenderer(rendererToDetach)
+        //
+        // Decided on the main thread (2026-11-09, fourth audit #11): the slot
+        // is written there, so a display that won it and died before the
+        // queued win ran was checked against the old holder, "slot untouched",
+        // and the win then installed a dead head: a black window until the
+        // next geometry event. This block runs after that win, in queue order.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if self.primaryDisplay === display {
+                // UNLOCK-FREEZE FIX (same rule as disconnect()): removeRenderer is a
+                // CocoaSpice display op — run it on the SPICE context, with a strong
+                // capture so the renderer outlives the field nil-out.
+                if let rendererToDetach = self.renderer {
+                    CSMain.shared.async {
+                        display.removeRenderer(rendererToDetach)
+                    }
                 }
-            }
-            // Cleared on the main thread, where it's read (2026-11-05, second audit).
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.primaryDisplay === display else { return }
                 self.primaryDisplay = nil
                 self.manager?.gpuScreenshot = nil
-            }
-            avmPublicLog("display destroyed — monitor \(display.monitorID) was the slot holder; renderer detach queued, slot cleared.")
-        } else {
-            let holderDescription: String
-            if let holder = primaryDisplay {
-                holderDescription = "monitor \(holder.monitorID)"
+                avmPublicLog("display destroyed — monitor \(display.monitorID) was the slot holder; renderer detach queued, slot cleared.")
             } else {
-                holderDescription = "nil (slot already clear)"
+                let holderDescription: String
+                if let holder = self.primaryDisplay {
+                    holderDescription = "monitor \(holder.monitorID)"
+                } else {
+                    holderDescription = "nil (slot already clear)"
+                }
+                avmPublicLog("display destroyed — monitor \(display.monitorID) was NOT the slot holder (holder: \(holderDescription)); slot untouched.")
             }
-            avmPublicLog("display destroyed — monitor \(display.monitorID) was NOT the slot holder (holder: \(holderDescription)); slot untouched.")
         }
     }
 

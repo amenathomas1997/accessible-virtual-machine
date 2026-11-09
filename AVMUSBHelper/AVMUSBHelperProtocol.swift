@@ -37,7 +37,7 @@ nonisolated public enum AVMUSBHelperNames {
     /// AVM asks one that answers with another version to exit first.
     /// Its libraries count too (0.4.7, 2026-10-29: usbredirhost sending
     /// long interrupt OUT transfers, Tools/sysroot-patches).
-    public static let helperBuildVersion = "0.4.7"
+    public static let helperBuildVersion = "0.4.41"
 
     /// The bundle identifier of the app that is allowed to talk to the helper.
     public static let clientBundleIdentifier = "com.fullcircleat.AVM"

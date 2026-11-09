@@ -8,6 +8,7 @@
 
 import XCTest
 import Foundation
+import CryptoKit
 @testable import AVMLogic
 
 // MARK: - Ubuntu password hashing
@@ -1030,12 +1031,34 @@ final class MachineArchiveTests: XCTestCase {
         return (config, dir)
     }
 
-    func testExportRefusesWindowsStillInSetup() throws {
+    /// The tests have no bundled mdir, and the sample image isn't a FAT disk,
+    /// so this proves the safe side only: media AVM can't read counts as
+    /// still holding the password (2026-11-09, fourth audit #34). The name
+    /// used to claim more. An image whose answer file really is gone needs
+    /// the app's mdir, and only a live export covers that.
+    func testExportRefusesWindowsWhoseMediaCantBeRead() throws {
         var (config, dir) = try installedWindows()
+        XCTAssertTrue(MachineArchive.answerFileOnMedia(dir.appendingPathComponent("autounattend.img")))
+        XCTAssertTrue(MachineArchive.answerFileOnMedia(root.appendingPathComponent("no-such.img")))
+        XCTAssertNil(MachineArchive.exportProblem(for: config, vmDirectory: dir), "the marker says setup finished")
         config.installMarkerSeen = nil
         let problem = MachineArchive.exportProblem(for: config, vmDirectory: dir)
         XCTAssertNotNil(problem)
         XCTAssertTrue(problem?.contains("still being set up") == true, problem ?? "")
+    }
+
+    func testBackupPruningOnlyMatchesThisMachinesPackages() throws {
+        let mine = UUID(), other = UUID()
+        func package(_ name: String, _ body: String) throws -> URL {
+            let url = try folder("backups-\(name)")
+            try Data(body.utf8).write(to: url.appendingPathComponent(MachineArchive.manifestName))
+            return url
+        }
+        XCTAssertEqual(MachineArchive.packageMachineID(try package("mine", #"{"configuration":{"id":"\#(mine.uuidString)"}}"#)), mine)
+        XCTAssertEqual(MachineArchive.packageMachineID(try package("other", #"{"configuration":{"id":"\#(other.uuidString)"}}"#)), other)
+        XCTAssertNil(MachineArchive.packageMachineID(try package("broken", "not json")))
+        XCTAssertNil(MachineArchive.packageMachineID(try package("noid", #"{"configuration":{}}"#)))
+        XCTAssertNil(MachineArchive.packageMachineID(root.appendingPathComponent("no-such-package")))
     }
 
     private func export(_ config: VMConfiguration, from dir: URL, includeRestorePoints: Bool = true) throws -> URL {
@@ -1076,6 +1099,9 @@ final class MachineArchiveTests: XCTestCase {
         let manifest = try MachineArchive.readPackage(package)
         XCTAssertNil(manifest.configuration.storageFolderPath)
         XCTAssertEqual(manifest.configuration.diskImagePath, "disk.qcow2")
+        // Automatic backups prune old packages by this id, so one machine's
+        // never go to the Trash for another's (2026-11-09, fourth audit #34).
+        XCTAssertEqual(manifest.configuration.id, original.id)
         let container = try folder("VMs")
         let id = UUID()
         let newFolder = try MachineArchive.copyIn(plan: try MachineArchive.importPlan(package: package), from: package,
@@ -1244,11 +1270,44 @@ final class MachineArchiveTests: XCTestCase {
         XCTAssertEqual(manifest.configuration.name, "Work PC")
     }
 
-    func testSpaceNeededAndNames() throws {
-        let (config, dir) = try installedWindows()
+    /// A clone needs a fixed allowance however big the disk is. The disk
+    /// is far over that allowance here: with 64 MB it passed by the few
+    /// dozen bytes of the small files (2026-11-09, fourth audit #34).
+    func testSameAPFSVolumeNeedsOnlyTheCloneAllowance() throws {
+        guard MachineFileCopier.fileSystemName(root) == "apfs" else {
+            throw XCTSkip("the temporary folder isn't on APFS")
+        }
+        let (_, dir) = try installedWindows()
+        try writeSparse(dir.appendingPathComponent("disk.qcow2"), size: 1 << 30, marker: "QFI")
         let plan = try MachineArchive.exportPlan(vmDirectory: dir, isMac: false, includeRestorePoints: true)
-        XCTAssertLessThan(MachineFileCopier.bytesNeeded(plan, from: dir, to: root), plan.logicalBytes,
-                          "on the same APFS volume the copy is a clone")
+        XCTAssertGreaterThanOrEqual(plan.logicalBytes, 1 << 30)
+        XCTAssertEqual(MachineFileCopier.bytesNeeded(plan, from: dir, to: root), 64 * 1_048_576)
+    }
+
+    /// No sparse files on HFS+ or exFAT, so the check before a backup must
+    /// ask for the full length: asking for less filled the drive. Runs on
+    /// real, unbrowsed disk images, where the opt-in test above needs a
+    /// volume set up by hand (2026-11-09, fourth audit #34).
+    func testDriveWithoutSparseFilesNeedsTheFullLength() throws {
+        let (_, dir) = try installedWindows()
+        let plan = try MachineArchive.exportPlan(vmDirectory: dir, isMac: false, includeRestorePoints: true)
+        XCTAssertLessThan(plan.allocatedBytes, plan.logicalBytes, "the sample disk must be sparse, or this proves nothing")
+
+        // Any other file system takes the same branch; /dev needs no image.
+        XCTAssertEqual(MachineFileCopier.fileSystemName(URL(fileURLWithPath: "/dev")), "devfs")
+        XCTAssertEqual(MachineFileCopier.bytesNeeded(plan, from: dir, to: URL(fileURLWithPath: "/dev")), plan.logicalBytes)
+
+        for (format, name) in [("HFS+", "hfs"), ("ExFAT", "exfat")] {
+            let image = try MountedTestImage(format: format, in: root)
+            defer { image.detach() }
+            XCTAssertEqual(MachineFileCopier.fileSystemName(image.mountPoint), name)
+            XCTAssertFalse(MachineFileCopier.sameVolume(dir, image.mountPoint))
+            XCTAssertEqual(MachineFileCopier.bytesNeeded(plan, from: dir, to: image.mountPoint), plan.logicalBytes, name)
+        }
+    }
+
+    func testSpaceNeededAndNames() throws {
+        let (config, _) = try installedWindows()
         XCTAssertEqual(MachineArchive.uniqueName("Work PC", existing: ["work pc", "Work PC 2"]), "Work PC 3")
         XCTAssertEqual(MachineArchive.uniqueName("Work PC", existing: []), "Work PC")
         var odd = config; odd.name = "../a/b:c"
@@ -2401,6 +2460,9 @@ final class OpenSUSEInstallTests: XCTestCase {
             now += 16
             return watch.look(agentAnswered: answered, screenChanged: changed, now: now)
         }
+        // No agent yet: a still screen says nothing, however long.
+        for _ in 0..<20 { XCTAssertEqual(look(), .none) }
+        XCTAssertEqual(look(true), .none)
         for _ in 0..<6 { XCTAssertEqual(look(), .none) }
         XCTAssertEqual(look(), .stuck)
         XCTAssertEqual(look(), .none)
@@ -2516,5 +2578,220 @@ final class OpenSUSEInstallTests: XCTestCase {
         // Nobody signed in on Linux: no complaints about what needs a session.
         let locked = MachineCheckResult(agentAnswered: true, output: "signedin=0\nreader=\nsound=1\nsounddevice=0\nclipboard=0\nsharedfolder=1\n", windows: false, soundLevels: nil)
         XCTAssertEqual(locked.problems.map(\.what), ["nobody is signed in"])
+    }
+}
+
+// MARK: - A machine's folder, and deleting it (2026-11-09, fourth audit #34)
+
+/// A blank disk image attached without appearing in Finder, for what depends
+/// on a real file system or a real volume UUID. Skips the test when hdiutil
+/// can't do it, as on a CI runner that refuses disk images.
+struct MountedTestImage {
+    let mountPoint: URL
+
+    private static func hdiutil(_ arguments: [String]) throws -> Data {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        process.arguments = arguments
+        let out = Pipe()
+        process.standardOutput = out
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw XCTSkip("hdiutil \(arguments[0]) failed with status \(process.terminationStatus)")
+        }
+        return data
+    }
+
+    init(format: String, in folder: URL) throws {
+        // Short and unique: exFAT labels are small, and copies of these
+        // tests may run side by side.
+        let label = "AVM" + UUID().uuidString.prefix(6)
+        let path = folder.appendingPathComponent("\(label).sparseimage").path
+        _ = try Self.hdiutil(["create", "-quiet", "-size", "64m", "-fs", format, "-volname", label, "-type", "SPARSE", path])
+        let answer = try Self.hdiutil(["attach", "-nobrowse", "-noverify", "-noautoopen", "-plist", path])
+        let list = try PropertyListSerialization.propertyList(from: answer, format: nil) as? [String: Any]
+        let entities = list?["system-entities"] as? [[String: Any]] ?? []
+        guard let mount = entities.compactMap({ $0["mount-point"] as? String }).first else {
+            throw XCTSkip("hdiutil attached \(label) but gave no mount point")
+        }
+        mountPoint = URL(fileURLWithPath: mount, isDirectory: true)
+    }
+
+    func detach() {
+        _ = try? Self.hdiutil(["detach", "-force", mountPoint.path])
+    }
+}
+
+/// A machine on a drive that came back under another name must still be
+/// found, and one whose drive is gone must be refused, never treated as empty.
+final class StorageLocationTests: XCTestCase {
+    private var root: URL!
+    private let fm = FileManager.default
+
+    override func setUpWithError() throws {
+        root = fm.temporaryDirectory.appendingPathComponent("avm-storage-\(UUID().uuidString)")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? fm.removeItem(at: root)
+    }
+
+    func testPathIsLeftAloneWhenThereIsNothingToResolve() {
+        let gone = "/Volumes/AVM-gone-\(UUID().uuidString)/Machines/PC"
+        XCTAssertEqual(VMConfiguration.resolvedStoragePath(root.path, volumeUUID: "ANY"), root.path, "found where it was saved")
+        XCTAssertEqual(VMConfiguration.resolvedStoragePath(gone, volumeUUID: nil), gone, "no UUID to look for")
+        XCTAssertEqual(VMConfiguration.resolvedStoragePath(gone, volumeUUID: UUID().uuidString), gone, "no volume has it")
+        let notADrive = root.appendingPathComponent("missing").path
+        XCTAssertEqual(VMConfiguration.resolvedStoragePath(notADrive, volumeUUID: "ANY"), notADrive, "only /Volumes paths move")
+    }
+
+    func testStorageIsMissingWithoutAMatchingDrive() throws {
+        XCTAssertFalse(VMConfiguration(name: "Here", diskImagePath: "").storageIsMissing, "the default folder is never a missing drive")
+        XCTAssertFalse(VMConfiguration(name: "There", diskImagePath: "", storageFolderPath: root.path).storageIsMissing)
+        let file = root.appendingPathComponent("a-file")
+        try Data("x".utf8).write(to: file)
+        XCTAssertTrue(VMConfiguration(name: "File", diskImagePath: "", storageFolderPath: file.path).storageIsMissing, "a file isn't the folder")
+        var gone = VMConfiguration(name: "Gone", diskImagePath: "", storageFolderPath: "/Volumes/AVM-gone-\(UUID().uuidString)/PC")
+        XCTAssertTrue(gone.storageIsMissing)
+        gone.storageVolumeUUID = UUID().uuidString
+        XCTAssertTrue(gone.storageIsMissing)
+    }
+
+    /// The drive is mounted, but not at the name that was saved: what macOS
+    /// does with "Backup 1" when "Backup" is taken.
+    func testDriveMountedUnderAnotherNameIsFoundByUUID() throws {
+        let image = try MountedTestImage(format: "HFS+", in: root)
+        defer { image.detach() }
+        guard let uuid = VMConfiguration.volumeUUID(of: image.mountPoint) else {
+            throw XCTSkip("the disk image has no volume UUID")
+        }
+        let onDrive = image.mountPoint.appendingPathComponent("Machines/Work PC", isDirectory: true)
+        try fm.createDirectory(at: onDrive, withIntermediateDirectories: true)
+        let saved = "/Volumes/AVM-gone-\(UUID().uuidString)/Machines/Work PC"
+
+        XCTAssertEqual(VMConfiguration.resolvedStoragePath(saved, volumeUUID: uuid), onDrive.path)
+        var config = VMConfiguration(name: "Work PC", diskImagePath: "", storageFolderPath: saved)
+        XCTAssertTrue(config.storageIsMissing, "without the UUID it can't be found")
+        config.storageVolumeUUID = uuid
+        XCTAssertFalse(config.storageIsMissing)
+        XCTAssertEqual(try config.directoryURL().path, onDrive.path)
+
+        let elsewhere = "/Volumes/AVM-gone-\(UUID().uuidString)/Machines/Another"
+        XCTAssertEqual(VMConfiguration.resolvedStoragePath(elsewhere, volumeUUID: uuid), elsewhere, "right drive, but that folder isn't on it")
+    }
+}
+
+/// Permanent delete is the path taken when a drive has no Trash. It runs
+/// against a stand-in support folder: a VMStore here must never open the
+/// user's real machine list.
+final class PermanentDeleteTests: XCTestCase {
+    private var root: URL!
+    private let fm = FileManager.default
+
+    override func setUpWithError() throws {
+        root = fm.temporaryDirectory.appendingPathComponent("avm-delete-\(UUID().uuidString)")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        AVMPaths.supportDirectoryOverride = root
+    }
+
+    override func tearDownWithError() throws {
+        AVMPaths.supportDirectoryOverride = nil
+        try? fm.removeItem(at: root)
+    }
+
+    private func machine(_ name: String, in store: VMStore) throws -> (VMConfiguration, URL) {
+        let config = VMConfiguration(name: name, diskImagePath: "")
+        let dir = try config.directoryURL()
+        XCTAssertTrue(dir.path.hasPrefix(root.path), "must stay inside the stand-in folder")
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data("disk".utf8).write(to: dir.appendingPathComponent("disk.qcow2"))
+        store.save(config)
+        return (config, dir)
+    }
+
+    func testPermanentDeleteRemovesThatMachineOnly() throws {
+        let store = VMStore()
+        let (doomed, dir) = try machine("Doomed", in: store)
+        let (kept, keptDir) = try machine("Kept", in: store)
+        let scratch = root.appendingPathComponent("scratch").appendingPathComponent(doomed.id.uuidString)
+        try fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+
+        let bytes = try store.deleteMovingFilesToTrash(doomed, permanently: true)
+
+        XCTAssertGreaterThan(bytes, 0)
+        XCTAssertFalse(fm.fileExists(atPath: dir.path))
+        XCTAssertFalse(fm.fileExists(atPath: scratch.path))
+        XCTAssertTrue(fm.fileExists(atPath: keptDir.appendingPathComponent("disk.qcow2").path), "the other machine's disk")
+        XCTAssertEqual(store.configurations.map(\.id), [kept.id])
+        XCTAssertEqual(VMStore().configurations.map(\.id), [kept.id], "and the saved list agrees")
+    }
+
+    /// A drive that isn't connected: "no folder" must not read as "nothing
+    /// to delete", which would drop the entry and strand the files.
+    func testDeleteRefusedWhileTheDriveIsMissing() throws {
+        let store = VMStore()
+        let away = VMConfiguration(name: "Away", diskImagePath: "", storageFolderPath: "/Volumes/AVM-gone-\(UUID().uuidString)/PC")
+        store.save(away)
+        XCTAssertThrowsError(try store.deleteMovingFilesToTrash(away, permanently: true))
+        XCTAssertEqual(store.configurations.map(\.id), [away.id])
+    }
+}
+
+// MARK: - The helper's version (2026-11-09, fourth audit #19)
+
+/// After an update the old root helper can keep running, and AVM only asks
+/// it to exit when its version differs. So a helper change without a new
+/// helperBuildVersion runs the old code with nothing in the log. The helper
+/// isn't in this package, so this reads its source.
+///
+/// When it fails: bump helperBuildVersion if you haven't, then copy the two
+/// values from the failure message into `recorded`.
+final class HelperVersionTests: XCTestCase {
+    private let recorded = (version: "0.4.41",
+                            sources: "9a93bba1dce4edc959fc5e6e74c0f21755992d40cce83f283ad4e3759aa9f5dd")
+
+    private var helperFolder: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("AVMUSBHelper", isDirectory: true)
+    }
+
+    private func isVersionLine(_ line: Substring) -> Bool {
+        line.contains("static let helperBuildVersion")
+    }
+
+    func testHelperSourcesDoNotChangeWithoutANewVersion() throws {
+        // Without the " 2" copies iCloud makes, which aren't sources.
+        let names = try FileManager.default.contentsOfDirectory(atPath: helperFolder.path)
+            .filter { ["swift", "c", "h"].contains(($0 as NSString).pathExtension) && !$0.contains(" ") }
+            .sorted()
+        XCTAssertTrue(names.contains("AVMUSBHelperProtocol.swift"), "wrong folder: \(helperFolder.path)")
+
+        var hash = SHA256()
+        var version: String?
+        for name in names {
+            let text = String(decoding: try Data(contentsOf: helperFolder.appendingPathComponent(name)), as: UTF8.self)
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            if let line = lines.first(where: isVersionLine) {
+                version = line.split(separator: "\"").dropFirst().first.map(String.init)
+            }
+            // The version's own line is left out, so bumping it alone
+            // doesn't change the hash.
+            let kept = lines.filter { !isVersionLine($0) }.joined(separator: "\n")
+            hash.update(data: Data((name + "\n" + kept + "\n").utf8))
+        }
+        let sources = hash.finalize().map { String(format: "%02x", $0) }.joined()
+        let current = try XCTUnwrap(version, "helperBuildVersion not found in AVMUSBHelper/")
+
+        let values = "version: \"\(current)\", sources: \"\(sources)\""
+        if sources != recorded.sources && current == recorded.version {
+            XCTFail("AVMUSBHelper/ changed but helperBuildVersion is still \(current). A helper left running after an update would keep the old code. Bump it in AVMUSBHelperProtocol.swift, run this again, and record the values it gives.")
+        } else if sources != recorded.sources || current != recorded.version {
+            XCTFail("The helper's version or sources changed. If this is deliberate, set HelperVersionTests.recorded to \(values)")
+        }
     }
 }

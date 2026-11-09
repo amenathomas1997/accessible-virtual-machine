@@ -163,6 +163,7 @@ enum DiagnosticLogExporter {
         let folder = work.appendingPathComponent(name)
         let zip = work.appendingPathComponent("\(name).zip")
         try await Task.detached(priority: .userInitiated) {
+            removeOldReports()
             try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
             _ = try performCopy(sources: sources, to: folder)
             let ditto = Process()
@@ -173,9 +174,25 @@ enum DiagnosticLogExporter {
             guard ditto.terminationStatus == 0 else {
                 throw NSError(domain: "AVM.DiagnosticLog", code: 2, userInfo: [NSLocalizedDescriptionKey: "The log couldn't be zipped."])
             }
+            // The zip is what's attached (2026-11-09, fourth audit #32).
+            try? FileManager.default.removeItem(at: folder)
         }.value
         AVMLog.write("Diagnostics — log zipped for a problem report: \(sources.count) file(s).")
         return zip
+    }
+
+    /// Reports from earlier days (2026-11-09, fourth audit #32): the mail app
+    /// may still need today's zip, so it can't go when the email is handed over.
+    nonisolated private static func removeOldReports() {
+        let fm = FileManager.default
+        let temp = fm.temporaryDirectory
+        let dayAgo = Date().addingTimeInterval(-86400)
+        for item in (try? fm.contentsOfDirectory(at: temp, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        where item.lastPathComponent.hasPrefix("avm-report-") {
+            if let date = (try? item.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate, date < dayAgo {
+                try? fm.removeItem(at: item)
+            }
+        }
     }
 
     // MARK: - Gathering

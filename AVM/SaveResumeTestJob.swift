@@ -134,7 +134,7 @@ enum SaveResumeTestJob {
                 || arguments.contains("--test-duplicate") || arguments.contains("--test-send-file")
                 || arguments.contains("--test-linux-share") || arguments.contains("--test-ctl")
                 || arguments.contains("--test-disk-info") || arguments.contains("--run-in-guest")
-                || arguments.contains("--test-printers") || arguments.contains("--test-camera") || arguments.contains("--test-3d") || arguments.contains("--test-windows-3d") || arguments.contains("--test-repair") || arguments.contains("--test-finder-send") || arguments.contains("--test-tour") || arguments.contains("--test-machine-check") || arguments.contains("--test-sr-setup") || arguments.contains("--test-backup") || arguments.contains("--test-sound-ear") || arguments.contains("--test-stuck") || arguments.contains("--test-camera-save")
+                || arguments.contains("--test-printers") || arguments.contains("--test-camera") || arguments.contains("--test-3d") || arguments.contains("--test-windows-3d") || arguments.contains("--test-repair") || arguments.contains("--test-finder-send") || arguments.contains("--test-tour") || arguments.contains("--test-machine-check") || arguments.contains("--test-sr-setup") || arguments.contains("--test-windows-apps") || arguments.contains("--test-backup") || arguments.contains("--test-sound-ear") || arguments.contains("--test-stuck") || arguments.contains("--test-camera-save")
                 || arguments.contains("--test-screen-readers") || arguments.contains("--test-hid-bridge")
                 || arguments.contains("--test-background") || arguments.contains("--test-monitors")
                 || arguments.contains("--test-agent-shutdown") || arguments.contains("--test-remote-desktop") || arguments.contains("--test-restore-undo")
@@ -655,6 +655,9 @@ enum SaveResumeTestJob {
             }
             if arguments.contains("--test-machine-check") {
                 await finish(await machineCheck(folderURL, guest))
+            }
+            if arguments.contains("--test-windows-apps") {
+                await finish(await windowsAppsHelper(folderURL))
             }
             if arguments.contains("--test-sr-setup") {
                 await finish(await screenReaderSetup(folderURL, guest))
@@ -1323,12 +1326,93 @@ enum SaveResumeTestJob {
         print("== Changed in the machine, then applied")
         _ = await inGuest("Remove-Item \"$d\\avm-marker.txt\"; Set-Content \"$d\\avm-other.txt\" other", "rm -f $D/avm-marker.txt; runuser -u \"$U\" -- sh -c \"echo other > $D/avm-other.txt\"")
         check("it applied", await manager.applyScreenReaderSetup())
-        let after = await inGuest("if (Test-Path \"$d\\avm-marker.txt\") { 'marker-back' }; if (Test-Path \"$d-before-avm\\avm-other.txt\") { 'other-kept' }; if (Test-Path \"$d\\nvda.ini\") { 'ini' }",
-                                  "[ -f $D/avm-marker.txt ] && echo marker-back; [ -f $D-before-avm/avm-other.txt ] && echo other-kept; [ \"$(stat -c %U $D/avm-marker.txt)\" = \"$U\" ] && echo owned")
+        let after = await inGuest("if (Test-Path \"$d\\avm-marker.txt\") { 'marker-back' }; if ((Test-Path \"$d-before-avm\\avm-other.txt\") -or (Test-Path \"$d-before-avm-last\\avm-other.txt\")) { 'other-kept' }; if (Test-Path \"$d\\nvda.ini\") { 'ini' }",
+                                  "[ -f $D/avm-marker.txt ] && echo marker-back; { [ -f $D-before-avm/avm-other.txt ] || [ -f $D-before-avm-last/avm-other.txt ]; } && echo other-kept; [ \"$(stat -c %U $D/avm-marker.txt)\" = \"$U\" ] && echo owned")
         print("   \(after.split(whereSeparator: \.isNewline).joined(separator: ", "))")
         check("the saved settings are back", after.contains("marker-back"))
         check("what was there is kept beside them", after.contains("other-kept"))
         check(guest == .windows ? "its settings file is there" : "they're the user's own", after.contains(guest == .windows ? "ini" : "owned"))
+        await shutDown(manager)
+        return ok
+    }
+
+    /// The Windows Apps helper end to end (2026-11-09): helper versions 7 to 9
+    /// shipped or were written without ever being compiled in Windows. On a
+    /// clone, it compiles and installs, lists the open apps, opens a program
+    /// asked for through the requests folder, and refuses an unknown one.
+    private static func windowsAppsHelper(_ folder: URL) async -> Bool {
+        let clone = folder.deletingLastPathComponent().appendingPathComponent(folder.lastPathComponent + "-apps-\(UUID().uuidString.prefix(8))")
+        let copy = Process()
+        copy.executableURL = URL(fileURLWithPath: "/bin/cp")
+        copy.arguments = ["-c", "-R", folder.path, clone.path]
+        try? copy.run()
+        copy.waitUntilExit()
+        defer { try? FileManager.default.removeItem(at: clone) }
+        let manager = VMManager()
+        let config = configuration(folder: clone, guest: .windows)
+        guard await start(manager, config), let agent = manager.guestAgentSocketPath,
+              await waitForAgent(agent, seconds: 600) else {
+            check("the machine started and answers", false); await shutDown(manager); return false
+        }
+        var tasks = await exec(agent, program: "tasklist.exe", args: ["/fo", "csv", "/nh"]) ?? ""
+        if !tasks.lowercased().contains("explorer.exe") {
+            let password = "T" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16).lowercased() + "x1"
+            _ = await exec(agent, program: "net.exe", args: ["user", "avmtest", password])
+            for _ in 0..<6 where !tasks.lowercased().contains("explorer.exe") {
+                try? await Task.sleep(for: .seconds(30))
+                _ = try? await manager.sendQMPCommand("send-key", arguments: ["keys": [["type": "qcode", "data": "spc"]]])
+                try? await Task.sleep(for: .seconds(4))
+                _ = await manager.typeText(password + "\n")
+                try? await Task.sleep(for: .seconds(30))
+                tasks = await exec(agent, program: "tasklist.exe", args: ["/fo", "csv", "/nh"]) ?? ""
+            }
+        }
+        check("someone is signed in", tasks.lowercased().contains("explorer.exe"))
+        let root = WindowsApps.guestFolder
+        check("the helper compiled and installed", await WindowsApps.shared.ensureHelper(manager, machine: config.id))
+        let version = (try? await WindowsApps.readGuestFile(manager, root + #"\bin\version.txt"#)) ?? nil
+        check("it's version \(WindowsApps.helperVersion) (\(version ?? "none"))", version?.trimmingCharacters(in: .whitespacesAndNewlines) == WindowsApps.helperVersion)
+        var running = false
+        for _ in 0..<40 where !running {
+            try? await Task.sleep(for: .seconds(3))
+            let now = await exec(agent, program: "tasklist.exe", args: ["/fo", "csv", "/nh"]) ?? ""
+            running = now.lowercased().contains("avmwindowsapps")
+        }
+        check("the helper is running in the signed-in session", running)
+        var list: String?
+        for _ in 0..<20 where (list ?? "").isEmpty {
+            try? await Task.sleep(for: .seconds(3))
+            list = (try? await WindowsApps.readGuestFile(manager, root + #"\apps\running.txt"#)) ?? nil
+        }
+        check("it writes its list of open apps", !(list ?? "").isEmpty)
+        print("   requests folder: \((await exec(agent, program: "icacls.exe", args: [root + #"\requests"#]) ?? "").split(whereSeparator: \.isNewline).joined(separator: " | "))")
+        func ask(_ id: String, _ key: String) async -> String? {
+            do {
+                try await WindowsApps.writeGuestFile(manager, root + #"\requests\request-"# + id + ".txt", "\(id)\tlaunch\t\(key)\t\(Int(Date().timeIntervalSince1970))\n")
+            } catch { print("   request not written: \(error.localizedDescription)"); return nil }
+            for _ in 0..<60 {
+                try? await Task.sleep(for: .seconds(2))
+                if let reply = (try? await WindowsApps.readGuestFile(manager, root + #"\apps\reply-"# + id + ".txt")) ?? nil, reply.hasPrefix(id) { return reply }
+            }
+            return nil
+        }
+        // Character Map, an ordinary program: System32's Notepad only starts the
+        // Store's copy, whose window is under another path, so it never matches.
+        // In lowercase: that's how the helper's own list writes program paths,
+        // and a request's key is matched against them exactly.
+        let good = await ask("901", #"c:\windows\system32\charmap.exe"#)
+        print("   reply: \(good ?? "none")")
+        // Found its window either way. "In front" isn't checked: nobody is
+        // typing in this machine, and Windows then refuses a background
+        // process the foreground, which a test can't stand in for.
+        let inFront = good?.contains("\tok") == true
+        check("a request opens the program and finds its window", inFront || good?.contains("kept another window in front") == true)
+        if !inFront { print("   note: Windows didn't let the helper bring it to the front") }
+        let after = await exec(agent, program: "tasklist.exe", args: ["/fo", "csv", "/nh"]) ?? ""
+        check("Character Map is open", after.lowercased().contains("charmap"))
+        let bad = await ask("902", #"C:\no\such\program.exe"#)
+        print("   reply: \(bad ?? "none")")
+        check("an unknown program is refused", bad?.contains("\tfailed") == true)
         await shutDown(manager)
         return ok
     }

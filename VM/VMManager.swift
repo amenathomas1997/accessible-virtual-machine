@@ -504,6 +504,13 @@ final class VMManager: ObservableObject {
     // get mismatched and the protocol desyncs (commands then fail/hang). This
     // flag + waiter queue ensures only one sendQMPCommand runs at once.
     private var qmpBusy = false
+    /// Counts cleanUp's clearing of qmpBusy (2026-11-09, fifth audit #29).
+    private var qmpLockGeneration = 0
+    /// For runQMPJob (2026-11-09, fifth audit #13, #21): its job ids, how
+    /// many are under way, and ended ones QEMU may still be holding.
+    private var qmpJobCounter = 0
+    private var qmpJobsRunning = 0
+    private var qmpJobsToDismiss: Set<String> = []
     /// For QMP reply ids (sendQMPCommand).
     private var qmpCommandCounter = 0
     private var qmpWaiters: [CheckedContinuation<Void, Never>] = []
@@ -713,15 +720,17 @@ final class VMManager: ObservableObject {
                 kill(pid, SIGKILL)
             }
             usleep(300_000)
-        }
-
-        if let vmDir = try? configuration.directoryURL() {
-            let lockPath = vmDir
-                .appendingPathComponent("tpm-state")
-                .appendingPathComponent(".lock")
-            if FileManager.default.fileExists(atPath: lockPath.path) {
-                try? FileManager.default.removeItem(at: lockPath)
-                avmLog("reapOrphanedSwtpm: removed stale TPM-state lock at \(lockPath.path)")
+            // Only after killing an orphan (2026-11-09, fourth audit #26): done
+            // every time, it pulled the lock from under a live swtpm belonging
+            // to another AVM copy running this machine.
+            if let vmDir = try? configuration.directoryURL() {
+                let lockPath = vmDir
+                    .appendingPathComponent("tpm-state")
+                    .appendingPathComponent(".lock")
+                if FileManager.default.fileExists(atPath: lockPath.path) {
+                    try? FileManager.default.removeItem(at: lockPath)
+                    avmLog("reapOrphanedSwtpm: removed stale TPM-state lock at \(lockPath.path)")
+                }
             }
         }
     }
@@ -962,7 +971,10 @@ final class VMManager: ObservableObject {
     private func diskIsOffloaded(runtimeDir: URL) -> Bool {
         let disk = runtimeDir.appendingPathComponent("disk.qcow2")
         guard let values = try? disk.resourceValues(forKeys: [.fileSizeKey, .totalFileAllocatedSizeKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]) else { return false }
-        if values.isUbiquitousItem == true, let status = values.ubiquitousItemDownloadingStatus, status != .current { return true }
+        // Not "isn't .current" (2026-11-09, fourth audit #33): .downloaded is a
+        // full local copy with a newer one in iCloud, which Start refused as
+        // moved off this Mac.
+        if values.isUbiquitousItem == true, let status = values.ubiquitousItemDownloadingStatus, status == .notDownloaded { return true }
         let logical = values.fileSize ?? 0, allocated = values.totalFileAllocatedSize ?? 0
         return logical > 4 << 30 && allocated < logical / 100
     }
@@ -1332,6 +1344,13 @@ final class VMManager: ObservableObject {
             throw AVMError.storageMissing(message)
         }
 
+        try await waitForForceStoppedProcesses(of: configuration)
+        // Looked at again: that wait is the first suspension since the check above.
+        guard case .stopped = state else {
+            avmLog("startVM: no longer stopped after waiting for the last force stop, aborting")
+            throw AVMError.vmAlreadyRunning
+        }
+
         reapOrphanedQEMU(for: configuration.id)
         reapOrphanedSwtpm(for: configuration)
 
@@ -1620,7 +1639,7 @@ final class VMManager: ObservableObject {
         try ensureStillStarting()
 
         if let resumePlan {
-            await resumeSavedState(resumePlan, configuration: configuration, runtimeDir: runtimeDir)
+            try await resumeSavedState(resumePlan, configuration: configuration, runtimeDir: runtimeDir)
             try ensureStillStarting()
         }
 
@@ -1631,6 +1650,13 @@ final class VMManager: ObservableObject {
         // Before the guest makes a sound, and after a resume too: QEMU doesn't
         // save these.
         await applySoundLevels(configuration)
+        // Not past a stop during those two commands (2026-11-09, fifth audit
+        // #28): cleanUp had already run, so the keyboard seized below for a
+        // machine that had gone was never given back.
+        guard state == .running || state == .paused else {
+            avmLog("startVM: the machine stopped while its sound levels were set; not going on")
+            return
+        }
         // Windows Setup talks through this start, and nobody's typing in it yet.
         if !setupStillRunning(runtimeDir: runtimeDir) { warnAboutMacSpacesShortcuts(configuration) }
         // An UNATTEND drive a snapshot was taken with comes out once it has
@@ -1794,7 +1820,7 @@ final class VMManager: ObservableObject {
         guard let path = guestAgentSocketPath, FileManager.default.fileExists(atPath: path) else { return false }
         let command = #"{"execute":"guest-shutdown","arguments":{"mode":"powerdown"}}"#
         do {
-            _ = try await Task.detached(operation: { try GuestAgent.run([command], socketPath: path, timeout: 4, replies: false) }).value
+            _ = try await GuestAgent.call([command], socketPath: path, timeout: 4, replies: false)
             avmLog("askGuestToShutDown: the guest agent took the shutdown request")
             return true
         } catch {
@@ -1808,6 +1834,38 @@ final class VMManager: ObservableObject {
     /// has no file locking (some shares), qemu-img couldn't tell it was still
     /// flushing.
     private(set) var forceStoppedProcess: Process?
+
+    /// Force-stopped QEMUs and swtpms not yet known to be gone, by machine
+    /// (2026-11-09, fifth audit #22). Static: a Start after a Force Stop is a
+    /// new session with a new manager.
+    private static var forceStoppedProcesses: [UUID: [Process]] = [:]
+
+    /// Waits, bounded, for the machine's force-stopped processes. QEMU can
+    /// outlive Force Stop by two seconds (SIGKILL comes then), still holding
+    /// the disk's lock, and a new QEMU exited on it: "stopped unexpectedly",
+    /// with no reason. The limit is past that SIGKILL.
+    private func waitForForceStoppedProcesses(of configuration: VMConfiguration) async throws {
+        guard let processes = Self.forceStoppedProcesses[configuration.id] else { return }
+        let clock = SuspendingClock()
+        let deadline = clock.now + .seconds(4)
+        while clock.now < deadline, processes.contains(where: \.isRunning) {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        // Ended for certain (2026-11-09, review of the fifth audit's fixes):
+        // these were already force-stopped, and a swtpm that ignored its
+        // SIGTERM refused every Start until AVM quit.
+        for process in processes where process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        for _ in 0..<20 where processes.contains(where: \.isRunning) {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        let left = processes.filter(\.isRunning)
+        guard left.isEmpty else {
+            Self.forceStoppedProcesses[configuration.id] = left
+            avmLog("startVM: \(left.count) force-stopped process(es) of \(configuration.name) still alive after 4 s")
+            throw AVMError.refused("\(configuration.name) can't start yet. Reason: its last run, which you force-stopped, hasn't finished ending. Next: wait a few seconds, then start it again.")
+        }
+        Self.forceStoppedProcesses[configuration.id] = nil
+    }
 
     func forceStopVM() {
         // A Force Stop while AVM restarts Ubuntu after its install is the
@@ -1843,6 +1901,11 @@ final class VMManager: ObservableObject {
             }
         }
         swtpmProcess?.terminate()
+        if let id = activeConfiguration?.id {
+            let ending = [doomed, swtpmProcess].compactMap { $0 }.filter(\.isRunning)
+            let earlier = (Self.forceStoppedProcesses[id] ?? []).filter(\.isRunning)
+            Self.forceStoppedProcesses[id] = earlier + ending
+        }
         cleanUp()
         state = .stopped
         appendConsole("AVM: VM force-stopped.\n")
@@ -1984,7 +2047,7 @@ final class VMManager: ObservableObject {
         }
         do {
             while let data = try handle.read(upToCount: Self.sendChunk), !data.isEmpty {
-                _ = try await agentCall(["execute": "guest-file-write", "arguments": ["handle": guestHandle, "buf-b64": data.base64EncodedString()]])
+                try await writeToGuestFile(guestHandle, data)
             }
         } catch {
             try? await closeGuestFile(guestHandle)
@@ -3557,35 +3620,7 @@ final class VMManager: ObservableObject {
         } catch {
             avmLog("removeAnswerFile: couldn't run mtools: \(error)")
         }
-        Self.scrubAnswerFileBytes(imagePath: imgPath)
-    }
-
-    /// A FAT delete only unlinks the file: its bytes, the encoded password
-    /// among them, stayed in the image for good (2026-10-26, code audit).
-    /// Every copy of the answer file's text left in the image (from
-    /// "<?xml" to "</unattend>") is overwritten with zeros, in place; the
-    /// rest of the volume, the marker included, is untouched.
-    nonisolated static func scrubAnswerFileBytes(imagePath: String) {
-        guard var data = FileManager.default.contents(atPath: imagePath) else { return }
-        let start = Data("<?xml".utf8), end = Data("</unattend>".utf8)
-        var scrubbed = 0
-        var from = data.startIndex
-        while let open = data.range(of: start, in: from..<data.endIndex) {
-            let limit = min(data.endIndex, open.lowerBound + 1_048_576)
-            guard let close = data.range(of: end, in: open.lowerBound..<limit) else { break }
-            data.resetBytes(in: open.lowerBound..<close.upperBound)
-            scrubbed += 1
-            from = close.upperBound
-        }
-        guard scrubbed > 0 else { return }
-        do {
-            let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: imagePath))
-            try handle.write(contentsOf: data)
-            try handle.close()
-            AVMLog.write("AVM: removeAnswerFile — scrubbed \(scrubbed) copy(ies) of the answer file's text from the UNATTEND volume.")
-        } catch {
-            AVMLog.write("AVM: removeAnswerFile — couldn't scrub the UNATTEND volume: \(error.localizedDescription)")
-        }
+        WindowsSetupAnswers.scrubAnswerFileBytes(imagePath: imgPath)
     }
 
     /// Ubuntu's install media is never needed once the install is complete,
@@ -3723,17 +3758,21 @@ final class VMManager: ObservableObject {
     /// until it finishes. Prevents two callers (e.g. the boot keypress task + a
     /// screendump) interleaving request/response on the single socket, which
     /// desynced the protocol and silently broke the keypress sends.
-    private func qmpAcquire() async {
+    private func qmpAcquire() async -> Int {
         while qmpBusy {
             await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
                 qmpWaiters.append(c)
             }
         }
         qmpBusy = true
+        return qmpLockGeneration
     }
 
-    /// Release QMP access and wake the next waiter, if any.
-    private func qmpRelease() {
+    /// Release QMP access and wake the next waiter, if any. Not for a command
+    /// from before a teardown (2026-11-09, fifth audit #29): cleanUp already
+    /// let go for it, and the lock may be the next QEMU's command's by now.
+    private func qmpRelease(_ generation: Int) {
+        guard generation == qmpLockGeneration else { return }
         qmpBusy = false
         if !qmpWaiters.isEmpty {
             let next = qmpWaiters.removeFirst()
@@ -3754,8 +3793,8 @@ final class VMManager: ObservableObject {
             throw AVMError.qmpNotConnected
         }
 
-        await qmpAcquire()
-        defer { qmpRelease() }
+        let lockGeneration = await qmpAcquire()
+        defer { qmpRelease(lockGeneration) }
 
         // REPLY IDS (2026-10-25, code audit): QEMU echoes a command's "id"
         // in its reply. Before ids, one timed-out reply stayed in the socket
@@ -3809,21 +3848,45 @@ final class VMManager: ObservableObject {
         return nil
     }
 
+    /// The socket a timed-out write left half a line in, if any.
+    private var qmpTornSocket: FileHandle?
+    private var devicesGivenUpForSave: (usb: [AVMUSBDeviceIdentity], bluetooth: [String]) = ([], [])
+
     private func sendRawQMPCommand(_ command: String) async throws {
         guard let socket = qmpSocket else { throw AVMError.qmpNotConnected }
-        let data = (command + "\n").data(using: .utf8)!
-        try data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) throws -> Void in
-            guard let ptr = bytes.baseAddress else { return }
-            // All of it (2026-10-28, code review): a short write on the
-            // non-blocking socket left half a line.
-            var offset = 0
-            while offset < data.count {
-                let written = Darwin.write(socket.fileDescriptor, ptr + offset, data.count - offset)
-                if written < 0 && errno == EAGAIN { usleep(1000); continue }
-                if written < 0 { throw AVMError.qmpWriteFailed }
-                offset += written
+        // A line cut short earlier is thrown away first: QEMU's JSON parser
+        // only ends a message when the braces balance, so a newline wouldn't
+        // do, but a byte JSON can't contain resets it. The error it answers
+        // has no id, and the reader skips that (2026-11-09, review of the
+        // fifth audit's fixes).
+        var data = qmpTornSocket === socket ? Data([0xFF]) : Data()
+        data.append(Data((command + "\n").utf8))
+        // All of it (2026-10-28, code review): a short write on the
+        // non-blocking socket left half a line.
+        // With a deadline, and suspended rather than spinning (2026-11-09,
+        // fifth audit #1): a QEMU that stopped reading let unanswered commands
+        // fill the socket, and this loop then held the main actor for ever:
+        // no menu, no Force Stop, no speech, for any machine.
+        let deadline = Date().addingTimeInterval(2)
+        var offset = 0
+        while offset < data.count {
+            guard qmpConnected, qmpSocket === socket else { throw AVMError.qmpSocketClosed }
+            let (written, failure) = data.withUnsafeBytes { bytes -> (Int, Int32) in
+                let n = Darwin.write(socket.fileDescriptor, bytes.baseAddress! + offset, data.count - offset)
+                return (n, errno)
             }
+            if written < 0 && failure == EAGAIN {
+                guard Date() < deadline else {
+                    if offset > 0 { qmpTornSocket = socket }
+                    throw AVMError.qmpTimeout
+                }
+                try? await Task.sleep(for: .milliseconds(5))
+                continue
+            }
+            if written < 0 { throw AVMError.qmpWriteFailed }
+            offset += written
         }
+        if qmpTornSocket === socket { qmpTornSocket = nil }
     }
 
     // MARK: - QMP Reading
@@ -4275,10 +4338,12 @@ final class VMManager: ObservableObject {
         let out = Pipe()
         ps.standardOutput = out
         ps.standardError = FileHandle.nullDevice
-        guard (try? ps.run()) != nil else { return true }
+        // False when ps can't tell (2026-11-09, fourth audit #26): the callers
+        // kill what this calls orphaned, so not knowing must spare it.
+        guard (try? ps.run()) != nil else { return false }
         let text = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         ps.waitUntilExit()
-        guard let ppid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)) else { return true }
+        guard let ppid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
         return ppid <= 1 || kill(ppid, 0) != 0
     }
 
@@ -4318,6 +4383,7 @@ final class VMManager: ObservableObject {
         swtpmProcess = nil
         // Wake any QMP waiters so they don't hang after teardown.
         qmpBusy = false
+        qmpLockGeneration += 1
         let waiters = qmpWaiters
         qmpWaiters.removeAll()
         for w in waiters { w.resume() }
@@ -4468,7 +4534,7 @@ extension VMManager {
         guard let path = guestAgentSocketPath else { return false }
         let command = GuestAgent.setTimeCommand()
         do {
-            let replies = try await Task.detached { try GuestAgent.run([command], socketPath: path) }.value
+            let replies = try await GuestAgent.call([command], socketPath: path)
             let ok = replies.first?.contains(#""return""#) == true
             AVMLog.write("AVM: GuestAgent — set the guest clock: \(ok ? "done" : replies.first ?? "no reply")")
             return ok
@@ -4486,6 +4552,8 @@ extension VMManager {
     /// on the virtio disk, not drawing in 3D (QEMU can't save virgl).
     /// A save under way (2026-10-28, fifth audit): Shut Down waits for it.
     var isSaving: Bool { savingTask != nil || takingRestorePoint }
+    /// A snapshot job is under way, so QEMU may answer nothing until it ends.
+    var isRunningQMPJob: Bool { qmpJobsRunning > 0 }
 
     /// The install media build of this start as a task of its own, so Force
     /// Stop can cancel it; and every machine's running build, so a second
@@ -4546,8 +4614,21 @@ extension VMManager {
 
     /// Runs a QMP job (snapshot-save, -load, -delete) and waits for it to
     /// end, at most `limit`. Throws the job's own error.
-    func runQMPJob(_ command: String, id: String, arguments: [String: Any],
+    /// `name` gets a number to make the job's id (2026-11-09, fifth audit
+    /// #21): QEMU keeps a concluded job's id until it's dismissed, so with
+    /// fixed words a job left behind made the next one fail "already in use",
+    /// and two of the same kind could dismiss each other's.
+    func runQMPJob(_ command: String, id name: String, arguments: [String: Any],
                            limit: Duration = .seconds(600)) async throws {
+        await dismissFinishedQMPJobs()
+        qmpJobCounter += 1
+        let id = "\(name)-\(qmpJobCounter)"
+        qmpJobsRunning += 1
+        var dismissed = false
+        defer {
+            qmpJobsRunning -= 1
+            if !dismissed { qmpJobsToDismiss.insert(id) }
+        }
         var args = arguments
         args["job-id"] = id
         // The answer can wait for the whole save or load (see sendQMPCommand).
@@ -4568,21 +4649,21 @@ extension VMManager {
                 throw AVMError.qmpCommandFailed("QEMU lost track of the \(command) job")
             }
             if job["status"] as? String == "concluded" {
-                _ = try? await sendQMPCommand("job-dismiss", arguments: ["id": id], timeout: TimeInterval(limit.components.seconds))
+                dismissed = await dismissQMPJobNow(id, timeout: TimeInterval(limit.components.seconds))
                 if let error = job["error"] as? String { throw AVMError.qmpCommandFailed(error) }
                 return
             }
             if clock.now > deadline {
                 _ = try? await sendQMPCommand("job-cancel", arguments: ["id": id])
                 // Dismissed too (2026-11-08, fourth audit #8): a cancelled job
-                // stays in QEMU's list as concluded, and the ids here are fixed
-                // words, so the next point or save failed "already in use".
+                // stays in QEMU's list as concluded. One QEMU didn't answer for
+                // is left to dismissFinishedQMPJobs (fifth audit #21).
                 for _ in 0..<150 {
                     try? await Task.sleep(for: .milliseconds(200))
-                    let jobs = (try? await sendQMPCommand("query-jobs", arguments: nil, timeout: 5)) as? [[String: Any]] ?? []
-                    guard let job = jobs.first(where: { $0["id"] as? String == id }) else { break }
+                    let jobs = (try? await sendQMPCommand("query-jobs", arguments: nil, timeout: 5)) as? [[String: Any]]
+                    guard let job = jobs?.first(where: { $0["id"] as? String == id }) else { break }
                     if job["status"] as? String == "concluded" {
-                        _ = try? await sendQMPCommand("job-dismiss", arguments: ["id": id], timeout: 5)
+                        dismissed = await dismissQMPJobNow(id, timeout: 5)
                         break
                     }
                 }
@@ -4591,13 +4672,32 @@ extension VMManager {
         }
     }
 
-    /// A job left behind by a failed or cut-short runQMPJob, dismissed if it
-    /// has concluded, so its id can be used again (2026-11-08, fourth audit
-    /// #8). Quiet when QEMU is gone or the job isn't there.
-    func dismissQMPJob(_ id: String) async {
-        let jobs = (try? await sendQMPCommand("query-jobs", arguments: nil, timeout: 5)) as? [[String: Any]] ?? []
-        guard let job = jobs.first(where: { $0["id"] as? String == id }), job["status"] as? String == "concluded" else { return }
-        _ = try? await sendQMPCommand("job-dismiss", arguments: ["id": id], timeout: 5)
+    /// True once QEMU has accepted the dismissal.
+    private func dismissQMPJobNow(_ id: String, timeout: TimeInterval) async -> Bool {
+        do {
+            _ = try await sendQMPCommand("job-dismiss", arguments: ["id": id], timeout: timeout)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Jobs left behind by failed or cut-short runQMPJobs, dismissed once
+    /// they've concluded (2026-11-08, fourth audit #8). Only jobs whose
+    /// runQMPJob has ended are listed, so a poller's own job is never taken;
+    /// a query with no answer keeps the list for next time (2026-11-09, fifth
+    /// audit #21: it was read as "job gone"). Quiet when QEMU is gone.
+    func dismissFinishedQMPJobs() async {
+        guard !qmpJobsToDismiss.isEmpty,
+              let jobs = (try? await sendQMPCommand("query-jobs", arguments: nil, timeout: 5)) as? [[String: Any]] else { return }
+        for id in qmpJobsToDismiss {
+            guard let job = jobs.first(where: { $0["id"] as? String == id }) else {
+                qmpJobsToDismiss.remove(id)
+                continue
+            }
+            guard job["status"] as? String == "concluded" else { continue }
+            if await dismissQMPJobNow(id, timeout: 5) { qmpJobsToDismiss.remove(id) }
+        }
     }
 
     /// A restore point taken while the machine runs (2026-10-27), memory
@@ -4644,7 +4744,7 @@ extension VMManager {
             } else {
                 RestorePoints.removeFolder(vmDirectory: runtimeDir, tag: tag)
             }
-            await dismissQMPJob("avm-point")
+            await dismissFinishedQMPJobs()
             throw error
         }
         avmLog("createRunningRestorePoint: \(tag) taken with memory")
@@ -4684,10 +4784,40 @@ extension VMManager {
         let task = Task { () -> Bool in
             let saved = await self.performSaveStateAndStop()
             self.savingTask = nil
+            if !saved { await self.sendBackDevicesAfterFailedSave() }
             return saved
         }
         savingTask = task
         return await task.value
+    }
+
+    /// Devices that went back to the Mac for a save that then failed return
+    /// to the machine that's still running; they can't be sent while
+    /// `savingTask` is set, so this runs after it's cleared.
+    private func sendBackDevicesAfterFailedSave() async {
+        let (usb, bluetooth) = devicesGivenUpForSave
+        devicesGivenUpForSave = ([], [])
+        guard !usb.isEmpty || !bluetooth.isEmpty else { return }
+        let guest = activeConfiguration?.name ?? machineName
+        switch state {
+        case .running: break
+        case .paused:
+            Announcer.shared.announce("Your USB and Bluetooth devices went back to the Mac for the save. Next: resume \(guest), then send them to it again.", tone: .info)
+            return
+        default: return
+        }
+        var allBack = true
+        for device in usb where !(await USBRedirectController.shared.attach(device, to: self, quiet: true)) { allBack = false }
+        if !bluetooth.isEmpty {
+            if case .success(let present) = await USBHelperClient.shared.listBluetoothDevices() {
+                for id in bluetooth {
+                    guard let device = present.first(where: { $0.id == id }), await BluetoothDevices.shared.attach(device, to: self) else { allBack = false; continue }
+                }
+            } else { allBack = false }
+        }
+        Announcer.shared.announce(allBack
+            ? "Your USB and Bluetooth devices are back in \(guest)."
+            : "Some of your USB or Bluetooth devices couldn't go back into \(guest) after the save failed, so they're on the Mac. Next: send them to it again.", tone: allBack ? .info : .failure)
     }
 
     /// Room for the machine's memory on the disk's volume (2026-11-05, second
@@ -4712,6 +4842,9 @@ extension VMManager {
             avmLog("saveStateAndStop: \(error.localizedDescription)")
             return false
         }
+        // Sent back if the save fails (2026-11-09, fifth audit #16).
+        devicesGivenUpForSave = (USBRedirectController.shared.devices(for: self),
+                                 BluetoothDevices.shared.attached.filter { $0.value.machine === self }.map(\.key))
         // A USB device passed through was added after the start; a fresh
         // QEMU wouldn't have it to load into, so it goes back to the Mac.
         for device in USBRedirectController.shared.devices(for: self) {
@@ -4724,6 +4857,11 @@ extension VMManager {
         avmLog("saveStateAndStop: saving \(configuration.name)")
         await detachDevicesSentMeanwhile()
         await noteSetupDrives(forSnapshot: QEMUSavedState.tag, runtimeDir: runtimeDir)
+        // Before the snapshot (2026-11-09, fourth audit #27): written after, a
+        // crash between the two left a state plan() loads while
+        // removeFinishedWindowsMedia, seeing no hint, took its install media,
+        // and the load failed. A hint with no snapshot is dropped by plan().
+        try? "Saved \(Date())\n".write(to: QEMUSavedState.hint(in: runtimeDir), atomically: true, encoding: .utf8)
         let started = Date()
         do {
             let node = try await diskNodeName()
@@ -4733,8 +4871,14 @@ extension VMManager {
             avmLog("saveStateAndStop: save failed: \(error.localizedDescription)")
             // A save QEMU finished after AVM gave up would be carried on
             // over newer work at a later Start; it goes now.
+            // The marker first (2026-11-09, fifth audit #3): the delete below
+            // can fail, or run before the save lands, and the next Start
+            // would then load it. With the marker, Start deletes it instead;
+            // the user has already heard that the save failed.
+            try? QEMUSavedState.carriedOnWord.write(to: runtimeDir.appendingPathComponent(QEMUSavedState.loadedMarker), atomically: true, encoding: .utf8)
+            try? FileManager.default.removeItem(at: QEMUSavedState.hint(in: runtimeDir))
             if let node = try? await diskNodeName() {
-                _ = try? await sendQMPCommand("job-dismiss", arguments: ["id": "avm-save"])
+                await dismissFinishedQMPJobs()
                 try? await runQMPJob("snapshot-delete", id: "avm-unsave",
                                      arguments: ["tag": QEMUSavedState.tag, "devices": try await snapshotDevices(node)], limit: .seconds(120))
             }
@@ -4751,13 +4895,16 @@ extension VMManager {
         // A marker from a resume whose query failed would delete this save
         // at the next Start (2026-10-28, second review).
         try? FileManager.default.removeItem(at: runtimeDir.appendingPathComponent(QEMUSavedState.loadedMarker))
-        try? "Saved \(Date())\n".write(to: QEMUSavedState.hint(in: runtimeDir), atomically: true, encoding: .utf8)
-        state = .stopping
-        _ = try? await sendQMPCommand("quit", arguments: nil)
-        for _ in 0..<100 where state != .stopped {
-            try? await Task.sleep(for: .milliseconds(100))
+        // Only if it's still up (2026-11-09, fourth audit #27): a Force Stop in
+        // the save's last poll had .stopping set over .stopped, then a 10 s wait.
+        if state == .running || state == .paused || state == .stopping {
+            state = .stopping
+            _ = try? await sendQMPCommand("quit", arguments: nil)
+            for _ in 0..<100 where state != .stopped {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            if state != .stopped { forceStopVM() }
         }
-        if state != .stopped { forceStopVM() }
         Announcer.shared.announce("\(guest) is saved. Start it to carry on where you left it.", tone: .success)
         return true
     }
@@ -4765,7 +4912,7 @@ extension VMManager {
     /// Carries on from the saved state: QEMU was started paused (-S).
     /// Spoken. On a failed load the machine starts from its disk instead,
     /// as after a power cut, and that is said.
-    func resumeSavedState(_ plan: QEMUSavedState.Plan, configuration: VMConfiguration, runtimeDir: URL) async {
+    func resumeSavedState(_ plan: QEMUSavedState.Plan, configuration: VMConfiguration, runtimeDir: URL) async throws {
         // The machine's name, not its system's (2026-10-28, fourth audit):
         // with two Windows machines, "Windows couldn't be saved" named neither.
         let guest = configuration.name
@@ -4801,7 +4948,7 @@ extension VMManager {
             // carried on last time". Now it deletes the state quietly.
             if plan.isSavedState { try? QEMUSavedState.carriedOnWord.write(to: marker, atomically: true, encoding: .utf8) }
         } catch {
-            await dismissQMPJob("avm-load")
+            await dismissFinishedQMPJobs()
             // Cut short before the guest ran (2026-10-28, fourth audit):
             // Quit Now or a Force Stop while the state was loading. Nothing
             // ran, so the saved state and its note are still good: they stay
@@ -4825,6 +4972,21 @@ extension VMManager {
             avmLog("resumeSavedState: load failed: \(error.localizedDescription); starting from the disk")
             _ = try? await sendQMPCommand("system_reset", arguments: nil)
             _ = try? await sendQMPCommand("cont", arguments: nil)
+            // Checked (2026-11-09, fifth audit #30): either command refused or
+            // timed out left QEMU paused at -S while AVM said Running.
+            var guestRuns = false
+            for _ in 0..<3 where !guestRuns && state == .starting {
+                if let status = try? await sendQMPCommand("query-status", arguments: nil) as? [String: Any],
+                   status["running"] as? Bool == true {
+                    guestRuns = true
+                } else {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    _ = try? await sendQMPCommand("cont", arguments: nil)
+                }
+            }
+            guard guestRuns || state != .starting else {
+                throw AVMError.refused("\(guest) couldn't carry on from where it was saved, and couldn't start fresh either. Reason: QEMU didn't let the machine run after the failed load (\(error.localizedDescription)). Next: try Start again. If it fails again, save the diagnostic log and report the problem.")
+            }
             Announcer.shared.announce("\(guest) couldn't carry on from where it was saved, so it's starting fresh. Anything that wasn't saved inside \(guest) is lost. Reason: \(error.localizedDescription)", tone: .failure)
         }
         // A restore point stays a restore point; its note is spent.
@@ -4841,7 +5003,7 @@ extension VMManager {
                 try? fm.removeItem(at: marker)
             } catch {
                 avmLog("resumeSavedState: couldn't delete the saved state (\(error.localizedDescription)); the marker makes the next Start delete it")
-                await dismissQMPJob("avm-delete")
+                await dismissFinishedQMPJobs()
             }
         }
         try? fm.removeItem(at: QEMUSavedState.hint(in: runtimeDir))
@@ -4943,7 +5105,7 @@ extension VMManager {
         while clock.now < deadline {
             guard state == .running || state == .paused || state == .starting else { return false }
             if let path = guestAgentSocketPath,
-               let replies = try? await Task.detached(operation: { try GuestAgent.run([#"{"execute":"guest-ping"}"#], socketPath: path) }).value,
+               let replies = try? await GuestAgent.call([#"{"execute":"guest-ping"}"#], socketPath: path),
                replies.first?.contains(#""return""#) == true {
                 return true
             }
@@ -4987,12 +5149,22 @@ extension VMManager {
         }
     }
 
+    /// One guest-file-write, checked (2026-11-09, fourth audit #25): the
+    /// count the agent returned was never compared, so a short write landed
+    /// a truncated file and AVM said it had arrived.
+    func writeToGuestFile(_ handle: Int, _ data: Data, timeout: TimeInterval = 10) async throws {
+        let reply = try await agentCall(["execute": "guest-file-write", "arguments": ["handle": handle, "buf-b64": data.base64EncodedString()]], timeout: timeout) as? [String: Any]
+        if let count = reply?["count"] as? Int, count != data.count {
+            throw AVMError.qmpCommandFailed("the machine wrote only \(count) of \(data.count) bytes; its disk may be full")
+        }
+    }
+
     /// One guest-agent command; its "return", or throws its error.
     func agentCall(_ command: [String: Any], timeout: TimeInterval = 10) async throws -> Any? {
         guard let path = guestAgentSocketPath else { throw AVMError.qmpCommandFailed("no guest agent") }
         let data = try JSONSerialization.data(withJSONObject: command)
         let line = String(decoding: data, as: UTF8.self)
-        let reply = try await Task.detached(operation: { try GuestAgent.run([line], socketPath: path, timeout: timeout) }).value.first ?? ""
+        let reply = try await GuestAgent.call([line], socketPath: path, timeout: timeout).first ?? ""
         let object = try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any]
         if let error = object?["error"] as? [String: Any] {
             throw AVMError.qmpCommandFailed(error["desc"] as? String ?? "the guest agent refused")
@@ -5049,7 +5221,7 @@ extension VMManager {
         guard let handle = try await openGuestFile(guestPath, mode: "wb") else {
             throw AVMError.qmpCommandFailed("the guest couldn't make \(guestPath)")
         }
-        _ = try await agentCall(["execute": "guest-file-write", "arguments": ["handle": handle, "buf-b64": data.base64EncodedString()]], timeout: 30)
+        try await writeToGuestFile(handle, data, timeout: 30)
         try await closeGuestFile(handle)
     }
 
@@ -5199,8 +5371,7 @@ extension VMManager {
             var lastTenth: Int64 = 0
             do {
                 while let data = try handle.read(upToCount: Self.sendChunk), !data.isEmpty {
-                    _ = try await agentCall(["execute": "guest-file-write",
-                                             "arguments": ["handle": guestHandle, "buf-b64": data.base64EncodedString()]], timeout: 60)
+                    try await writeToGuestFile(guestHandle, data, timeout: 60)
                     sent += Int64(data.count)
                     let tenth = size > 50_000_000 ? sent * 10 / max(size, 1) : 0
                     if tenth > lastTenth, tenth < 10 {
@@ -5301,7 +5472,10 @@ extension VMManager {
                     // Not full, so a damaged disk or a failing drive (2026-11-08,
                     // fourth audit #9): with rerror=stop a read error pauses too,
                     // and it was called "full" whatever the free space.
-                    let full = free < DiskWatch.gigabyte || free == Int64.max
+                    // The plain figure (2026-11-09, fifth audit #27): "important
+                    // usage" counts purgeable space a write can't use yet, so a
+                    // full disk was described as having room.
+                    let full = (values?.volumeAvailableCapacity.map { Int64($0) } ?? free) < DiskWatch.gigabyte || free == Int64.max
                     avmLog("diskWatch: QEMU paused the machine with an I/O error (\(gone ? "its drive is disconnected" : full ? "its disk's volume is full" : "a disk error with \(free / DiskWatch.gigabyte) GB free"))")
                     if gone, let drive {
                         // Resume can't work (fourth audit #9): QEMU's open file is on
@@ -5317,7 +5491,7 @@ extension VMManager {
 
                 // Each minute until it first answers, for the dashboard.
                 if installed, !heardDrives || minute % 5 == 0, self.state == .running, let path = self.guestAgentSocketPath,
-                   let reply = try? await Task.detached(operation: { try GuestAgent.run([#"{"execute":"guest-get-fsinfo"}"#], socketPath: path, timeout: 10) }).value.first,
+                   let reply = try? await GuestAgent.call([#"{"execute":"guest-get-fsinfo"}"#], socketPath: path, timeout: 10).first,
                    let json = try? JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any] {
                     let drives = DiskWatch.drives(fromFsinfo: json["return"])
                     if !drives.isEmpty {

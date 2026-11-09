@@ -107,7 +107,7 @@ nonisolated enum QEMUSavedState {
     /// machine running, after any restore).
     static func plan(configuration: VMConfiguration, runtimeDir: URL) async throws -> Plan? {
         let fm = FileManager.default
-        let disk = URL(fileURLWithPath: configuration.diskImagePath)
+        let disk = URL(fileURLWithPath: configuration.resolvedDiskImagePath)
         let marker = runtimeDir.appendingPathComponent(loadedMarker)
         guard let tags = await snapshotTags(disk: disk) else {
             AVMLog.write("AVM: SavedState — the disk's snapshots couldn't be read; nothing is loaded or deleted at this Start.")
@@ -165,7 +165,7 @@ nonisolated enum QEMUSavedState {
     /// put back, for one). Its machine then starts from its disk.
     static func discard(configuration: VMConfiguration) async {
         guard let dir = try? configuration.directoryURL() else { return }
-        let disk = URL(fileURLWithPath: configuration.diskImagePath)
+        let disk = URL(fileURLWithPath: configuration.resolvedDiskImagePath)
         if await snapshotTags(disk: disk)?.contains(tag) != false {
             _ = try? await RestorePoints.qemuImg(["snapshot", "-d", tag, disk.path])
         }

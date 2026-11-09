@@ -157,12 +157,14 @@ nonisolated enum DiskWatch {
     /// Only ever an empty disk of exactly this size, that isn't the one Windows
     /// started from. Formatted before it gets a letter, so Windows doesn't offer
     /// to format it. It says "ready" and the letter, "already" for a drive that
-    /// has been made ready, or "nodisk".
+    /// has been made ready, or "nodisk". Never a USB disk (2026-11-09, fourth
+    /// audit #21): a new stick passed through to Windows is RAW too, and one
+    /// of the right size would have been formatted.
     static func formatWindowsDriveScript(sizeGB: Int) -> String {
         """
         $ErrorActionPreference = 'Stop'
         $disks = @(Get-Disk | Where-Object { $_.SerialNumber -eq 'avmdisk1' -and -not $_.IsBoot -and -not $_.IsSystem })
-        if ($disks.Count -eq 0) { $size = \(Int64(sizeGB) * gigabyte); $disks = @(Get-Disk | Where-Object { $_.Size -eq $size -and -not $_.IsBoot -and -not $_.IsSystem }) }
+        if ($disks.Count -eq 0) { $size = \(Int64(sizeGB) * gigabyte); $disks = @(Get-Disk | Where-Object { $_.Size -eq $size -and $_.BusType -ne 'USB' -and -not $_.IsBoot -and -not $_.IsSystem }) }
         $empty = @($disks | Where-Object { $_.PartitionStyle -eq 'RAW' })
         if ($empty.Count -ne 1) { if ($disks.Count -ge 1) { 'already' } else { 'nodisk' }; exit }
         $disk = $empty[0]

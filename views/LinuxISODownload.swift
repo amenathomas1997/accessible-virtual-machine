@@ -309,16 +309,25 @@ final class LinuxISODownloader: NSObject, ObservableObject {
         session?.finishTasksAndInvalidate()
         session = nil
         task = nil
-        guard phase == .downloading else { return }   // cancelled meanwhile
+        guard phase == .downloading else {   // cancelled meanwhile
+            if let temporary { try? FileManager.default.removeItem(at: temporary) }
+            return
+        }
         guard let temporary else {
             fail("The \(distribution.title) download stopped. Reason: \(error ?? "unknown") Try again.")
             return
         }
         let destination = Self.downloads.appendingPathComponent(fileName)
         do {
-            try? FileManager.default.removeItem(at: destination)
+            // To the Trash, never gone for good (2026-11-09, fourth audit
+            // #18): the file already there may be the user's.
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.trashItem(at: destination, resultingItemURL: nil)
+                Announcer.shared.announce("The earlier \(fileName) is in the Trash.", tone: .info)
+            }
             try FileManager.default.moveItem(at: temporary, to: destination)
         } catch {
+            try? FileManager.default.removeItem(at: temporary)
             fail("AVM couldn't put the download in Downloads. Reason: \(error.localizedDescription)")
             return
         }
@@ -346,9 +355,10 @@ final class LinuxISODownloader: NSObject, ObservableObject {
                 // forever (2026-11-01 audit).
                 AVMLog.write("Linux download: the copy in Downloads didn't match; downloading it again")
                 do {
-                    try FileManager.default.removeItem(at: file)
+                    try FileManager.default.trashItem(at: file, resultingItemURL: nil)
+                    Announcer.shared.announce("\(file.lastPathComponent) in Downloads didn't match the checksum, so AVM moved it to the Trash and is downloading it again.", tone: .info)
                 } catch {
-                    fail("\(file.lastPathComponent) in Downloads didn't match the checksum \(distribution.title) publishes, and AVM couldn't remove it. Next: move it to the Trash, then try again.")
+                    fail("\(file.lastPathComponent) in Downloads didn't match the checksum \(distribution.title) publishes, and AVM couldn't move it to the Trash. Reason: \(error.localizedDescription) Next: move or rename it, then try again.")
                     return
                 }
                 phase = .finding

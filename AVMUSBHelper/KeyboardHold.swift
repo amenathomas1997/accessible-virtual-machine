@@ -196,10 +196,19 @@ final class KeyboardHold {
                 reply(false, "Only the person using this Mac's screen can choose a keyboard for Windows.")
                 return
             }
-            if let other = self.owner, other !== connection, self.wantedID != nil {
-                _ = other
-                reply(false, "Another copy of AVM is using a keyboard for Windows.")
-                return
+            if let other = self.owner, other !== connection, let wanted = self.wantedID {
+                // A user no longer at the screen gives way (2026-11-09, fifth
+                // audit #40): their request stays set, to take the keyboard
+                // back on their return, and it told the person at the screen
+                // "another copy of AVM" for as long as that session's AVM ran.
+                // Everything below replaces it; they are told it has ended.
+                if let uid = self.heldOwnerUID, !Self.isConsoleUser(uid) {
+                    os_log("keyboard for Windows: the person at the screen takes over a background user's request", log: log, type: .default)
+                    self.client()?.keyboardState(wanted, held: false, detail: "another user at this Mac chose a keyboard for Windows while you were away. Next: choose it again in the machine's Settings.")
+                } else {
+                    reply(false, "Another copy of AVM is using a keyboard for Windows.")
+                    return
+                }
             }
             // Held for this AVM already (2026-10-29, seventh audit): asked
             // again for the keyboard it held, the helper let it go, took it

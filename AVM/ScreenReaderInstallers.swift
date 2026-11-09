@@ -15,7 +15,9 @@
 //     2026.3 at its first sign-in (2026-10-26).
 //   - Both: the newest release in winget's public package manifests
 //     (github.com/microsoft/winget-pkgs), with its SHA-256.
-//   - Both: the version pinned below, if neither can be read.
+//   - Both: if neither can be read, the newest copy already downloaded
+//     that still matches what was recorded beside it, then the version
+//     pinned below.
 // Whichever it is:
 //   - the link must be on the maker's own host (ScreenReader.vendorHost);
 //     anything else is refused, so a bad feed can't point elsewhere;
@@ -76,8 +78,9 @@ nonisolated enum ScreenReaderInstallers {
 
     private static let nvAccessFeed = "https://api.nvaccess.org/nvdaUpdateCheck?versionType=stable"
 
-    /// The newest release: NV Access's feed (NVDA), then winget, then pinned.
-    static func latest(_ reader: ScreenReader) async -> ScreenReaderInstaller {
+    /// The newest release: NV Access's feed (NVDA), then winget. nil when
+    /// neither gives one to trust.
+    static func latest(_ reader: ScreenReader) async -> ScreenReaderInstaller? {
         if reader == .nvda {
             do {
                 let found = try nvAccessRelease(text: try await text(nvAccessFeed))
@@ -92,13 +95,13 @@ nonisolated enum ScreenReaderInstallers {
         do {
             let found = try await lookUp(reader)
             guard found.url.host == reader.vendorHost, found.url.scheme == "https" else {
-                AVMLog.write("AVM: ScreenReaders — winget's \(reader.displayName) link isn't on \(reader.vendorHost); using the pinned version.")
-                return pinned[reader]!
+                AVMLog.write("AVM: ScreenReaders — winget's \(reader.displayName) link isn't on \(reader.vendorHost).")
+                return nil
             }
             return found
         } catch {
-            AVMLog.write("AVM: ScreenReaders — couldn't read winget's \(reader.displayName) manifest (\(error.localizedDescription)); using the pinned version.")
-            return pinned[reader]!
+            AVMLog.write("AVM: ScreenReaders — couldn't read winget's \(reader.displayName) manifest (\(error.localizedDescription)).")
+            return nil
         }
     }
 
@@ -141,7 +144,9 @@ nonisolated enum ScreenReaderInstallers {
             fields[line[..<colon].trimmingCharacters(in: .whitespaces)] =
                 line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
         }
-        guard let version = fields["version"], !version.isEmpty,
+        // Digits and dots only (2026-11-09, fifth audit #37): it names a
+        // file on the Mac, as winget's folder names already had to.
+        guard let version = fields["version"], isPlainVersion(version),
               let link = fields["launcherUrl"].flatMap(URL.init(string:)),
               let hash = fields["launcherHash"],
               hash.range(of: "^[0-9a-fA-F]{40}$", options: .regularExpression) != nil else {
@@ -186,12 +191,22 @@ nonisolated enum ScreenReaderInstallers {
         for reader in readers {
             // A Force Stop ends the downloads (2026-10-29, sixth audit).
             if Task.isCancelled { break }
-            let installer = await latest(reader)
+            // Offline, or GitHub refusing, used to mean the pinned version,
+            // whose file isn't the one kept: a good copy was ignored and
+            // Windows installed with Narrator alone (2026-11-09, fifth audit #14).
+            let found = await latest(reader)
+            if found == nil, let kept = await newestGoodCopy(of: reader, in: cache) {
+                AVMLog.write("AVM: ScreenReaders — the newest release couldn't be looked up; using the \(reader.displayName) already downloaded (\(kept.lastPathComponent)).")
+                got[reader] = kept
+                continue
+            }
+            let installer = found ?? pinned[reader]!
             let file = cache.appendingPathComponent("\(reader.rawValue)-\(installer.version).exe")
             // Hashed off the main actor (2026-10-29, seventh audit): this runs
             // on the caller's actor, and 1.5 GB of SHA-256 froze AVM's speech.
             if (try? await Task.detached { try matches(file, installer.checksum) }.value) == true {
                 AVMLog.write("AVM: ScreenReaders — reusing \(reader.displayName) \(installer.version).")
+                recordCopy(installer, at: file)
                 got[reader] = file
                 continue
             }
@@ -211,6 +226,7 @@ nonisolated enum ScreenReaderInstallers {
                     }
                     AVMLog.write("AVM: ScreenReaders — downloaded and checked \(reader.displayName) \(installer.version)\(attempt > 1 ? " on try \(attempt)" : "").")
                     got[reader] = file
+                    recordCopy(installer, at: file)
                     removeOlderCopies(of: reader, keeping: file, in: cache)
                     lastError = nil
                     break
@@ -239,12 +255,79 @@ nonisolated enum ScreenReaderInstallers {
         return got
     }
 
-    /// A newer version replaces the saved one; JAWS alone is 1.5 GB.
+    // MARK: Copies already downloaded
+
+    /// Beside each installer: its version and checksum, so it can be
+    /// trusted without the feed that named it (2026-11-09, fifth audit #14).
+    private nonisolated struct RecordedCopy: Codable, Sendable {
+        let version: String
+        let sha256: String?
+        let sha1: String?
+        var checksum: Checksum? {
+            if let sha256 { return .sha256(sha256) }
+            if let sha1 { return .sha1(sha1) }
+            return nil
+        }
+    }
+
+    /// Digits and dots, as a release folder or a feed's version must be.
+    static func isPlainVersion(_ version: String) -> Bool {
+        version.range(of: #"^\d+(\.\d+)*$"#, options: .regularExpression) != nil
+    }
+
+    private static func recordURL(of file: URL) -> URL { file.appendingPathExtension("avmcheck") }
+
+    private static func recordCopy(_ installer: ScreenReaderInstaller, at file: URL) {
+        var sha256: String?, sha1: String?
+        switch installer.checksum {
+        case .sha256(let value): sha256 = value
+        case .sha1(let value): sha1 = value
+        }
+        let record = RecordedCopy(version: installer.version, sha256: sha256, sha1: sha1)
+        if let data = try? JSONEncoder().encode(record) { try? data.write(to: recordURL(of: file), options: .atomic) }
+    }
+
+    /// The newest kept installer, no older than the pinned one, whose file
+    /// still matches its record. Hashed off the caller's actor.
+    private static func newestGoodCopy(of reader: ScreenReader, in cache: URL) async -> URL? {
+        let fm = FileManager.default
+        var copies: [(file: URL, record: RecordedCopy, checksum: Checksum)] = []
+        for name in (try? fm.contentsOfDirectory(atPath: cache.path)) ?? []
+        where name.hasPrefix("\(reader.rawValue)-") && name.hasSuffix(".exe") {
+            let file = cache.appendingPathComponent(name)
+            guard let data = try? Data(contentsOf: recordURL(of: file)),
+                  let record = try? JSONDecoder().decode(RecordedCopy.self, from: data),
+                  isPlainVersion(record.version), let checksum = record.checksum,
+                  record.version.compare(pinned[reader]!.version, options: .numeric) != .orderedAscending else { continue }
+            copies.append((file, record, checksum))
+        }
+        copies.sort { $0.record.version.compare($1.record.version, options: .numeric) == .orderedDescending }
+        for copy in copies {
+            let file = copy.file, checksum = copy.checksum
+            if (try? await Task.detached { try matches(file, checksum) }.value) == true { return file }
+        }
+        return nil
+    }
+
+    /// The version in a kept file's name: nvda-2026.3.exe, or with .part or
+    /// .avmcheck after it.
+    private static func versionInName(_ name: String, of reader: ScreenReader) -> String? {
+        let rest = name.dropFirst(reader.rawValue.count + 1)
+        guard let end = rest.range(of: ".exe") else { return nil }
+        let version = String(rest[..<end.lowerBound])
+        return isPlainVersion(version) ? version : nil
+    }
+
+    /// A newer version replaces the saved one; JAWS alone is 1.5 GB. Only
+    /// an older one (2026-11-09, fifth audit #14): falling back to the
+    /// pinned version removed a newer copy, whatever its number.
     private static func removeOlderCopies(of reader: ScreenReader, keeping file: URL, in cache: URL) {
         let fm = FileManager.default
         for name in (try? fm.contentsOfDirectory(atPath: cache.path)) ?? []
-        where name.hasPrefix("\(reader.rawValue)-") && name != file.lastPathComponent {
+        where name.hasPrefix("\(reader.rawValue)-") && name != file.lastPathComponent && name != recordURL(of: file).lastPathComponent {
             let url = cache.appendingPathComponent(name)
+            if let version = versionInName(name, of: reader), let keeping = versionInName(file.lastPathComponent, of: reader),
+               version.compare(keeping, options: .numeric) == .orderedDescending { continue }
             // A piece another download is writing is left alone for a day.
             if name.contains(".part"),
                let changed = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date,

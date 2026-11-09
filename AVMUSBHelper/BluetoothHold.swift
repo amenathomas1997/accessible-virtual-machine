@@ -47,6 +47,39 @@ final class BluetoothHold {
         /// device out of range blocked for seconds, and on the one shared
         /// queue every other device's relay and every hold and release waited.
         let io = DispatchQueue(label: "bluetooth-io")
+        /// The guest's reports waiting on `io`, and whether the hold has
+        /// ended (2026-11-09, fifth audit #18). Each can block for seconds on
+        /// a device going out of range, so a guest could grow a root process
+        /// without limit; and after a stop the whole backlog ran, against a
+        /// device being closed, ahead of the socket's close.
+        private let guestLock = NSLock()
+        private var guestPending = 0
+        private var guestDropping = false
+        private var stoppedFlag = false
+        static let guestPendingLimit = 64
+
+        /// False when the frame is to be dropped, as a lost HID report is.
+        func reserveGuestWork() -> Bool {
+            guestLock.lock(); defer { guestLock.unlock() }
+            guard !stoppedFlag else { return false }
+            guard guestPending < Self.guestPendingLimit else {
+                if !guestDropping {
+                    guestDropping = true
+                    os_log("a Bluetooth device has too many reports waiting; dropping the guest's", log: log, type: .error)
+                }
+                return false
+            }
+            guestPending += 1
+            guestDropping = false
+            return true
+        }
+        func finishGuestWork() {
+            guestLock.lock(); guestPending -= 1; guestLock.unlock()
+        }
+        var stopped: Bool {
+            get { guestLock.lock(); defer { guestLock.unlock() }; return stoppedFlag }
+            set { guestLock.lock(); stoppedFlag = newValue; guestLock.unlock() }
+        }
         init(id: String, device: IOHIDDevice, socket: Int32, owner: NSXPCConnection?, ownerUID: uid_t, inputSize: Int, usesReportIDs: Bool) {
             self.id = id
             self.device = device
@@ -60,6 +93,12 @@ final class BluetoothHold {
         deinit { inputReport.deallocate() }
     }
     private var held: [String: Held] = [:]
+    /// Connecting and seizing, one at a time (2026-11-09, fourth audit #30):
+    /// a seize can block for 15 s, and on `queue` every held device's reports
+    /// and every list() waited past AVM's 12 s limit. Releases pass through
+    /// here too, so that one can't overtake the hold it follows and leave a
+    /// device held for an AVM that has gone.
+    private let opening = DispatchQueue(label: "bluetooth-hold-opening")
     /// While anything is held: the device is only for the person at the
     /// screen, as a keyboard for Windows is (2026-10-28, code review: a
     /// fast user switch left it in a background user's machine).
@@ -165,7 +204,7 @@ final class BluetoothHold {
 
     func hold(_ id: String, streamSocketPath: String, peerPID: Int, owner connection: NSXPCConnection?,
               reply: @escaping (Bool, String?) -> Void) {
-        queue.async {
+        opening.async {
             guard let connection else { reply(false, "The helper could not tell who asked."); return }
             let uid = connection.effectiveUserIdentifier
             guard Self.isConsoleUser(uid) else {
@@ -177,7 +216,7 @@ final class BluetoothHold {
                 reply(false, "The connection to the virtual machine isn't ready (\(problem)).")
                 return
             }
-            guard self.held[id] == nil else { reply(false, "That device is already in a virtual machine."); return }
+            guard self.queue.sync(execute: { self.held[id] == nil }) else { reply(false, "That device is already in a virtual machine."); return }
             let all = Self.allDevices()
             guard let device = Self.bluetoothDevices().first(where: { Self.identifier($0) == id }) else {
                 reply(false, "That Bluetooth device isn't connected. Turn it on, or wake it, and try again.")
@@ -224,27 +263,33 @@ final class BluetoothHold {
             let descriptor = Self.property(device, kIOHIDReportDescriptorKey) as? Data ?? Data()
             let entry = Held(id: id, device: device, socket: socket, owner: connection, ownerUID: uid,
                              inputSize: size, usesReportIDs: Self.usesReportIDs(descriptor))
-            self.held[id] = entry
-            self.start(entry)
-            self.watchWhileHeld()
-            idle.bluetoothChanged(count: self.held.count)
+            self.queue.sync {
+                self.held[id] = entry
+                self.start(entry)
+                self.watchWhileHeld()
+                idle.bluetoothChanged(count: self.held.count)
+            }
             os_log("Bluetooth device held for a virtual machine", log: log, type: .default)
             reply(true, nil)
         }
     }
 
     func release(_ id: String, owner connection: NSXPCConnection?) {
-        queue.async {
-            guard let entry = self.held[id], entry.owner === connection || entry.owner == nil else { return }
-            self.stop(entry, notify: false, detail: nil)
+        opening.async {
+            self.queue.async {
+                guard let entry = self.held[id], entry.owner === connection || entry.owner == nil else { return }
+                self.stop(entry, notify: false, detail: nil)
+            }
         }
     }
 
     /// Everything one AVM held, when its connection ends.
     func releaseAll(owner connection: NSXPCConnection?) {
-        queue.async {
-            for entry in self.held.values where entry.owner === connection || entry.owner == nil {
-                self.stop(entry, notify: false, detail: nil)
+        opening.async {
+            self.queue.async {
+                for entry in self.held.values where entry.owner === connection || entry.owner == nil {
+                    self.stop(entry, notify: false, detail: nil)
+                }
             }
         }
     }
@@ -310,7 +355,7 @@ final class BluetoothHold {
     }
 
     private func writeFrame(_ entry: Held, type: UInt8, _ payload: Data) -> Bool {
-        guard payload.count <= 1024 else { return true }
+        guard payload.count <= 1024, !entry.stopped else { return true }
         var frame = Data([type, UInt8(payload.count & 0xff), UInt8(payload.count >> 8)])
         frame.append(payload)
         // Without blocking (2026-10-28, security review): a machine not
@@ -358,7 +403,11 @@ final class BluetoothHold {
             // an empty one means the device didn't give it.
             if type == 4 {
                 let reportID = CFIndex(payload[payload.startIndex])
+                // Dropped, QEMU stalls the request after a second.
+                guard entry.reserveGuestWork() else { continue }
                 entry.io.async { [weak self] in
+                    defer { entry.finishGuestWork() }
+                    guard !entry.stopped else { return }
                     var report = [UInt8](repeating: 0, count: 1024)
                     var length = CFIndex(report.count)
                     let result = IOHIDDeviceGetReport(entry.device, kIOHIDReportTypeFeature, reportID, &report, &length)
@@ -376,7 +425,10 @@ final class BluetoothHold {
             guard type == 2 || type == 3 else { continue }
             let reportType = type == 3 ? kIOHIDReportTypeFeature : kIOHIDReportTypeOutput
             let reportID = entry.usesReportIDs ? CFIndex(payload[payload.startIndex]) : 0
+            guard entry.reserveGuestWork() else { continue }
             entry.io.async {
+                defer { entry.finishGuestWork() }
+                guard !entry.stopped else { return }
                 payload.withUnsafeBytes { raw in
                     let result = IOHIDDeviceSetReport(entry.device, reportType, reportID,
                                                       raw.bindMemory(to: UInt8.self).baseAddress!, payload.count)
@@ -391,6 +443,7 @@ final class BluetoothHold {
     private func stop(_ entry: Held, notify: Bool, detail: String?) {
         guard held[entry.id] === entry else { return }
         held[entry.id] = nil
+        entry.stopped = true
         HeldByHelper.remove(entry.device)
         if let source = entry.readSource {
             source.cancel()                  // closes the socket when done, on entry.io

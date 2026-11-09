@@ -400,6 +400,8 @@ private struct DashboardContent: View {
     /// macOS machines' state for their rows (2026-10-26).
     @ObservedObject private var macGuest = MacGuestRunner.shared
     @ObservedObject private var diskUsage = DiskUsage.shared
+    // Disk checks off the main thread (2026-11-09, fifth audit #17).
+    @ObservedObject private var storageWatch = StorageWatch.shared
 
     /// Every running Windows or Linux machine; each row observes its own
     /// session (QEMUMachineRow), so it redraws as that machine changes.
@@ -443,7 +445,7 @@ private struct DashboardContent: View {
                                 .accessibilityHeading(.h3)
                             Text(specLine(config))
                                 .font(.caption)
-                                .foregroundStyle(config.storageIsMissing ? Color.red : Color.secondary)
+                                .foregroundStyle(storageWatch.isMissing(config) ? Color.red : Color.secondary)
                                 .accessibilityLabel(spokenSpecs(config))
                             FlowLayout(spacing: 8, lineSpacing: 6) {
                                 machineControls(config)
@@ -589,7 +591,7 @@ private struct DashboardContent: View {
             cells: [config.name, status, config.guestOS.displayName, "\(config.cpuCount)",
                     "\(config.ramSizeGB) GB", disk.shown, drive],
             spoken: [4: "\(config.ramSizeGB) gigabytes", 5: disk.spoken],
-            warning: config.storageIsMissing)
+            warning: storageWatch.isMissing(config))
     }
 
     private var selectedConfiguration: VMConfiguration? {
@@ -777,7 +779,7 @@ private struct DashboardContent: View {
     /// the problem is heard on the dashboard before Start is pressed.
     private func storageNote(_ config: VMConfiguration) -> String? {
         guard config.isStoredElsewhere else { return nil }
-        if config.storageIsMissing {
+        if storageWatch.isMissing(config) {
             return config.storageDriveName.map { "drive \($0) not connected" } ?? "storage folder not found"
         }
         return config.storageDriveName.map { "on \($0)" } ?? "in a folder you chose"
@@ -857,6 +859,14 @@ private struct DashboardContent: View {
                     Announcer.shared.announce("\(config.name) was not deleted.", tone: .info)
                     return
                 }
+                // Started under this question too (2026-11-09, fourth audit
+                // #16): the check above ran before it, and this delete can't
+                // be undone, with QEMU writing to the disk it removes.
+                if machines.session(for: config.id).map({ $0.vmState != .stopped }) ?? false || macGuest.runningID == config.id {
+                    AVMLog.write("AVM: Delete refused for '\(config.name)' — it started during the permanent-delete question.")
+                    Announcer.shared.announce("\(config.name) was not deleted. Reason: it started while you were asked. Next: shut it down, then delete it again.", tone: .failure)
+                    return
+                }
                 do {
                     let freed = try vmStore.deleteMovingFilesToTrash(config, permanently: true)
                     Announcer.shared.announce("\(config.name) deleted permanently. \(spokenSize(freed)) freed.", tone: .success)
@@ -896,7 +906,12 @@ private struct DashboardContent: View {
         if macGuest.runningID == config.id {
             return macGuest.keyboardInGuest ? "Running, keyboard in macOS" : "Running"
         }
-        if let folder = try? config.directoryURL(),
+        // A chosen folder's answer comes from StorageWatch (2026-11-09, fifth
+        // audit #17): this runs in the body, and the folder can be on a
+        // sleeping drive.
+        if config.isStoredElsewhere {
+            if StorageWatch.shared.status(of: config)?.hasMacSavedState == true { return "Saved: Start carries on where you left it" }
+        } else if let folder = try? config.directoryURL(),
            FileManager.default.fileExists(atPath: MacGuestFiles(folder: folder).savedState.path) {
             return "Saved: Start carries on where you left it"
         }

@@ -26,6 +26,8 @@ import AppKit
 ///     folder "saved" and Windows never saw it. A path already saved stays in
 ///     the configuration, untouched, for when the feature exists.
 struct SettingsView: View {
+    // Disk checks off the main thread (2026-11-09, fifth audit #17).
+    @ObservedObject private var storageWatch = StorageWatch.shared
 
     // MARK: - Environment
 
@@ -71,11 +73,13 @@ struct SettingsView: View {
     private var maxDiskInGB: Int {
         // The drive the VM is on (2026-10-25, code audit), not always the
         // Mac's own disk: an external drive can be much fuller or emptier.
-        let fileURL = configuration.storageIsMissing
+        // A chosen folder's room comes from StorageWatch (2026-11-09, fifth
+        // audit #17): this runs in the body.
+        let homeOrOwnFolder = configuration.isStoredElsewhere
             ? URL(fileURLWithPath: NSHomeDirectory())
             : ((try? configuration.directoryURL()) ?? URL(fileURLWithPath: NSHomeDirectory()))
-        if let values = try? fileURL.resourceValues(forKeys: [.volumeAvailableCapacityKey]),
-           let available = values.volumeAvailableCapacity {
+        let watched = configuration.isStoredElsewhere ? storageWatch.status(of: configuration)?.availableBytes : nil
+        if let available = watched ?? (try? homeOrOwnFolder.resourceValues(forKeys: [.volumeAvailableCapacityKey]))?.volumeAvailableCapacity {
             // What fits: the disk as it is plus the free space, less 20 GB
             // for the Mac (2026-10-26, code audit: a floor of 40 let it grow
             // past the free space). The disk already holds its own size at
@@ -642,7 +646,7 @@ struct SettingsView: View {
             Text("If \(guest) won't start after a drive was disconnected or your Mac lost power, AVM can check its disk and repair what it can.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button(checkingDisk ? "Checking…" : "Check the Disk…") { checkDisk() }
-                .disabled(isRunning || checkingDisk || saved.storageIsMissing)
+                .disabled(isRunning || checkingDisk || storageWatch.isMissing(saved))
                 .accessibilityHint(isRunning ? "Stop \(guest) first." : "Checks the disk's structure and offers to repair it. The machine's files inside aren't read.")
         }
         .padding(.horizontal)
@@ -727,7 +731,7 @@ struct SettingsView: View {
             if isRunning && runningSession == nil {
                 Text("Stop \(guest) to save or use a restore point.")
                     .foregroundStyle(.secondary)
-            } else if saved.storageIsMissing {
+            } else if storageWatch.isMissing(saved) {
                 Text(saved.storageMissingMessage)
                     .foregroundStyle(.secondary)
             } else {
@@ -1033,9 +1037,9 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button(reinstalling ? "Preparing…" : "Reinstall Windows…") { reinstallWindows() }
-                .disabled(isRunning || reinstalling || saved.storageIsMissing)
+                .disabled(isRunning || reinstalling || storageWatch.isMissing(saved))
                 // The reason when dimmed (2026-10-29, sixth audit).
-                .accessibilityHint(saved.storageIsMissing && !isRunning
+                .accessibilityHint(storageWatch.isMissing(saved) && !isRunning
                     ? saved.storageMissingMessage
                     : "Asks first. Everything in Windows on this machine is erased.")
         }
@@ -1198,7 +1202,15 @@ struct SettingsView: View {
                 // showed (2026-11-05 audit): a running machine force-stopped mid-
                 // resume or mid-save kept one, and the next Start loaded it over
                 // the point just put back.
-                let configuration = saved
+                // The disk's current path (2026-11-09, fifth audit #12): on a
+                // drive with a new name the saved path is dead until the next
+                // Start, the saved state stayed, and that Start loaded it over
+                // the point just put back.
+                let configuration: VMConfiguration = {
+                    var current = saved
+                    current.diskImagePath = saved.resolvedDiskImagePath
+                    return current
+                }()
                 let disk = URL(fileURLWithPath: configuration.diskImagePath)
                 try await RestorePoints.restore(point, vmDirectory: dir, currentSecureBoot: saved.usesSecureBoot) {
                     if wasSaved || session != nil, await QEMUSavedState.snapshotTags(disk: disk)?.contains(QEMUSavedState.tag) != false {
@@ -1828,6 +1840,8 @@ struct SettingsView: View {
                     return
                 }
             }
+            // Not kept from an earlier Save in this sheet (2026-11-09, fourth audit #33).
+            secondDriveSizeAdopted = nil
             if let newSecondDrive {
                 do {
                     let file = try vmStore.vmDirectoryURL(for: configuration).appendingPathComponent(VMConfiguration.secondDriveFileName)
@@ -1932,7 +1946,7 @@ struct SettingsView: View {
             // back comes first. It runs before this machine can start, as
             // Save is still in progress.
             if updated.usesWindows3D && !saved.usesWindows3D, VMManager.supportsWindows3D {
-                let dir = URL(fileURLWithPath: updated.diskImagePath).deletingLastPathComponent()
+                let dir = URL(fileURLWithPath: updated.resolvedDiskImagePath).deletingLastPathComponent() // 2026-11-09, fifth audit #12
                 do {
                     _ = try await RestorePoints.create(vmDirectory: dir, label: "Before 3D graphics", secureBoot: updated.usesSecureBoot, diskBus: updated.diskBus)
                     Announcer.shared.announce("3D graphics in Windows is experimental, and \(updated.name) may freeze or stop with it on. Restore point saved: Before 3D graphics. The 3D graphics driver goes in the next time \(updated.name) starts.", tone: .info)

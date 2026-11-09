@@ -101,7 +101,7 @@ enum MacAutoSetup {
         let begun = files.setupAnswers.deletingLastPathComponent().appendingPathComponent("mac-setup-begun")
         if FileManager.default.fileExists(atPath: begun.path) {
             AVMLog.write("AVM: MacAutoSetup — an earlier run had begun; not running again.")
-            say("AVM began setting up macOS for you earlier and was interrupted, so it won't try again. Sign in with the password you chose.")
+            say("AVM began setting up macOS for you earlier and was interrupted, so it won't try again. If macOS is still asking setup questions, choose Turn On VoiceOver in macOS in its window and finish them yourself. If it's at the sign-in screen, sign in with the password you chose.")
             return false
         }
         FileManager.default.createFile(atPath: begun.path, contents: nil)

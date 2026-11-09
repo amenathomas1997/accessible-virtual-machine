@@ -136,9 +136,9 @@ nonisolated final class AVMLog: @unchecked Sendable {
     static let shared = AVMLog()
 
     // MARK: Tunables
-    /// Stop writing past this size rather than rotating mid-session, so "the
-    /// run where it broke" stays one discrete file. Generous today; Stage C
-    /// removes the screendump timer that generates most of the volume.
+    /// A new file at this size (2026-11-09, fifth audit #33). Writing used to
+    /// stop here, and with AVM open for weeks the log ended before the event
+    /// being reported. `prune` bounds how many files stay.
     private let byteCap = 5 * 1024 * 1024
     /// Including the one being created now. The test runs' folder keeps
     /// more (2026-10-31): the suite starts an AVM for every test, and with
@@ -303,16 +303,8 @@ nonisolated final class AVMLog: @unchecked Sendable {
         let now = Date()
         queue.async { [self] in
             setUpIfNeeded()
+            if !setUpFailed, self.handle != nil, bytesWritten >= byteCap, !rollOver(now: now) { return }
             guard let handle, !setUpFailed else { return }
-
-            if bytesWritten >= byteCap {
-                guard !capNoticeWritten else { return }
-                capNoticeWritten = true
-                let notice = "\(stamp.string(from: now)): [log] SIZE CAP REACHED (\(byteCap) bytes). No further lines will be written to this file.\n"
-                if let d = notice.data(using: .utf8) { try? handle.write(contentsOf: d) }
-                NSLog("AVM: diagnostic log hit its size cap; no further file logging this launch.")
-                return
-            }
 
             let tag = category.map { "[\($0)] " } ?? ""
             let line = "\(stamp.string(from: now)): \(tag)\(Self.sanitize(message))\n"
@@ -350,14 +342,7 @@ nonisolated final class AVMLog: @unchecked Sendable {
 
         prune(in: dir)
 
-        // Sortable name; one file per launch.
-        let nameStamp: String = {
-            let f = DateFormatter()
-            f.dateFormat = "yyyy-MM-dd-HHmmss"
-            f.locale = Locale(identifier: "en_US_POSIX")
-            return f.string(from: Date())
-        }()
-        let url = dir.appendingPathComponent("avm-\(nameStamp).log")
+        let url = Self.newLogURL(in: dir)
 
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
             setUpFailed = true
@@ -379,6 +364,54 @@ nonisolated final class AVMLog: @unchecked Sendable {
             bytesWritten += d.count
         }
         NSLog("AVM: diagnostic log started at \(url.path)")
+    }
+
+    /// Sortable name; one file per launch, and one more each time a launch
+    /// fills a file.
+    private static func newLogURL(in dir: URL) -> URL {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd-HHmmss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return dir.appendingPathComponent("avm-\(f.string(from: Date())).log")
+    }
+
+    /// Goes on in a new file, with the header's promise at its top. False when
+    /// that can't be done: the old rule then applies, one notice and no more
+    /// lines, as a log that can't roll mustn't fill the disk. On `queue`.
+    private func rollOver(now: Date) -> Bool {
+        guard !capNoticeWritten else { return false }
+        guard let dir = Self.logDirectory else { return stopAtCap(now: now, reason: "the log folder can't be found") }
+        let url = Self.newLogURL(in: dir)
+        // Same second as this file's start: the next line tries again.
+        if FileManager.default.fileExists(atPath: url.path) { return true }
+        prune(in: dir)
+        guard FileManager.default.createFile(atPath: url.path, contents: nil),
+              let next = try? FileHandle(forWritingTo: url) else {
+            return stopAtCap(now: now, reason: "\(url.lastPathComponent) couldn't be made")
+        }
+        let previous = currentURL?.lastPathComponent ?? "the previous file"
+        if let d = "\(stamp.string(from: now)): [log] continues in \(url.lastPathComponent)\n".data(using: .utf8) {
+            try? handle?.write(contentsOf: d)
+        }
+        try? handle?.close()
+        handle = next
+        currentURL = url
+        bytesWritten = 0
+        let header = Self.headerText() + "\(stamp.string(from: now)): [log] continued from \(previous)\n"
+        if let d = header.data(using: .utf8) {
+            try? next.write(contentsOf: d)
+            bytesWritten += d.count
+        }
+        return true
+    }
+
+    private func stopAtCap(now: Date, reason: String) -> Bool {
+        capNoticeWritten = true
+        if let d = "\(stamp.string(from: now)): [log] SIZE CAP REACHED (\(byteCap) bytes) and \(reason). No further lines will be written.\n".data(using: .utf8) {
+            try? handle?.write(contentsOf: d)
+        }
+        NSLog("AVM: diagnostic log hit its size cap and \(reason); no further file logging this launch.")
+        return false
     }
 
     /// Keep the newest `filesKept - 1` existing files, making room for the one

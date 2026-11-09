@@ -73,7 +73,9 @@ enum WindowsReinstall {
         }
 
         // A new, empty disk first, beside the old one.
-        let disk = URL(fileURLWithPath: configuration.diskImagePath)
+        // Its current path (2026-11-09, fifth audit #12): before the next
+        // Start, a drive with a new name left the saved one dead.
+        let disk = URL(fileURLWithPath: configuration.resolvedDiskImagePath)
         let fresh = disk.deletingLastPathComponent().appendingPathComponent("disk-reinstall.qcow2")
         try? fm.removeItem(at: fresh)
         do {

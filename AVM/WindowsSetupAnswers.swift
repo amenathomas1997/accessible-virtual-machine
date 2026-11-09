@@ -318,3 +318,33 @@ nonisolated struct WindowsSetupAnswers: Codable, Equatable, Sendable {
         try? answers.save(inVMDirectory: dir)
     }
 }
+
+extension WindowsSetupAnswers {
+    /// A FAT delete only unlinks the file: its bytes, the encoded password
+    /// among them, stayed in the image for good (2026-10-26, code audit).
+    /// Every copy of the answer file's text left in the image (from
+    /// "<?xml" to "</unattend>") is overwritten with zeros, in place; the
+    /// rest of the volume, the marker included, is untouched.
+    static func scrubAnswerFileBytes(imagePath: String) {
+        guard var data = FileManager.default.contents(atPath: imagePath) else { return }
+        let start = Data("<?xml".utf8), end = Data("</unattend>".utf8)
+        var scrubbed = 0
+        var from = data.startIndex
+        while let open = data.range(of: start, in: from..<data.endIndex) {
+            let limit = min(data.endIndex, open.lowerBound + 1_048_576)
+            guard let close = data.range(of: end, in: open.lowerBound..<limit) else { break }
+            data.resetBytes(in: open.lowerBound..<close.upperBound)
+            scrubbed += 1
+            from = close.upperBound
+        }
+        guard scrubbed > 0 else { return }
+        do {
+            let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: imagePath))
+            try handle.write(contentsOf: data)
+            try handle.close()
+            AVMLog.write("AVM: removeAnswerFile — scrubbed \(scrubbed) copy(ies) of the answer file's text from the UNATTEND volume.")
+        } catch {
+            AVMLog.write("AVM: removeAnswerFile — couldn't scrub the UNATTEND volume: \(error.localizedDescription)")
+        }
+    }
+}

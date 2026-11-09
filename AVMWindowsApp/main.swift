@@ -127,6 +127,11 @@ class StandIn: NSObject, NSApplicationDelegate {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }
         defer { close(fd) }
+        // AVM quitting between the connect and the write (2026-11-09, fifth
+        // audit #42): SIGPIPE killed the stand-in with nothing said, where a
+        // failed write ends in "AVM didn't answer" and AVM being opened.
+        var noSignal: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
         var address = sockaddr_un()
         address.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8)

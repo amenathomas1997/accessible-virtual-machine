@@ -30,6 +30,9 @@ final class SleepCoordinator {
     /// pause that lands after the wake (QEMU slower than holdLimit) is let
     /// go at once, instead of leaving the machine paused with nothing said.
     private var asleep = false
+    /// Machines left running into sleep because QEMU was busy with a
+    /// snapshot (2026-11-09, fifth audit #13); only their clocks need setting.
+    private var leftRunningForSleep: [VMManager] = []
     /// The longest AVM holds the Mac's sleep for the pause.
     private static let holdLimit: Duration = .seconds(5)
 
@@ -76,7 +79,16 @@ final class SleepCoordinator {
     }
 
     private func willSleep(token: Int) {
-        let running = MachineSessions.shared.managers.filter { $0.state == .running }
+        // Not one taking a snapshot (2026-11-09, fifth audit #13): QEMU answers
+        // nothing until it ends, so `stop` timed out and stayed queued, and
+        // landed after the wake: a frozen guest while AVM said Running, with
+        // nothing to resume it. The snapshot's own clock stops with the Mac.
+        let machines = MachineSessions.shared.managers.filter { $0.state == .running }
+        let running = machines.filter { !$0.isSaving && !$0.isRunningQMPJob }
+        leftRunningForSleep = machines.filter { $0.isSaving || $0.isRunningQMPJob }
+        if !leftRunningForSleep.isEmpty {
+            AVMLog.write("AVM: Sleep — \(leftRunningForSleep.count) machine(s) taking a snapshot aren't paused for sleep.")
+        }
         guard !running.isEmpty else {
             IOAllowPowerChange(rootPort, token)
             return
@@ -122,6 +134,13 @@ final class SleepCoordinator {
 
     private func didWake() {
         asleep = false
+        let leftRunning = leftRunningForSleep.filter { $0.state == .running }
+        leftRunningForSleep = []
+        if !leftRunning.isEmpty {
+            Task { @MainActor in
+                for manager in leftRunning { await manager.setGuestClock() }
+            }
+        }
         let paused = pausedForSleep.filter { $0.state == .paused }
         pausedForSleep = []
         guard !paused.isEmpty else { return }

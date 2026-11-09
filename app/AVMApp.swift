@@ -1111,7 +1111,9 @@ enum QuitCoordinator {
     /// AVM in the background, or the Mac shutting down from another app,
     /// the alert belonged to an app that wasn't active, so it wasn't
     /// focused and VoiceOver didn't read it, and the Mac waited on it.
-    private static func ask(_ alert: NSAlert) -> NSApplication.ModalResponse {
+    /// Not private (2026-11-09, fifth audit #32): SendToMachine's questions
+    /// take the keyboard from a machine the same way.
+    static func ask(_ alert: NSAlert) -> NSApplication.ModalResponse {
         // In front, without opening the dashboard (2026-10-28, fifth
         // audit): a window the user didn't ask for came up under the
         // question and stayed after Cancel.
@@ -1276,17 +1278,24 @@ enum QuitCoordinator {
                     // call, before .terminateLater was returned.
                     MacGuestRunner.shared.saveAndStop { saved in
                         DispatchQueue.main.async {
-                            if !saved { stopCancelled("macOS couldn't be saved and keeps running.") }
+                            // A refused quit forgets the update's relaunch
+                            // (2026-11-09, fourth audit #14).
+                            if !saved {
+                                UpdateAnnouncer.relaunchingForUpdate = false
+                                stopCancelled("macOS couldn't be saved and keeps running.")
+                            }
                             NSApp.reply(toApplicationShouldTerminate: saved)
                         }
                     }
                     return .terminateLater
                 } else {
                     MacGuestRunner.shared.saveAndStop { saved in
-                        if saved { NSApp.terminate(nil) }
+                        if saved { NSApp.terminate(nil) } else { UpdateAnnouncer.relaunchingForUpdate = false }
                     }
                     stopCancelled("macOS is being saved first, and AVM asks about the other machine when it's done.")
-                    UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
+                    // Deferred, not refused (2026-11-09, fourth audit #14): the
+                    // flag stays, so this quit still stops the old helper.
+                    return .terminateCancel
                 }
             default:
                 stopCancelled("macOS keeps running. Shut it down in its window first.")
@@ -1352,6 +1361,7 @@ enum QuitCoordinator {
             if saveAndQuit {
                 AVMLog.write("AVM: Quit — Save and Quit chosen for \(active.count) machine(s).")
                 Task { @MainActor in
+                    let given = active.flatMap { session in USBRedirectController.shared.devices(for: session.manager).map { (device: $0, manager: session.manager) } }
                     await releaseUSBDevices()
                     var allDone = true
                     for session in active where session.canSave {
@@ -1380,7 +1390,19 @@ enum QuitCoordinator {
                     if !allDone, let stop {
                         Announcer.shared.announce("The Mac's \(stop.word) is stopped. Choose \(stop.item) again when you're ready.", tone: .info)
                     }
+                    // A refused quit forgets the update's relaunch (2026-11-09, fourth audit #14).
+                    if !allDone { UpdateAnnouncer.relaunchingForUpdate = false }
                     NSApp.reply(toApplicationShouldTerminate: allDone)
+                    // They left before a save that then failed (2026-11-09,
+                    // fifth audit #16): back into machines still running.
+                    if !allDone && !given.isEmpty {
+                        var allBack = true
+                        for item in given {
+                            guard case .running = item.manager.state,
+                                  await USBRedirectController.shared.attach(item.device, to: item.manager, quiet: true) else { allBack = false; continue }
+                        }
+                        Announcer.shared.announce(allBack ? "Your USB devices are back in their machines." : "Some of your USB devices stayed on the Mac after the save failed. Next: send them to the machine again.", tone: allBack ? .info : .failure)
+                    }
                 }
                 return .terminateLater
             }
@@ -1393,7 +1415,10 @@ enum QuitCoordinator {
                     Announcer.shared.announce("The Mac's \(stop.word) is stopped while \(guest) \(several ? "shut" : "shuts") down. When AVM has quit, choose \(stop.item) again.", tone: .info)
                 }
                 beginShutDownThenQuit(guest: guest)
-                UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
+                // Deferred, not refused (2026-11-09, fourth audit #14): cleared
+                // here, the quit that follows the shutdown left the old helper
+                // running under the relaunched AVM. A failed shutdown clears it.
+                return .terminateCancel
             } else if quitNow {
                 AVMLog.write("AVM: Quit — Quit Now chosen with \(active.count) machine(s) active.")
             } else {
@@ -1477,6 +1502,7 @@ enum QuitCoordinator {
             }
             quitWhenShutDown = false
             guard failures.isEmpty else {
+                UpdateAnnouncer.relaunchingForUpdate = false // fourth audit #14
                 AVMLog.write("AVM: Quit — shutdown for quit failed: \(failures.joined(separator: "; "))")
                 Announcer.shared.announce(
                     "AVM did not quit: \(failures.joined(separator: ". ")). Next: try Quit again, and choose Quit Now if one is not responding.",

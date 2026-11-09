@@ -102,6 +102,16 @@ enum MachineArchive {
         return String(decoding: data, as: UTF8.self).uppercased().contains("AUTOUNATTEND")
     }
 
+    /// The machine a package holds, from its manifest; backup pruning
+    /// removes only this machine's own packages.
+    nonisolated static func packageMachineID(_ package: URL) -> UUID? {
+        guard let data = try? Data(contentsOf: package.appendingPathComponent(manifestName)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let configuration = json["configuration"] as? [String: Any],
+              let id = configuration["id"] as? String else { return nil }
+        return UUID(uuidString: id)
+    }
+
     static func exportProblem(for configuration: VMConfiguration, vmDirectory dir: URL) -> String? {
         let fm = FileManager.default
         if configuration.storageIsMissing {
@@ -247,6 +257,17 @@ enum MachineArchive {
         try fm.createDirectory(at: partial, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         do {
             try MachineFileCopier.copy(plan, from: dir, to: partial, progress: progress)
+            // Scrubbed in the copy, then checked (2026-11-09, fourth audit
+            // #33): a machine from before the install marker kept its answer
+            // file on the UNATTEND image, and the password's encoding went
+            // along. Only the copy is touched: clones don't share writes.
+            let answerImage = partial.appendingPathComponent("autounattend.img")
+            if fm.fileExists(atPath: answerImage.path) {
+                WindowsSetupAnswers.scrubAnswerFileBytes(imagePath: answerImage.path)
+                if let image = fm.contents(atPath: answerImage.path), image.range(of: Data("</unattend>".utf8)) != nil {
+                    throw MachineArchiveError("AVM couldn't clear the setup answers, with the account password, from the install volume, so it didn't export this machine. Next: start it once, shut it down, then try again.")
+                }
+            }
             // The setup answers, without the password's encoding.
             if var answers = WindowsSetupAnswers.load(fromVMDirectory: dir) {
                 answers.localAccount?.encodedPassword = nil
@@ -689,9 +710,16 @@ nonisolated enum MachineFileCopier {
                 continue
             }
             if clonefile(from.path, to.path, UInt32(CLONE_NOFOLLOW)) == 0 {
+                // A file swapped for a link since the plan is refused, and
+                // never followed (2026-11-09, fourth audit #22).
+                var cloned = stat()
+                guard lstat(to.path, &cloned) == 0, (cloned.st_mode & S_IFMT) == S_IFREG else {
+                    unlink(to.path)
+                    throw MachineArchiveError("\(from.lastPathComponent) changed while it was being copied, so AVM stopped. Next: try again.")
+                }
                 // The copy is the user's to write (seventh audit): a read-only
                 // package (a DVD, a share) gave a disk QEMU could only read.
-                chmod(to.path, mode_t((entry.permissions & 0o777) | 0o600))
+                fchmodat(AT_FDCWD, to.path, mode_t((entry.permissions & 0o777) | 0o600), AT_SYMLINK_NOFOLLOW)
                 done += entry.allocatedBytes
                 progress(min(done, total), total)
                 continue
@@ -713,15 +741,21 @@ nonisolated enum MachineFileCopier {
         func failure(_ step: String) -> MachineArchiveError {
             MachineArchiveError("Couldn't \(step) \(source.lastPathComponent): \(String(cString: strerror(errno))).")
         }
-        let input = open(source.path, O_RDONLY)
+        // O_NOFOLLOW and a regular file only (2026-11-09, fourth audit #22): on
+        // a drive someone else controls, a file swapped for a link since the
+        // plan would be read with AVM's rights.
+        let input = open(source.path, O_RDONLY | O_NOFOLLOW)
         guard input >= 0 else { throw failure("read") }
         defer { close(input) }
+        var info = stat()
+        guard fstat(input, &info) == 0 else { throw failure("read") }
+        guard (info.st_mode & S_IFMT) == S_IFREG else {
+            throw MachineArchiveError("\(source.lastPathComponent) isn't an ordinary file any more, so AVM stopped copying.")
+        }
         let output = open(destination.path, O_WRONLY | O_CREAT | O_EXCL, mode_t(0o600))
         guard output >= 0 else { throw failure("write") }
         defer { close(output) }
 
-        var info = stat()
-        guard fstat(input, &info) == 0 else { throw failure("read") }
         let length = info.st_size
         let chunk = 8 * 1_048_576
         let buffer = UnsafeMutableRawPointer.allocate(byteCount: chunk, alignment: 16)

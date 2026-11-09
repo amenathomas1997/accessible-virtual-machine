@@ -641,7 +641,7 @@ struct SetupView: View {
                 SecureField("Password", text: $windowsPassword)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel("Windows password")
-                    .accessibilityHint("Leave it empty to sign in with no password. AVM keeps only a scrambled form of it, until Windows is installed.")
+                    .accessibilityHint("Leave it empty to sign in with no password. Until Windows is installed, AVM keeps it in this machine's private folder, encoded but not encrypted.")
                 SecureField("Confirm password", text: $windowsPasswordConfirm)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel("Confirm Windows password")

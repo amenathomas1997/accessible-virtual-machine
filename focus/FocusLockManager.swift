@@ -348,7 +348,9 @@ class FocusLockManager: ObservableObject {
             .hideDock,
             .hideMenuBar,
             .disableProcessSwitching,
-            .disableForceQuit,
+            // Force Quit stays available (2026-11-09, fifth audit #2): the
+            // escape chord needs AVM's main thread, so a hang here (0.4.39's)
+            // left a blind user nothing but the power button.
             .disableSessionTermination
         ]
         registerHotKey()
@@ -378,6 +380,9 @@ class FocusLockManager: ObservableObject {
     // MARK: - Unlock (Return to Mac)
     /// `bringListForward` false: the caller is putting another window in
     /// front (2026-10-28), so the list stays where it is.
+    /// The keyboard came back to the Mac; AVM's update window may wait for it.
+    static let didUnlock = Notification.Name("AVMFocusLockDidUnlock")
+
     func unlock(bringListForward: Bool = true) {
         AVMLog.write("AVM: FocusLock.unlock() called — isLocked was \(isLocked)")
         guard isLocked else {
@@ -396,6 +401,7 @@ class FocusLockManager: ObservableObject {
         CapsLockRemapper.shared.restoreForUnlock()
         Announcer.shared.announce("Entering Mac", tone: .leaveGuest)
         AVMLog.write("AVM: FocusLock.unlock() — NOW UNLOCKED (isLocked=false).")
+        NotificationCenter.default.post(name: Self.didUnlock, object: nil)
         // From a machine's own window (2026-10-27), back to the list.
         if bringListForward { MachineSessions.shared.returnedToMac() }
     }

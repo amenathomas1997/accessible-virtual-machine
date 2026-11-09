@@ -74,7 +74,7 @@ final class AVMUpdater: ObservableObject {
         controller = SPUStandardUpdaterController(
             startingUpdater: starting,
             updaterDelegate: announcer,
-            userDriverDelegate: nil
+            userDriverDelegate: announcer
         )
         controller.updater.publisher(for: \.canCheckForUpdates)
             .assign(to: &$canCheckForUpdates)
@@ -83,6 +83,20 @@ final class AVMUpdater: ObservableObject {
         let poll = UpdatePoll(feed: feed, every: UpdatePoll.interval, updater: updater)
         announcer.found = { build in poll.offered = max(poll.offered ?? 0, build) }
         self.poll = poll
+        // A window held while the keyboard was in a machine comes up when
+        // the user is back in AVM (2026-11-09, fifth audit #10).
+        for name in [FocusLockManager.didUnlock, NSApplication.didBecomeActiveNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.showHeldUpdate() }
+            }
+        }
+    }
+
+    private func showHeldUpdate() {
+        guard announcer.held, NSApp.isActive, FocusLockManager.shared?.isLocked != true else { return }
+        announcer.held = false
+        AVMLog.write("AVM: Updates — showing the window held while the keyboard was in a machine.")
+        controller.checkForUpdates(nil)
     }
 
     /// Menu-invoked check. Shows Sparkle's standard UI in every outcome,
@@ -154,7 +168,24 @@ final class UpdatePoll {
 }
 
 /// Says that an update was found and where its window is (header).
-final class UpdateAnnouncer: NSObject, SPUUpdaterDelegate {
+final class UpdateAnnouncer: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
+    /// An update found while the keyboard was in a machine, not shown yet.
+    var held = false
+
+    // While a machine has the keyboard, Sparkle's window waits (2026-11-09,
+    // fifth audit #10): after a long idle it came up in front, with Install
+    // focused, taking the keyboard from the machine.
+    nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
+
+    nonisolated func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem, andInImmediateFocus immediateFocus: Bool) -> Bool {
+        MainActor.assumeIsolated { FocusLockManager.shared?.isLocked != true }
+    }
+
+    nonisolated func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
+        guard !handleShowingUpdate else { return }
+        MainActor.assumeIsolated { held = true }
+    }
+
     /// Testers get a release first (2026-11-02): one marked early in the feed is
     /// offered only to copies with this on, until Tools/promote-release.sh.
     nonisolated func allowedChannels(for updater: SPUUpdater) -> Set<String> {
@@ -190,8 +221,8 @@ final class UpdateAnnouncer: NSObject, SPUUpdaterDelegate {
             AVMLog.write("AVM: Updates — found version \(version).")
             Announcer.shared.announce(
                 inGuest
-                    ? "AVM \(version) is available. Leave \(FocusLockManager.shared?.guestName ?? "the machine") to read the update window."
-                    : "AVM \(version) is available. The update window is open.",
+                    ? "AVM \(version) is available. Its window opens when you leave \(FocusLockManager.shared?.guestName ?? "the machine")."
+                    : "AVM \(version) is available. Its window is in AVM, or opens when you switch to AVM.",
                 tone: .info
             )
         }
@@ -222,6 +253,13 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.41", changes: [
+            "Safer when something goes wrong: if a machine stops answering, AVM itself no longer freezes. If AVM ever hangs while a machine has the keyboard, Force Quit now works. A save that fails can no longer be loaded later over newer work, and your USB and Bluetooth devices go back into the machine.",
+            "Restore points: a restore that can't finish now leaves both drives as they were, and a saved session is only let go once the restore has worked. If a restore point before updates can't be taken, AVM says so.",
+            "Applying a saved screen reader setup now checks it first, so a bad copy can't leave NVDA or Orca without your settings, and your original settings are always kept.",
+            "A macOS machine that can't resume now asks whether to try again or start fresh, instead of discarding the session. AVM no longer says a healthy machine looks stuck because its guest tools aren't answering. The update window now waits until you've left the machine, instead of taking the keyboard.",
+            "Windows apps in Command-Tab: Windows only opens programs AVM asks for, and other accounts can't ask for them. USB devices are returned to the Mac when AVM's helper stops, and many smaller fixes from two code reviews.",
+        ]),
         ReleaseNote(version: "0.4.40", changes: [
             "Fixed: 0.4.39 stopped responding, and took more and more memory, a second after a Windows machine came up, until it had to be force-quit. A mistake in yesterday's fix made AVM call one of its own steps over and over. If AVM 0.4.39 is open and stuck, force-quit it (Command-Option-Escape), then install this update. A machine left running by that AVM is stopped when you start it again, as if its power had been cut.",
         ]),
@@ -428,7 +466,10 @@ enum ReleaseNotes {
     static func showRecent() { show(recent) }
 
     private static func showWhenOnTheMac(_ notes: [ReleaseNote]) {
-        guard FocusLockManager.shared?.isLocked != true else {
+        // Nor at a quiet login (2026-11-09, fifth audit #31): AVM's windows
+        // stay away until the user opens AVM, and this took the front from
+        // whatever they had started. It waits for that, as for the lock.
+        guard FocusLockManager.shared?.isLocked != true, !BackgroundMode.shared.quietUntilOpened else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showWhenOnTheMac(notes) }
             return
         }

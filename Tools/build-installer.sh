@@ -402,6 +402,30 @@ done < <(find "$APP" -type f)
 [ "$bad" = "0" ] || fail "$bad binaries are not signed by team $TEAM_ID."
 info "Every binary is signed by team $TEAM_ID."
 
+# What the root helper's trust rests on (2026-11-09, fifth audit #41): the
+# helper trusts AVM by its signature, so anything that lets other code into
+# AVM or the helper reopens it. `sign` keeps whatever entitlements the archive
+# produced, and a Release config pointed back at AVM.entitlements would pass
+# every check above.
+for f in "$APP/Contents/MacOS/AVM" "$APP/Contents/MacOS/AVMUSBHelper"; do
+    [ -f "$f" ] || fail "$(basename "$f") is missing from the app."
+    entitlements="$(codesign -d --entitlements - "$f" 2>/dev/null)" || fail "codesign could not read the entitlements of $(basename "$f")."
+    for forbidden in com.apple.security.cs.disable-library-validation \
+                     com.apple.security.get-task-allow \
+                     com.apple.security.cs.allow-dyld-environment-variables; do
+        case "$entitlements" in
+            *"$forbidden"*) fail "$(basename "$f") has the entitlement $forbidden." \
+                "Check that the Release configuration uses AVM/AVM-Release.entitlements, then build again." ;;
+        esac
+    done
+    flags="$(codesign -dv "$f" 2>&1 | sed -nE 's/.*flags=0x[0-9a-f]+\(([^)]*)\).*/\1/p')"
+    case ",$flags," in
+        *,runtime,*) ;;
+        *) fail "$(basename "$f") is not signed with the hardened runtime (flags: ${flags:-none})." ;;
+    esac
+done
+info "AVM and its helper have the hardened runtime and no entitlement that lets other code in."
+
 # Nothing may still point at the build Mac: every library reference must
 # be inside the app (@rpath, @loader_path, @executable_path) or macOS's own
 # (/usr/lib, /System). Anything else works here and fails on every other Mac.

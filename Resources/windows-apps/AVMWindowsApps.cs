@@ -10,7 +10,8 @@
 //     written to running.txt when the list changes: key TAB name. The key
 //     is the app's AppUserModelID when it has one (Store apps, and desktop
 //     apps that set one), else its program's path.
-//   - request-ID.txt, written by AVM (as SYSTEM, through the agent), one
+//   - requests\request-ID.txt, written by AVM (as SYSTEM, through the
+//     agent; only SYSTEM and Administrators can write in that folder), one
 //     file per request (2026-10-30 audit: one shared request.txt let a
 //     second request overwrite the first): id TAB launch TAB key TAB unix
 //     time. The app's front window is restored and brought forward, the
@@ -39,6 +40,11 @@ using System.Threading;
 static class AVMWindowsApps
 {
     static readonly string Folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), @"AVM\apps");
+    /// Requests, apart from what Users write (2026-11-09, fifth audit #11):
+    /// in apps any account could rewrite a genuine request or plant one the
+    /// lockdown then made SYSTEM's. Users read here and may delete, and
+    /// nothing more, so a helper can take a request and no account can make one.
+    static readonly string RequestFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), @"AVM\requests");
     static readonly string RunningFile = Path.Combine(Folder, "running.txt");
     /// The list when running.txt can't be replaced (2026-11-07: AVM had
     /// left it open through the guest agent, which shares reads only, and
@@ -58,7 +64,10 @@ static class AVMWindowsApps
         using (var only = new Mutex(true, @"Local\AVMWindowsApps", out first))
         {
             if (!first) return;
-            Directory.CreateDirectory(Folder);
+            // Not fatal (2026-11-09, fourth audit #33): Users can't make it
+            // if someone deleted it, and an exception here ended the helper
+            // and, after three tries, its task. AVM's lockdown makes it again.
+            try { Directory.CreateDirectory(Folder); } catch { }
             // One left by an earlier run would be taken for today's list
             // (2026-11-08): AVM reads it whenever the list stands still.
             try { File.Delete(StuckFile); } catch { }
@@ -67,7 +76,7 @@ static class AVMWindowsApps
             while (true)
             {
                 string[] requests;
-                try { requests = Directory.GetFiles(Folder, "request-*.txt"); } catch { requests = new string[0]; }
+                try { requests = Directory.GetFiles(RequestFolder, "request-*.txt"); } catch { requests = new string[0]; }
                 foreach (string file in requests)
                 {
                     try { Handle(file); }
@@ -92,6 +101,14 @@ static class AVMWindowsApps
                             lastStuck = null;
                             try { File.Delete(StuckFile); } catch { }
                         }
+                        else if (lastStuck != null)
+                        {
+                            // The list came back to what running.txt holds
+                            // (2026-11-09, fifth audit #25): no write is due,
+                            // so nothing else would remove the stuck copy.
+                            lastStuck = null;
+                            try { File.Delete(StuckFile); } catch { }
+                        }
                     }
                     catch (Exception e)
                     {
@@ -112,13 +129,23 @@ static class AVMWindowsApps
     {
         string request;
         try { request = File.ReadAllText(file); }
+        // Another signed-in user's helper took it first (2026-11-09, fifth
+        // audit #26): this is an IOException too, and answered "failed".
+        catch (FileNotFoundException) { return; }
         catch (IOException)
         {
             // Still open by the agent that is writing it (2026-11-08, fourth
             // audit #5: it shares reading only, so a pass landing between its
             // open and close answered "failed", and the app then opened
             // anyway). Next pass, unless it has been ten seconds.
-            if (DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromSeconds(10)) return;
+            // Gone, or being taken by another helper: nothing to answer.
+            if (!File.Exists(file) || DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromSeconds(10)) return;
+            throw;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Pending deletion by the helper that claimed it.
+            if (!File.Exists(file) || DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromSeconds(10)) return;
             throw;
         }
         // AVM writes the line and its newline at once; without the newline
@@ -128,10 +155,13 @@ static class AVMWindowsApps
         // fourth audit #2): every signed-in user has a helper reading this
         // folder, and every user can write to it, so without this one account
         // could have another's session open a program of its choosing.
-        IdentityReference owner = File.GetAccessControl(file).GetOwner(typeof(SecurityIdentifier));
+        IdentityReference owner;
+        try { owner = File.GetAccessControl(file).GetOwner(typeof(SecurityIdentifier)); }
+        catch (IOException) { return; }
+        catch (UnauthorizedAccessException) { return; }
         var sid = owner as SecurityIdentifier;
         bool fromSystem = sid != null && (sid.IsWellKnown(WellKnownSidType.LocalSystemSid) || sid.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid));
-        File.Delete(file);
+        if (!Claim(file)) return;
         string id = IdOf(file);
         if (!fromSystem) { Reply(id, "failed\tthe request was not from AVM"); return; }
         string[] parts = request.Trim().Split('\t');
@@ -142,10 +172,54 @@ static class AVMWindowsApps
         long asked;
         long now = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
         if (parts.Length < 4 || !long.TryParse(parts[3], out asked) || now - asked > 600) { Reply(id, "failed\tthe request was too old"); return; }
+        if (!KnownApp(key)) { Reply(id, "failed\tWindows doesn't know that program"); return; }
         Start(key);
         // A cold start in a virtual machine can be slow: up to 90 seconds,
         // checked with every pass, so other requests aren't held up.
         Waiting.Add(new Pending { Id = id, Key = key, Until = DateTime.UtcNow.AddSeconds(90) });
+    }
+
+    /// Takes the request so that one helper alone answers it (2026-11-09,
+    /// fifth audit #26): File.Delete doesn't complain about a file already
+    /// gone, so with two people signed in both went on and both opened the
+    /// app. An exclusive open that deletes on close can only succeed once.
+    static bool Claim(string file)
+    {
+        try
+        {
+            using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None, 4096, FileOptions.DeleteOnClose)) { }
+            return true;
+        }
+        catch (IOException) { return false; }
+    }
+
+    /// Whether this is something to start (2026-11-09, fifth audit #11): the
+    /// keys come from running.txt, which any account can write, by way of the
+    /// Mac. A program is a whole local path to an existing .exe, not in
+    /// another account's profile; anything else must be in the Start menu's
+    /// own list, read again once in case the app was installed since.
+    static bool KnownApp(string key)
+    {
+        if (key.Length == 0 || key.Length > 1024) return false;
+        foreach (char c in key) if (char.IsControl(c) || c == '"') return false;
+        if (key.Contains("\\"))
+        {
+            if (key.Length < 4 || key[1] != ':' || key[2] != '\\') return false;
+            string full;
+            try { full = Path.GetFullPath(key); } catch { return false; }
+            if (!string.Equals(full, key, StringComparison.OrdinalIgnoreCase)) return false;
+            if (!full.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !File.Exists(full)) return false;
+            string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string users = string.IsNullOrEmpty(profile) ? null : Path.GetDirectoryName(profile);
+            if (!string.IsNullOrEmpty(users) && full.StartsWith(users + "\\", StringComparison.OrdinalIgnoreCase)
+                && !full.StartsWith(profile + "\\", StringComparison.OrdinalIgnoreCase)) return false;
+            return true;
+        }
+        if (StartNames.Count == 0) LoadStartNames();
+        if (StartNames.ContainsKey(key)) return true;
+        StartNames.Clear();
+        LoadStartNames();
+        return StartNames.ContainsKey(key);
     }
 
     static void CheckWaiting()
@@ -441,7 +515,8 @@ static class AVMWindowsApps
     {
         int GetCount(out uint count);
         int GetAt(uint index, out PropertyKey key);
-        int GetValue(ref PropertyKey key, out PropVariant value);
+        // Its failure as a number, as the caller expects (2026-11-09, fourth audit #13).
+        [PreserveSig] int GetValue(ref PropertyKey key, out PropVariant value);
         int SetValue(ref PropertyKey key, ref PropVariant value);
         int Commit();
     }

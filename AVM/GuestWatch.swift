@@ -73,6 +73,7 @@ extension VMManager {
             var pointThisRun = false
             var toldNoComeBack = false
             var toldDevices = false
+            var toldNoPoint = false
             var stuck = StuckWatch(limit: Self.stuckLimit)
             var stuckThumb: [UInt8]?
             var healthSaid = Set<String>()
@@ -229,6 +230,11 @@ extension VMManager {
                     case .devicesSent where !toldDevices:
                         toldDevices = true
                         Announcer.shared.announce("Updates are waiting in \(machine). AVM takes a restore point before updates, but not while devices are sent to it: they'd have to come back to the Mac. To take one yourself, use Restore Points in Settings.", tone: .info)
+                    // Said once a run (2026-11-09, fifth audit #8): only
+                    // logged, the user believed the updates were covered.
+                    case .failed(let why) where !toldNoPoint:
+                        toldNoPoint = true
+                        Announcer.shared.announce("Updates are waiting in \(machine), and AVM couldn't take a restore point first. Reason: \(why) Next: free some space if that's the reason, or take one yourself in Restore Points in Settings.", tone: .failure)
                     default: break
                     }
                 }
@@ -277,7 +283,7 @@ extension VMManager {
         do {
             try await runQMPJob("snapshot-delete", id: "avm-point-delete", arguments: ["tag": point.tag, "devices": try await snapshotDevices(node)])
         } catch {
-            await dismissQMPJob("avm-point-delete")
+            await dismissFinishedQMPJobs()
             throw error
         }
         RestorePoints.removeFolder(vmDirectory: runtimeDir, tag: point.tag)
@@ -292,7 +298,7 @@ extension VMManager {
         }
     }
 
-    enum PointBeforeUpdates { case taken, noUpdates, recent, devicesSent, notPossible }
+    enum PointBeforeUpdates: Equatable { case taken, noUpdates, recent, devicesSent, notPossible, failed(String) }
 
     /// Marks AVM's own before-updates points, so only those are replaced.
     nonisolated static let beforeUpdatesMarker = "before-updates"
@@ -335,7 +341,7 @@ extension VMManager {
             return .taken
         } catch {
             AVMLog.write("AVM: GuestWatch — restore point before updates failed: \(error.localizedDescription)")
-            return .notPossible
+            return .failed(error.localizedDescription)
         }
     }
 

@@ -13,8 +13,112 @@
 //     take everything in the folder, so it goes with them.
 //   There's no removing a second drive yet, as a disk can't shrink either.
 
+import AppKit
 import Combine
 import Foundation
+
+/// What a machine kept in a folder of the user's choosing looks like right now.
+nonisolated struct StorageStatus: Equatable, Sendable {
+    let missing: Bool
+    let onMacBytes: Int64?
+    let availableBytes: Int?
+    var hasMacSavedState = false
+}
+
+/// Checks on machines kept outside AVM's own folder, off the main thread
+/// (2026-11-09, fifth audit #17). SwiftUI bodies asked the file system on every
+/// redraw, and on a share gone away without unmounting, or a drive spinning up,
+/// that held the main thread for the mount's timeout: the dashboard stopped
+/// answering VoiceOver and running machines' menu commands waited. Views read
+/// the last answer here. Start, Delete and the other actions still ask the disk
+/// themselves, so an old answer can't let one through.
+@MainActor
+final class StorageWatch: ObservableObject {
+    static let shared = StorageWatch()
+    @Published private var statuses: [UUID: StorageStatus] = [:]
+
+    nonisolated private struct Entry: Equatable, Sendable {
+        let folder: String
+        let volumeUUID: String?
+        let disk: String
+    }
+    private var entries: [UUID: Entry] = [:]
+    private var checking = false
+    private var checkAgain = false
+    private var lastCheck = Date.distantPast
+    private var observers: [NSObjectProtocol] = []
+
+    private init() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.check() }
+            })
+        }
+    }
+
+    /// The last answer; nil for a machine in AVM's own folder or not yet checked.
+    /// Safe in a body: the check starts on a later turn and publishes when done.
+    func status(of configuration: VMConfiguration) -> StorageStatus? {
+        guard let folder = configuration.storageFolderPath else { return nil }
+        let entry = Entry(folder: folder, volumeUUID: configuration.storageVolumeUUID, disk: configuration.diskImagePath)
+        let isNew = entries[configuration.id] != entry
+        if isNew { entries[configuration.id] = entry }
+        // A folder can go without an unmount, so answers also age out.
+        if isNew || Date().timeIntervalSince(lastCheck) > 15 {
+            lastCheck = Date()
+            DispatchQueue.main.async { [weak self] in self?.check() }
+        }
+        return statuses[configuration.id]
+    }
+
+    /// False until known otherwise: Start refuses by its own check anyway.
+    func isMissing(_ configuration: VMConfiguration) -> Bool {
+        status(of: configuration)?.missing ?? false
+    }
+
+    private func check() {
+        guard !checking else { checkAgain = true; return }
+        if let store = VMStore.shared {
+            let live = Set(store.configurations.map(\.id))
+            entries = entries.filter { live.contains($0.key) }
+        }
+        checking = true
+        lastCheck = Date()
+        let snapshot = entries
+        Task.detached(priority: .utility) { [weak self] in
+            let answers = snapshot.mapValues { StorageWatch.measure($0) }
+            await MainActor.run {
+                guard let self else { return }
+                self.checking = false
+                if self.statuses != answers { self.statuses = answers }
+                if self.checkAgain {
+                    self.checkAgain = false
+                    self.check()
+                }
+            }
+        }
+    }
+
+    nonisolated private static func measure(_ entry: Entry) -> StorageStatus {
+        let resolved = VMConfiguration.resolvedStoragePath(entry.folder, volumeUUID: entry.volumeUUID)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: resolved, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return StorageStatus(missing: true, onMacBytes: nil, availableBytes: nil)
+        }
+        let folder = URL(fileURLWithPath: resolved, isDirectory: true)
+        func allocated(_ url: URL) -> Int64? {
+            (try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey]))?.totalFileAllocatedSize.map(Int64.init)
+        }
+        var bytes: Int64?
+        if !entry.disk.isEmpty, let disk = allocated(URL(fileURLWithPath: VMConfiguration.resolvedDiskPath(entry.disk, inFolder: folder))) {
+            bytes = disk + (allocated(folder.appendingPathComponent(VMConfiguration.secondDriveFileName)) ?? 0)
+        }
+        let available = (try? folder.resourceValues(forKeys: [.volumeAvailableCapacityKey]))?.volumeAvailableCapacity
+        return StorageStatus(missing: false, onMacBytes: bytes, availableBytes: available,
+                             hasMacSavedState: FileManager.default.fileExists(atPath: MacGuestFiles(folder: folder).savedState.path))
+    }
+}
 
 /// What each machine's drives last said.
 @MainActor
@@ -48,6 +152,10 @@ final class DiskUsage: ObservableObject {
     /// grow as they're used. Nil when they can't be read, such as on a drive that
     /// isn't connected.
     func onMacBytes(of configuration: VMConfiguration) -> Int64? {
+        // Off the main thread for a chosen folder (2026-11-09, fifth audit
+        // #17), and on the disk's current path (#12): the dashboard's body
+        // calls this. AVM's own folder is on the Mac's disk and answers at once.
+        if configuration.isStoredElsewhere { return StorageWatch.shared.status(of: configuration)?.onMacBytes }
         func allocated(_ url: URL) -> Int64? {
             (try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey]))?.totalFileAllocatedSize.map(Int64.init)
         }

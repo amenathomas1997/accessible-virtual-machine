@@ -486,13 +486,20 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                 if let folder = try? config.directoryURL(),
                    case let files = MacGuestFiles(folder: folder),
                    let answers = MacAutoSetup.answers(in: files) {
-                    if var updated = VMStore.shared?.configurations.first(where: { $0.id == config.id }) {
-                        updated.macVoiceOverOffered = true
-                        VMStore.shared?.save(updated)
-                    }
+                    // Marked as offered only once setup reached the desktop
+                    // (2026-11-09, fifth audit #15): an interrupted or failed
+                    // one left Setup Assistant silent with no offer, ever.
                     Task { @MainActor in
-                        _ = await MacAutoSetup.run(machine: machine, files: files, answers: answers) {
+                        let finished = await MacAutoSetup.run(machine: machine, files: files, answers: answers) {
                             Announcer.shared.announce($0, tone: .info)
+                        }
+                        if finished {
+                            if var updated = VMStore.shared?.configurations.first(where: { $0.id == config.id }) {
+                                updated.macVoiceOverOffered = true
+                                VMStore.shared?.save(updated)
+                            }
+                        } else if self.runningID == config.id {
+                            self.offerVoiceOverOnce(config)
                         }
                     }
                 } else {
@@ -544,21 +551,46 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                         return
                     }
                     if let error {
-                        AVMLog.write("AVM: MacGuest — saved state not usable: \(error.localizedDescription); starting as usual.")
+                        AVMLog.write("AVM: MacGuest — saved state not usable: \(error.localizedDescription)")
+                        // Asked, not assumed (2026-11-09, fifth audit #7): any
+                        // error, even a passing one, deleted the whole session.
+                        let testing = CommandLine.arguments.contains { $0.hasPrefix("--test-") }
+                        if !testing {
+                            let alert = NSAlert()
+                            alert.messageText = "\(config.name) couldn't resume"
+                            alert.informativeText = "Reason: \(error.localizedDescription) Try Again keeps the saved session. Start Fresh discards it, and anything open in \(config.name) when it was saved is lost."
+                            alert.addButton(withTitle: "Try Again")
+                            alert.addButton(withTitle: "Start Fresh")
+                            if QuitCoordinator.ask(alert) == .alertFirstButtonReturn {
+                                self.resume(machine, config: config, files: files)
+                                return
+                            }
+                        }
                         try? FileManager.default.removeItem(at: files.savedState)
-                        Announcer.shared.announce("\(config.name) couldn't resume, so it's starting as usual. Reason: \(error.localizedDescription)", tone: .info)
+                        Announcer.shared.announce("\(config.name) is starting fresh.", tone: .info)
                         self.coldStart(machine, config: config)
                         return
                     }
                     machine.resume { result in
-                        try? FileManager.default.removeItem(at: files.savedState)
                         switch result {
                         case .success:
+                            // Only now (2026-11-09, fifth audit #7).
+                            try? FileManager.default.removeItem(at: files.savedState)
                             AVMLog.write("AVM: MacGuest — \(config.name) resumed from its saved state.")
                             Announcer.shared.announce("\(config.name) is running again.", tone: .success)
                             self.enterIfWanted()
                         case .failure(let error):
-                            self.ended(spoken: "\(config.name) could not resume. Reason: \(error.localizedDescription) Start it again to start it as usual.", tone: .failure)
+                            // A way out (2026-11-09, review of the fifth
+                            // audit's fixes): a session that loads but never
+                            // resumes must not block every Start.
+                            let alert = NSAlert()
+                            alert.messageText = "\(config.name) couldn't resume"
+                            alert.informativeText = "Reason: \(error.localizedDescription) Keep Session tries again at the next Start. Discard Session lets the next Start begin fresh, and anything open in \(config.name) when it was saved is lost."
+                            alert.addButton(withTitle: "Keep Session")
+                            alert.addButton(withTitle: "Discard Session")
+                            let discard = !CommandLine.arguments.contains { $0.hasPrefix("--test-") } && QuitCoordinator.ask(alert) == .alertSecondButtonReturn
+                            if discard { try? FileManager.default.removeItem(at: files.savedState) }
+                            self.ended(spoken: "\(config.name) could not resume. Reason: \(error.localizedDescription) \(discard ? "Its saved session is discarded. Next: start it again to start fresh." : "Its saved session is kept. Next: start it again to try once more.")", tone: .failure)
                         }
                     }
                 }

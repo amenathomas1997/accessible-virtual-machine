@@ -51,8 +51,10 @@ final class WindowsApps {
     /// new one is compiled, 2026-10-30; 7: a list that can't be written goes
     /// to running-stuck.txt with the reason, 2026-11-07; 8: requests only
     /// from SYSTEM, a request still being written waits, the stuck file
-    /// deleted at start-up, 2026-11-08).
-    static let helperVersion = "8"
+    /// deleted at start-up, 2026-11-08; 9: requests in a folder Users can't
+    /// write, launch keys checked, one helper per request, survives a
+    /// missing apps folder, 2026-11-09).
+    static let helperVersion = "9"
     static let guestFolder = #"C:\ProgramData\AVM"#
 
     /// What a Mac app stands for: an app open in Windows, one kept in the
@@ -82,6 +84,11 @@ final class WindowsApps {
     /// The machine run (its QEMU process) whose helper is known current.
     private var helperReady: [UUID: Int] = [:]
     private var installing: Set<UUID> = []
+    /// A helper that wouldn't install, by machine, and when to try again
+    /// (2026-11-09, fourth audit #13): it was tried on every 3 s tick, the
+    /// full folder walk and a 120 s compile, for the whole run.
+    private var installFailed: [UUID: (run: Int, retry: Date)] = [:]
+    private static let installRetry: TimeInterval = 600
     private var timer: Timer?
     private var lastList: [UUID: String] = [:]
     private var nextStuckRead: [UUID: Date] = [:]
@@ -141,6 +148,9 @@ final class WindowsApps {
         let listed = Set(machines.filter { $0.configuration.hasWindowsAppsInCommandTab }.map { $0.configuration.id })
         for machine in entries.keys where !listed.contains(machine) { quitEntries(of: machine) }
         for machine in helperReady.keys where !running.contains(machine) { helperReady[machine] = nil }
+        // Not carried into the next run (2026-11-09, fifth audit #25): an
+        // unchanged running.txt would bring the old stuck list straight back.
+        for machine in lastList.keys where !running.contains(machine) { forgetList(of: machine) }
         ticking = true
         Task {
             defer { ticking = false }
@@ -181,7 +191,17 @@ final class WindowsApps {
                 }
                 if !moved, listWait[id] == 12, Date() >= (nextStuckRead[id] ?? .distantPast) {
                     nextStuckRead[id] = Date().addingTimeInterval(60)
-                    if let stuck = try? await Self.readGuestFile(manager, Self.guestFolder + #"\apps\running-stuck.txt"#),
+                    // A read that failed says nothing about the file
+                    // (2026-11-09, fifth audit #25): taken for a gone file, it
+                    // cleared the list and Command-Tab flipped back for a minute.
+                    let stuckRead: String?
+                    do { stuckRead = try await Self.readGuestFile(manager, Self.guestFolder + #"\apps\running-stuck.txt"#) }
+                    catch {
+                        if let stuck = stuckList[id] { list = stuck }
+                        await sync(machine: id, machineName: session.configuration.name, list: list)
+                        continue
+                    }
+                    if let stuck = stuckRead,
                        stuck.hasPrefix("# "),
                        case let lines = stuck.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false),
                        lines.count == 2, String(lines[1]) != list {
@@ -201,6 +221,15 @@ final class WindowsApps {
                 await sync(machine: id, machineName: session.configuration.name, list: list)
             }
         }
+    }
+
+    private func forgetList(of machine: UUID) {
+        lastList[machine] = nil
+        stuckList[machine] = nil
+        stuckReason[machine] = nil
+        nextStuckRead[machine] = nil
+        listWait[machine] = nil
+        nextListRead[machine] = nil
     }
 
     private func sync(machine: UUID, machineName: String, list: String) async {
@@ -731,7 +760,7 @@ final class WindowsApps {
         // second request, another app opened meanwhile, overwrite this one.
         let replyPath = Self.guestFolder + #"\apps\reply-"# + id + ".txt"
         do {
-            try await Self.writeGuestFile(manager, Self.guestFolder + #"\apps\request-"# + id + ".txt",
+            try await Self.writeGuestFile(manager, Self.guestFolder + #"\requests\request-"# + id + ".txt",
                                           "\(id)\tlaunch\t\(appKey)\t\(Int(Date().timeIntervalSince1970))\n")
         } catch {
             Announcer.shared.announce("\(name) didn't open: \(error.localizedDescription).", tone: .failure)
@@ -764,7 +793,7 @@ final class WindowsApps {
 
     // MARK: The helper in Windows
 
-    private func ensureHelper(_ manager: VMManager, machine: UUID) async -> Bool {
+    func ensureHelper(_ manager: VMManager, machine: UUID) async -> Bool {
         guard !installing.contains(machine) else { return false }
         installing.insert(machine)
         defer { installing.remove(machine) }
@@ -773,24 +802,34 @@ final class WindowsApps {
             helperReady[machine] = manager.qemuPID
             return true
         }
+        if let failed = installFailed[machine], failed.run == manager.qemuPID, Date() < failed.retry { return false }
         guard let source = Bundle.main.url(forResource: "AVMWindowsApps", withExtension: "cs"),
               let code = try? String(contentsOf: source, encoding: .utf8) else {
             AVMLog.write("Windows apps: AVMWindowsApps.cs isn't in AVM", category: "WindowsApps")
             return false
         }
+        var agentAnswered = false
         do {
             _ = try await manager.agentRun("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", Self.prepareScript], limit: .seconds(60))
+            agentAnswered = true
             try await Self.writeGuestFile(manager, Self.guestFolder + #"\bin\AVMWindowsApps.cs"#, code)
             let output = try await manager.agentRun("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", Self.installScript], limit: .seconds(120))
             guard output.contains("AVM-INSTALLED") else {
-                AVMLog.write("Windows apps: the helper didn't install: \(output.prefix(600))", category: "WindowsApps")
+                AVMLog.write("Windows apps: the helper didn't install: \(output.prefix(600)); trying again in \(Int(Self.installRetry / 60)) minutes or at the next start", category: "WindowsApps")
+                installFailed[machine] = (manager.qemuPID, Date().addingTimeInterval(Self.installRetry))
                 return false
             }
+            installFailed[machine] = nil
             AVMLog.write("Windows apps: helper \(Self.helperVersion) installed in \(manager.machineName)", category: "WindowsApps")
             helperReady[machine] = manager.qemuPID
             return true
         } catch {
             // Most often the agent isn't up yet; the next look tries again.
+            // Once it has answered, this is the compile running out of time.
+            if agentAnswered {
+                AVMLog.write("Windows apps: the helper didn't install: \(error.localizedDescription); trying again in \(Int(Self.installRetry / 60)) minutes or at the next start", category: "WindowsApps")
+                installFailed[machine] = (manager.qemuPID, Date().addingTimeInterval(Self.installRetry))
+            }
             return false
         }
     }
@@ -810,12 +849,21 @@ final class WindowsApps {
     /// as SYSTEM, at any folder in Windows. icacls gets /L, anything with
     /// the reparse attribute under apps is removed (the link, not what it
     /// points at), and the write access goes back to the folder and the
-    /// files directly in it, not to a tree.
+    /// files directly in it, not to a tree. Neither folder may itself be a
+    /// link (2026-11-09, fifth audit #24).
+    /// requests is where AVM's requests go (2026-11-09, fifth audit #11):
+    /// the reset drops anything an account granted itself before the
+    /// lockdown first ran, leaving SYSTEM and Administrators in full and
+    /// Users reading; delete-child lets a helper remove a request it took.
     static let lockDownScript = #"""
         $avm = 'C:\ProgramData\AVM'
-        New-Item -ItemType Directory -Force $avm | Out-Null
-        if (Test-Path "$avm\apps") {
-          Get-ChildItem "$avm\apps" -Recurse -Force -Attributes ReparsePoint -ErrorAction SilentlyContinue | ForEach-Object {
+        foreach ($p in $avm, "$avm\apps", "$avm\requests") {
+          $i = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
+          if ($i -and ($i.Attributes -band [IO.FileAttributes]::ReparsePoint)) { [System.IO.Directory]::Delete($p) }
+        }
+        New-Item -ItemType Directory -Force $avm, "$avm\apps", "$avm\requests" | Out-Null
+        foreach ($p in "$avm\apps", "$avm\requests") {
+          Get-ChildItem $p -Recurse -Force -Attributes ReparsePoint -ErrorAction SilentlyContinue | ForEach-Object {
             if ($_.PSIsContainer) { [System.IO.Directory]::Delete($_.FullName) } else { [System.IO.File]::Delete($_.FullName) }
           }
         }
@@ -825,13 +873,16 @@ final class WindowsApps {
           icacls "$avm\apps" /grant '*S-1-5-32-545:(OI)(CI)M' /l /c /q | Out-Null
           Get-ChildItem "$avm\apps" -File -Force -ErrorAction SilentlyContinue | Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } | ForEach-Object { icacls $_.FullName /grant '*S-1-5-32-545:M' /l /c /q | Out-Null }
         }
+        icacls "$avm\requests" /reset /t /l /c /q | Out-Null
+        icacls "$avm\requests" /grant '*S-1-5-32-545:(DC)' /l /c /q | Out-Null
         """#
 
     private static let prepareScript = lockDownScript + #"""
 
         $ErrorActionPreference = 'Stop'
         New-Item -ItemType Directory -Force 'C:\ProgramData\AVM\bin','C:\ProgramData\AVM\apps' | Out-Null
-        icacls 'C:\ProgramData\AVM\apps' /grant '*S-1-5-32-545:(OI)(CI)M' | Out-Null
+        icacls 'C:\ProgramData\AVM\apps' /grant '*S-1-5-32-545:(OI)(CI)M' /l | Out-Null
+        Remove-Item -Force -ErrorAction SilentlyContinue 'C:\ProgramData\AVM\apps\request-*.txt'
         $old = Get-Process AVMWindowsApps, AVMKeyboard -ErrorAction SilentlyContinue
         $old | Stop-Process -Force
         # Gone before its file is written over (2026-10-30: the first try
@@ -869,7 +920,15 @@ final class WindowsApps {
 
     nonisolated static func readGuestFile(_ manager: VMManager, _ path: String) async throws -> String? {
         guard let handle = try await manager.openGuestFile(path, mode: "rb") else { return nil }
-        let read = try? await manager.agentCall(["execute": "guest-file-read", "arguments": ["handle": handle, "count": 262_144]]) as? [String: Any]
+        // A failed read throws, so it isn't taken for a missing file
+        // (2026-11-09, fifth audit #25).
+        let read: [String: Any]?
+        do {
+            read = try await manager.agentCall(["execute": "guest-file-read", "arguments": ["handle": handle, "count": 262_144]]) as? [String: Any]
+        } catch {
+            try? await manager.closeGuestFile(handle)
+            throw error
+        }
         try? await manager.closeGuestFile(handle)
         guard let base64 = read?["buf-b64"] as? String, let data = Data(base64Encoded: base64) else { return nil }
         return String(decoding: data, as: UTF8.self)
@@ -879,7 +938,20 @@ final class WindowsApps {
         guard let handle = try await manager.openGuestFile(path, mode: "wb") else {
             throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "Windows couldn't make \(path)"])
         }
-        _ = try await manager.agentCall(["execute": "guest-file-write", "arguments": ["handle": handle, "buf-b64": Data(text.utf8).base64EncodedString()]])
+        // Closed on every path, and a short write is a failure (2026-11-09,
+        // fourth audit #25): a truncated helper source or request was
+        // taken for a good one.
+        let data = Data(text.utf8)
+        let reply: Any?
+        do {
+            reply = try await manager.agentCall(["execute": "guest-file-write", "arguments": ["handle": handle, "buf-b64": data.base64EncodedString()]])
+        } catch {
+            try? await manager.closeGuestFile(handle)
+            throw error
+        }
         try await manager.closeGuestFile(handle)
+        if let count = (reply as? [String: Any])?["count"] as? Int, count != data.count {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "Windows wrote only \(count) of \(data.count) bytes of \(path)"])
+        }
     }
 }

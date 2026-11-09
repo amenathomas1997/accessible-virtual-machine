@@ -35,11 +35,23 @@ final class ControlServer {
     func start() {
         guard fd < 0, let url = Self.socketURL else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Not over another AVM that's listening (2026-11-09, fourth audit
+        // #20): unlinking took avmctl, the Windows apps and Send to Virtual
+        // Machine away from it in silence. A socket no one answers on is left
+        // from a crash and goes.
+        if Self.someoneAnswers(at: url.path) {
+            AVMLog.write("AVM: Control — another AVM is listening at \(url.path); leaving it.")
+            Announcer.shared.announce("This copy of AVM can't be reached by avmctl or Send to Virtual Machine. Reason: another copy of AVM is already answering them. Next: quit the other copy, then open this one again.", tone: .failure)
+            return
+        }
         unlink(url.path)
         let s = socket(AF_UNIX, SOCK_STREAM, 0)
         guard s >= 0, Self.bind(s, to: url.path) else {
             AVMLog.write("AVM: Control — couldn't listen at \(url.path); avmctl won't reach AVM.")
             if s >= 0 { close(s) }
+            // Said (2026-11-09, fourth audit #20): a long home-folder path
+            // over the socket limit only reached the log.
+            Announcer.shared.announce("avmctl and Send to Virtual Machine won't reach AVM this time. Reason: AVM couldn't open its control connection. Next: quit and open AVM again, and if it happens again, report the problem from the Help menu.", tone: .failure)
             return
         }
         chmod(url.path, 0o600)
@@ -65,6 +77,21 @@ final class ControlServer {
         } == 0
     }
 
+    /// True when something accepts a connection at `path`.
+    nonisolated static func someoneAnswers(at path: String) -> Bool {
+        let s = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard s >= 0 else { return false }
+        defer { close(s) }
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8CString)
+        guard bytes.count <= MemoryLayout.size(ofValue: address.sun_path) else { return false }
+        withUnsafeMutableBytes(of: &address.sun_path) { raw in bytes.withUnsafeBytes { raw.copyMemory(from: $0) } }
+        return withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(s, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        } == 0
+    }
+
     private func acceptOne() {
         let client = accept(fd, nil, nil)
         guard client >= 0 else { return }
@@ -76,6 +103,8 @@ final class ControlServer {
         // that sent nothing stop every task in AVM.
         var wait = timeval(tv_sec: 5, tv_usec: 0)
         setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
+        // A client that stops reading can't hold a thread (2026-11-09, fourth audit #20).
+        setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
         // No SIGPIPE from a client that left before its reply (2026-10-28,
         // fuzz), on the socket itself as well as process-wide (AVMApp.init).
         var on: Int32 = 1
@@ -96,14 +125,19 @@ final class ControlServer {
     nonisolated static func readLine(_ fd: Int32) -> Data {
         var data = Data()
         var byte: UInt8 = 0
-        while data.count < 65536, read(fd, &byte, 1) == 1, byte != 10 { data.append(byte) }
+        // A limit for the whole line (2026-11-09, fourth audit #20): the
+        // socket's 5 seconds restart with each byte, so one a few seconds
+        // apart kept this thread for good.
+        let deadline = ProcessInfo.processInfo.systemUptime + 15
+        while data.count < 65536, ProcessInfo.processInfo.systemUptime < deadline, read(fd, &byte, 1) == 1, byte != 10 { data.append(byte) }
         return data
     }
 
     nonisolated static func write(_ fd: Int32, _ data: Data) {
         data.withUnsafeBytes { raw in
             var offset = 0
-            while offset < raw.count {
+            let deadline = ProcessInfo.processInfo.systemUptime + 30 // as readLine (fourth audit #20)
+            while offset < raw.count, ProcessInfo.processInfo.systemUptime < deadline {
                 let n = Darwin.write(fd, raw.baseAddress! + offset, raw.count - offset)
                 if n <= 0 { return }
                 offset += n

@@ -120,6 +120,10 @@ nonisolated enum USBHelperError: Error, CustomStringConvertible {
     /// XPC reported NSXPCConnectionInvalid (4099): launchd has no job
     /// for the Mach service right now, whatever Login Items says.
     case helperUnavailable(String)
+    /// XPC reported NSXPCConnectionInterrupted (4097): the helper went away
+    /// mid-call, usually its idle exit. Tested by code (2026-11-09, fourth
+    /// audit #29): the words differ on a Mac not in English.
+    case interrupted(String)
     /// The helper answered and said no. Step names where, detail why.
     case helper(step: String, detail: String)
     /// A call got no answer in time (2026-10-29): launchd can keep the
@@ -136,6 +140,7 @@ nonisolated enum USBHelperError: Error, CustomStringConvertible {
         case .notEnabled(let s): return "helper not enabled (\(s.rawValue))"
         case .xpc(let s): return s
         case .helperUnavailable(let s): return "helper unavailable: \(s)"
+        case .interrupted(let s): return s
         case .helper(let step, let detail): return "\(step): \(detail)"
         case .noAnswer: return "AVM's helper didn't answer"
         case .notStarting: return "AVM's helper isn't starting"
@@ -147,6 +152,9 @@ nonisolated enum USBHelperError: Error, CustomStringConvertible {
         let ns = error as NSError
         if ns.domain == NSCocoaErrorDomain && ns.code == 4099 {
             return .helperUnavailable(ns.localizedDescription)
+        }
+        if ns.domain == NSCocoaErrorDomain && ns.code == 4097 {
+            return .interrupted(ns.localizedDescription)
         }
         return .xpc(ns.localizedDescription)
     }
@@ -429,6 +437,8 @@ final class USBHelperClient: NSObject, ObservableObject {
             bluetoothHeld.remove(id)
             disconnectIfIdle()
         }
+        // As for the keyboard: an interrupted call's retry (fourth audit #29).
+        if case .success = result { bluetoothHeld.insert(id) }
         // A dropped launchd job (2026-10-29, seventh audit): re-registered
         // and asked once more, as attach() does; without it the device
         // "stayed on the Mac" for a cause a plug-in recovers from.
@@ -762,7 +772,7 @@ final class USBHelperClient: NSObject, ObservableObject {
         // Once more if the helper's idle exit cut the call (2026-11-05, second
         // audit): a connection accepted as its 30 s timer fired was dropped,
         // and the user heard "the helper didn't answer" for a microsecond race.
-        if case .failure(.xpc(let words)) = first, words.localizedCaseInsensitiveContains("interrupted") {
+        if case .failure(.interrupted) = first {
             log("ask: the helper's connection was interrupted; asking once more")
             try? await Task.sleep(for: .milliseconds(500))
             return await askOnce(connect(), within: limit, call)
@@ -853,6 +863,10 @@ final class USBHelperClient: NSObject, ObservableObject {
             keyboardActive = false
             disconnectIfIdle()
         }
+        // Set again after a retry (2026-11-09, fourth audit #29): the
+        // interruption that caused it cleared this, so a hold that then
+        // succeeded went unrecorded and releaseKeyboard returned early.
+        if case .success = result { keyboardActive = true }
         // A dropped launchd job (2026-10-29, seventh audit): re-registered
         // and asked once more, as attach() does; without it the keyboard
         // was given up with "AVM's helper didn't answer".

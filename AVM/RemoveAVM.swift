@@ -28,7 +28,7 @@ enum RemoveAVM {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Remove AVM from this Mac?"
-        alert.informativeText = "AVM removes its USB helper and its login item, then moves its settings, caches and the AVM Windows Apps folder to the Trash, then the app itself, and quits. Remove AVM and Its Machines also moves every virtual machine, and the installers AVM downloaded, to the Trash. Nothing is gone until you empty the Trash."
+        alert.informativeText = "AVM removes its USB helper and its login item, then moves its settings, caches and the AVM Windows Apps folder to the Trash, then the app itself, and quits. Remove AVM and Its Machines also moves every virtual machine on this Mac's disk, and the installers AVM downloaded, to the Trash, and forgets their Remote Desktop passwords. Machines on external drives or in folders you chose stay where they are. Nothing else is gone until you empty the Trash."
         alert.addButton(withTitle: "Remove AVM, Keep Machines")
         alert.addButton(withTitle: "Remove AVM and Its Machines")
         alert.addButton(withTitle: "Cancel")
@@ -58,6 +58,8 @@ enum RemoveAVM {
         // 2 and 3. The files.
         let library = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library")
         let id = Bundle.main.bundleIdentifier ?? "com.fullcircleat.AVM"
+        // Read before the list goes to the Trash (2026-11-09, fourth audit #24).
+        let machineIDs = VMStore.shared?.configurations.map(\.id) ?? []
         var items = [
             library.appendingPathComponent("Caches/\(id)"),
             library.appendingPathComponent("HTTPStorages/\(id)"),
@@ -72,6 +74,12 @@ enum RemoveAVM {
             do { try fm.trashItem(at: item, resultingItemURL: nil) } catch {
                 problems.append("\(item.lastPathComponent) (\(error.localizedDescription))")
             }
+        }
+        // Remote Desktop passwords stayed in the keychain (fourth audit #24).
+        // Only once the machine list really went to the Trash, so a failed
+        // move doesn't leave machines that have lost their passwords.
+        if machinesToo, let support = try? AVMPaths.supportDirectory(), !fm.fileExists(atPath: support.path) {
+            for machine in machineIDs { RemoteDesktop.forgetPassword(for: machine) }
         }
         UserDefaults.standard.removePersistentDomain(forName: id)
         UserDefaults.standard.synchronize()

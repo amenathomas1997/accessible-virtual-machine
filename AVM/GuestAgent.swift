@@ -36,6 +36,47 @@ nonisolated enum GuestAgent {
         return lock
     }
 
+    /// Channels whose last write was cut short (2026-11-09, fourth audit
+    /// #28), so the agent may be holding half a JSON line. Guarded by
+    /// locksLock.
+    nonisolated(unsafe) private static var tornChannels: Set<String> = []
+    private static func channelIsTorn(_ path: String) -> Bool {
+        locksLock.lock(); defer { locksLock.unlock() }
+        return tornChannels.contains(path)
+    }
+    private static func setChannel(_ path: String, torn: Bool) {
+        locksLock.lock(); defer { locksLock.unlock() }
+        if torn { tornChannels.insert(path) } else { tornChannels.remove(path) }
+    }
+
+    /// One serial queue per machine (2026-11-09, fourth audit #15).
+    nonisolated(unsafe) private static var queues: [String: DispatchQueue] = [:]
+    private static func queue(for path: String) -> DispatchQueue {
+        locksLock.lock(); defer { locksLock.unlock() }
+        if let queue = queues[path] { return queue }
+        let queue = DispatchQueue(label: "avm.guest-agent.\(queues.count)")
+        queues[path] = queue
+        return queue
+    }
+
+    /// `run` for async callers (2026-11-09, fourth audit #15): an agent that
+    /// isn't answering holds a call for 10 to 25 seconds, and on a detached
+    /// task that was a cooperative-pool thread, so two Windows machines
+    /// restarting took most of the pool from Read Screen and the rest.
+    static func call(_ commands: [String], socketPath: String, timeout: TimeInterval = 4, replies: Bool = true) async throws -> [String] {
+        let queue = queue(for: socketPath)
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String], Error>) in
+            queue.async {
+                do {
+                    let lines = try GuestAgent.run(commands, socketPath: socketPath, timeout: timeout, replies: replies)
+                    continuation.resume(returning: lines)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Sends commands in order and returns each reply line, or throws.
     /// `replies` false: the commands are sent after the sync and no answer
     /// is read (guest-shutdown answers with nothing, 2026-10-28).
@@ -107,18 +148,54 @@ nonisolated enum GuestAgent {
                 guard Date() < deadline || pending.contains(0x0a) else { throw AgentError("no answer") }
             }
         }
-        func send(_ line: String) throws {
-            let bytes = Array((line + "\n").utf8)
-            guard write(fd, bytes, bytes.count) == bytes.count else { throw AgentError("write failed") }
+        // All of it, within the timeout (2026-11-09, fourth audit #28): a short
+        // write left the agent holding half a JSON line, and the next
+        // connection's guest-sync was swallowed as its tail.
+        func sendBytes(_ bytes: [UInt8]) throws {
+            let deadline = Date().addingTimeInterval(timeout)
+            var sent = 0
+            while sent < bytes.count {
+                let n = bytes[sent...].withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+                if n > 0 {
+                    sent += n
+                } else if n < 0, errno == EINTR, Date() < deadline {
+                    continue
+                } else {
+                    setChannel(socketPath, torn: true)
+                    throw AgentError("write failed")
+                }
+                if sent < bytes.count, Date() >= deadline {
+                    setChannel(socketPath, torn: true)
+                    throw AgentError("write failed")
+                }
+            }
         }
+        func send(_ line: String) throws {
+            try sendBytes(Array((line + "\n").utf8))
+        }
+
+        // The agent's parser resets on 0xFF, the byte guest-sync-delimited's
+        // documentation gives for this. Only after a torn write (2026-11-09,
+        // fourth audit #28), so an ordinary call's exchange stays what has
+        // been measured on real guests; the agent may answer the byte with
+        // an error line, which the sync below skips.
+        let wasTorn = channelIsTorn(socketPath)
+        if wasTorn { try sendBytes([0xFF]) }
 
         let id = Int.random(in: 1...Int(Int32.max))
         try send(#"{"execute":"guest-sync","arguments":{"id":\#(id)}}"#)
+        // The number itself, parsed (2026-11-09, fourth audit #28): by
+        // `contains`, a stale reply with those digits inside passed for it.
+        func isSyncReply(_ line: String) -> Bool {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { return false }
+            return (object["return"] as? Int) == id
+        }
         var skipped = 0
-        while try !readLine().contains("\(id)") {
+        while try !isSyncReply(readLine()) {
             skipped += 1
             guard skipped < 1000 else { throw AgentError("the guest agent didn't answer the sync") }
         }
+        if wasTorn { setChannel(socketPath, torn: false) }
 
         var replies: [String] = []
         for command in commands {

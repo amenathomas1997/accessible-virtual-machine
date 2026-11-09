@@ -176,6 +176,10 @@ nonisolated struct StuckWatch: Sendable {
     private var lastSign: Date
     private var lastLook: Date
     private var told = false
+    /// An agent that has never answered is no sign of a freeze (2026-11-09,
+    /// fifth audit #9): a healthy machine without one, on a still desktop,
+    /// was told to reset, losing unsaved work.
+    private var agentHasAnswered = false
 
     init(limit: TimeInterval = StuckWatch.limit, now: Date = Date()) {
         self.limit = limit
@@ -185,6 +189,7 @@ nonisolated struct StuckWatch: Sendable {
 
     mutating func look(agentAnswered: Bool, screenChanged: Bool, now: Date = Date()) -> Change {
         defer { lastLook = now }
+        if agentAnswered { agentHasAnswered = true }
         if agentAnswered || screenChanged || now.timeIntervalSince(lastLook) > Self.longestGap {
             lastSign = now
             if told, agentAnswered || screenChanged {
@@ -193,7 +198,7 @@ nonisolated struct StuckWatch: Sendable {
             }
             return .none
         }
-        guard !told, now.timeIntervalSince(lastSign) >= limit else { return .none }
+        guard agentHasAnswered, !told, now.timeIntervalSince(lastSign) >= limit else { return .none }
         told = true
         return .stuck
     }

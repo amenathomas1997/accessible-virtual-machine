@@ -605,6 +605,7 @@ nonisolated enum RestorePoints {
             throw RestorePointError.tool("AVM couldn't read the disk's restore points.")
         }
         let snapshots = json["snapshots"] as? [[String: Any]] ?? []
+        removeAbandonedFolders(vmDirectory: dir, snapshots: Set(snapshots.compactMap { $0["name"] as? String }))
         return snapshots.compactMap { snap -> RestorePoint? in
             guard let tag = snap["name"] as? String, isOwnTag(tag) else { return nil }
             let seconds = snap["date-sec"] as? Double ?? 0
@@ -615,10 +616,12 @@ nonisolated enum RestorePoints {
             let memory = (snap["vm-state-size"] as? Double ?? 0) > 0
             let bus = (try? String(contentsOf: folder.appendingPathComponent("disk-bus"), encoding: .utf8))?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            // A folder still marked pending is one whose snapshot was never
-            // taken (AVM quit between): not a point at all.
-            if FileManager.default.fileExists(atPath: folder.appendingPathComponent(pendingMarker).path) { return nil }
-            let complete = FileManager.default.fileExists(atPath: folder.appendingPathComponent("label.txt").path)
+            // Still marked pending, with a snapshot on the disk (2026-11-09,
+            // fourth audit #17): AVM stopped between the two. Listed as
+            // incomplete so it can be deleted; left out, it was invisible and
+            // undeletable while the disk kept growing around it.
+            let pending = FileManager.default.fileExists(atPath: folder.appendingPathComponent(pendingMarker).path)
+            let complete = !pending && FileManager.default.fileExists(atPath: folder.appendingPathComponent("label.txt").path)
             var point = RestorePoint(tag: tag, label: complete ? (label?.isEmpty == false ? label! : "Restore point") : "Incomplete restore point",
                                      date: Date(timeIntervalSince1970: seconds), secureBoot: secure, withMemory: memory,
                                      diskBus: bus?.isEmpty == false ? bus : nil)
@@ -630,6 +633,20 @@ nonisolated enum RestorePoints {
 
     /// In a point's folder until its snapshot is taken (2026-11-05, second audit).
     static let pendingMarker = "pending"
+
+    /// Folders marked pending whose snapshot was never taken (2026-11-09,
+    /// fourth audit #17). After an hour, so one being made now is left alone.
+    private static func removeAbandonedFolders(vmDirectory dir: URL, snapshots: Set<String>) {
+        let fm = FileManager.default
+        let root = dir.appendingPathComponent(folderName)
+        for tag in (try? fm.contentsOfDirectory(atPath: root.path)) ?? [] where isOwnTag(tag) && !snapshots.contains(tag) {
+            let marker = root.appendingPathComponent(tag).appendingPathComponent(pendingMarker)
+            guard let made = (try? fm.attributesOfItem(atPath: marker.path))?[.modificationDate] as? Date,
+                  Date().timeIntervalSince(made) > 3600 else { continue }
+            removeFolder(vmDirectory: dir, tag: tag)
+            AVMLog.write("AVM: RestorePoints — removed \(tag), a point whose snapshot was never taken.")
+        }
+    }
 
     static func create(vmDirectory dir: URL, label: String, secureBoot: Bool, diskBus: String? = nil) async throws -> RestorePoint {
         let tag = newTag()
@@ -705,11 +722,11 @@ nonisolated enum RestorePoints {
     /// Puts the disk, firmware settings and TPM back as they were. The
     /// current firmware settings and TPM state are kept beside the restore
     /// point's copies until the restore has worked, then replaced.
-    /// `beforeRollback` runs once nothing can refuse any more, just before
-    /// the disk goes back (2026-10-29, sixth audit): Settings lets go of a
-    /// saved session there, not before checks that could still say no.
+    /// `afterRollback` runs once both disks have gone back (2026-11-09,
+    /// fifth audit #4; before, it ran just ahead of them): Settings lets go
+    /// of a saved session there, so a restore that fails keeps it.
     static func restore(_ point: RestorePoint, vmDirectory dir: URL, currentSecureBoot: Bool,
-                        beforeRollback: () async -> Void = {}) async throws {
+                        afterRollback: () async -> Void = {}) async throws {
         guard !point.incomplete else {
             throw RestorePointError.tool("This restore point is incomplete: its firmware settings and TPM weren't saved with it, so restoring it would leave Windows asking for its BitLocker recovery key. Next: delete it.")
         }
@@ -717,10 +734,13 @@ nonisolated enum RestorePoints {
             throw RestorePointError.secureBootMismatch(madeWithSecureBoot: point.secureBoot)
         }
         // Still on the disk (2026-11-05 audit): a list read earlier could name a
-        // point since deleted, and beforeRollback had let go of a saved session
-        // before qemu-img refused.
-        guard await QEMUSavedState.snapshotTags(disk: disk(dir))?.contains(point.tag) != false else {
-            throw RestorePointError.tool("That restore point isn't on the disk any more, so nothing was changed.")
+        // point since deleted. An unreadable disk refuses too (2026-11-09,
+        // fifth audit #4), before anything has moved.
+        guard await QEMUSavedState.snapshotTags(disk: disk(dir))?.contains(point.tag) == true else {
+            throw RestorePointError.tool("That restore point isn't on the disk any more, or the disk couldn't be read, so nothing was changed.")
+        }
+        for file in [disk(dir), secondDrive(dir)].compactMap({ $0 }) where !FileManager.default.isWritableFile(atPath: file.path) {
+            throw RestorePointError.tool("\(file.lastPathComponent) can't be written to, so nothing was changed.")
         }
         // ORDER (2026-10-26, code audit): this used to delete the live
         // firmware settings and TPM, then copy the saved ones, after the
@@ -746,45 +766,64 @@ nonisolated enum RestorePoints {
             for item in staged { try? fm.removeItem(at: item.fresh) }
             throw RestorePointError.tool("The restore point's firmware settings couldn't be copied, so nothing was changed: \(error.localizedDescription)")
         }
-        await beforeRollback()
-        // The second drive first (2026-11-08, fourth audit #4): a failure
-        // there then leaves everything as it was. Before, the first disk was
-        // rolled back, the second drive's apply threw, and the firmware and
-        // TPM copies below were never swapped in: the rolled-back Windows
-        // with the live TPM that this whole order exists to prevent. The
-        // second drive goes back with the point (2026-11-03), if it was there
-        // then. A point from before it leaves it as it is, and can't carry on
-        // with open apps: that memory has no second drive, and QEMU wouldn't
-        // load it.
+        defer { for item in staged { try? fm.removeItem(at: item.fresh) } }
+        // The second drive first, with a way back (2026-11-09, fifth audit
+        // #4): if the first disk then fails, the second drive returns to
+        // where it was, so a failure really does leave everything as it was.
+        // A point from before the second drive (2026-11-03) leaves it as it
+        // is, and can't carry on with open apps: that memory has no second
+        // drive, and QEMU wouldn't load it.
+        let undoTag = "avm-restore-undo"
         var secondDriveWasThere = true
+        var undoOn: URL?
         if let second = secondDrive(dir) {
             secondDriveWasThere = await QEMUSavedState.snapshotTags(disk: second)?.contains(point.tag) == true
             if secondDriveWasThere {
+                _ = try? await qemuImg(["snapshot", "-d", undoTag, second.path])
+                _ = try await qemuImg(["snapshot", "-c", undoTag, second.path])
+                undoOn = second
                 do { _ = try await qemuImg(["snapshot", "-a", point.tag, second.path]) } catch {
-                    for item in staged { try? fm.removeItem(at: item.fresh) }
+                    _ = try? await qemuImg(["snapshot", "-d", undoTag, second.path])
                     throw error
                 }
             }
         }
         do { _ = try await qemuImg(["snapshot", "-a", point.tag, disk(dir).path]) } catch {
-            for item in staged { try? fm.removeItem(at: item.fresh) }
+            if let undoOn {
+                do {
+                    _ = try await qemuImg(["snapshot", "-a", undoTag, undoOn.path])
+                    _ = try? await qemuImg(["snapshot", "-d", undoTag, undoOn.path])
+                } catch {
+                    AVMLog.write("AVM: RestorePoints — the second drive couldn't be put back after the first disk failed: \(error.localizedDescription)")
+                    throw RestorePointError.tool("The first disk couldn't be restored, and the second drive couldn't be put back as it was, so it's at the restore point while the first disk isn't. Next: try the restore again.")
+                }
+            }
             throw error
         }
-        // With memory (2026-10-27): the next Start loads it and carries on
-        // from that moment (QEMUSavedState.resumeTag). Without, any note
-        // left by an earlier restore goes.
-        let resume = dir.appendingPathComponent(QEMUSavedState.resumeFile)
-        if point.withMemory, secondDriveWasThere {
-            try point.tag.write(to: resume, atomically: true, encoding: .utf8)
-        } else {
-            try? fm.removeItem(at: resume)
-        }
+        if let undoOn { _ = try? await qemuImg(["snapshot", "-d", undoTag, undoOn.path]) }
+        await afterRollback()
+        // Firmware and TPM before anything else that can fail (2026-11-09,
+        // fifth audit #4): a throw from the note below used to leave a
+        // rolled-back Windows with the live TPM, which asks for its
+        // BitLocker recovery key.
         for item in staged {
             if fm.fileExists(atPath: item.live.path) {
                 _ = try fm.replaceItemAt(item.live, withItemAt: item.fresh)
             } else {
                 try fm.moveItem(at: item.fresh, to: item.live)
             }
+        }
+        // With memory (2026-10-27): the next Start loads it and carries on
+        // from that moment (QEMUSavedState.resumeTag). Without, any note
+        // left by an earlier restore goes. A note that can't be written
+        // means a start from the restored disk, not a failed restore.
+        let resume = dir.appendingPathComponent(QEMUSavedState.resumeFile)
+        if point.withMemory, secondDriveWasThere {
+            do { try point.tag.write(to: resume, atomically: true, encoding: .utf8) } catch {
+                AVMLog.write("AVM: RestorePoints — the note to carry on couldn't be written: \(error.localizedDescription)")
+            }
+        } else {
+            try? fm.removeItem(at: resume)
         }
         AVMLog.write("AVM: RestorePoints — restored \(point.tag).")
     }

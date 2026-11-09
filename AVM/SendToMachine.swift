@@ -89,8 +89,9 @@ final class SendToMachineService: NSObject {
         alert.informativeText = "From \((path as NSString).deletingLastPathComponent). If you didn't ask for this, choose Don't Send."
         alert.addButton(withTitle: "Don't Send")
         alert.addButton(withTitle: "Send")
-        NSApp.activate(ignoringOtherApps: true)
-        return alert.runModal() == .alertSecondButtonReturn
+        // Asked as Quit asks (2026-11-09, fifth audit #32): the alert takes
+        // every key from the machine, and with VoiceOver off nothing was said.
+        return QuitCoordinator.ask(alert) == .alertSecondButtonReturn
     }
 
     /// Which machine, when more than one runs: up to three by name.
@@ -101,8 +102,8 @@ final class SendToMachineService: NSObject {
         alert.informativeText = "\(count == 1 ? "It goes" : "They go") to Downloads in the machine you choose."
         for machine in shown { alert.addButton(withTitle: machine.machineName) }
         alert.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        let answer = alert.runModal().rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+        // Heard with VoiceOver off (2026-11-09, fifth audit #32).
+        let answer = QuitCoordinator.ask(alert).rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
         return answer >= 0 && answer < shown.count ? shown[answer] : nil
     }
 }

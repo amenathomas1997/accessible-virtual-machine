@@ -75,7 +75,10 @@ plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$2" 2>/dev/null; }
 SHORT="$(plist CFBundleShortVersionString "$APP/Contents/Info.plist")"
 BUILD="$(plist CFBundleVersion "$APP/Contents/Info.plist")"
 [ "$SHORT" = "$VERSION" ]; check "it says it's $VERSION" $? "it says $SHORT"
-for helper in "$APP"/Contents/Library/LaunchServices/* "$APP"/Contents/Resources/qemu-system-aarch64; do
+# Where the helper really is (2026-11-09, fourth audit #31): the old path
+# matched nothing, and a missing file was skipped, so this tested nothing.
+for helper in "$APP"/Contents/MacOS/AVMUSBHelper "$APP"/Contents/Resources/qemu-system-aarch64; do
+    [ -e "$helper" ]; check "$(basename "$helper") is there" $?
     [ -e "$helper" ] || continue
     out="$(codesign --verify --strict "$helper" 2>&1)"
     check "$(basename "$helper") is signed" $? "$out"

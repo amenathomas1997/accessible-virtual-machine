@@ -250,8 +250,13 @@ final class WindowsAutoDownloader: NSObject, ObservableObject {
         session?.finishTasksAndInvalidate()
         session = nil
         task = nil
-        guard phase == .downloading else { return }   // cancelled meanwhile
+        // Cancelled meanwhile: the 4.5 GB file goes too (2026-11-09, fourth audit #23).
+        guard phase == .downloading else {
+            if let temporary { try? FileManager.default.removeItem(at: temporary) }
+            return
+        }
         guard let temporary, let work, let offer else {
+            if let temporary { try? FileManager.default.removeItem(at: temporary) }
             fail("The Windows download stopped. Reason: \(error ?? "unknown") Try again.")
             return
         }
@@ -259,6 +264,7 @@ final class WindowsAutoDownloader: NSObject, ObservableObject {
         do {
             try FileManager.default.moveItem(at: temporary, to: esd)
         } catch {
+            try? FileManager.default.removeItem(at: temporary)
             fail("AVM couldn't keep the download. Reason: \(error.localizedDescription)")
             return
         }
@@ -362,7 +368,12 @@ final class WindowsAutoDownloader: NSObject, ObservableObject {
     /// A tool run off the main thread; its output, or an error with its end.
     @discardableResult
     static func run(_ tool: String, _ arguments: [String]) async throws -> String {
-        try await Task.detached(priority: .userInitiated) {
+        // Cancel stops the tool (2026-11-09, fourth audit #23): it ran on
+        // for minutes in a folder already removed. Task.detached takes no
+        // cancellation from its caller, so the handler does it.
+        let running = RunningTool()
+        return try await withTaskCancellationHandler {
+            try await Task.detached(priority: .userInitiated) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: tool)
             process.arguments = arguments
@@ -370,6 +381,7 @@ final class WindowsAutoDownloader: NSObject, ObservableObject {
             process.standardOutput = pipe
             process.standardError = pipe
             try process.run()
+            running.started(process)
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
             let output = String(decoding: data, as: UTF8.self)
@@ -379,7 +391,32 @@ final class WindowsAutoDownloader: NSObject, ObservableObject {
                     "\((tool as NSString).lastPathComponent) stopped with \(process.terminationStatus)."])
             }
             return output
-        }.value
+            }.value
+        } onCancel: {
+            running.stop()
+        }
+    }
+}
+
+/// The tool a build step is running, for Cancel. A process is only ever
+/// recorded once started: terminating one that hasn't raises an exception.
+private nonisolated final class RunningTool: @unchecked Sendable {
+    private let lock = NSLock()
+    private var process: Process?
+    private var stopped = false
+
+    func started(_ process: Process) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.process = process
+        if stopped, process.isRunning { process.terminate() }
+    }
+
+    func stop() {
+        lock.lock()
+        defer { lock.unlock() }
+        stopped = true
+        if let process, process.isRunning { process.terminate() }
     }
 }
 

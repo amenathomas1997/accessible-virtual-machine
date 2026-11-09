@@ -71,13 +71,21 @@ enum Tour {
         window = panel
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
-        say(0)
+        // VoiceOver announces the new window and its heading itself, so the
+        // first step's title was heard twice (2026-11-09, fourth audit #32).
+        // The text is still said, after VoiceOver has finished with the
+        // window, so nothing of the step can be lost.
+        if NSWorkspace.shared.isVoiceOverEnabled {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { say(0, withTitle: false) }
+        } else {
+            say(0)
+        }
     }
 
     /// Each step read out as it comes, through VoiceOver as AVM's other lines are.
-    static func say(_ index: Int) {
+    static func say(_ index: Int, withTitle: Bool = true) {
         let step = steps[index]
-        Announcer.shared.announce("Step \(index + 1) of \(steps.count): \(step.title). \(step.text)" + (step.tryIt.map { " Try it: \($0)" } ?? ""), tone: .info)
+        Announcer.shared.announce((withTitle ? "Step \(index + 1) of \(steps.count): \(step.title). " : "") + step.text + (step.tryIt.map { " Try it: \($0)" } ?? ""), tone: .info)
     }
 }
 

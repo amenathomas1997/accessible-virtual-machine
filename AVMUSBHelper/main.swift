@@ -62,6 +62,11 @@ let clientRequirement: String? = clientTeamID.map { team in
         + " and identifier \"\(AVMUSBHelperNames.clientBundleIdentifier)\""
         + " and certificate leaf[subject.OU] = \"\(team)\""
         + (helperIsDeveloperID ? " and " + developerIDMarker : "")
+        // Build 5 (0.2.0) is the first without disable-library-validation
+        // (2026-11-09, fifth audit #20): an older signed copy could have code
+        // injected and speak to this root helper as AVM. XPC honours this
+        // clause and compares it as a number (tested with signed bundles).
+        + " and info[CFBundleVersion] >= \"5\""
 }
 
 /// True when this process's own signature meets `requirement`.
@@ -197,6 +202,9 @@ final class DeviceEntry {
     /// A detach waiting for the pump to finish.
     var detachReply: ((Bool, String?) -> Void)?
     var detachTimeout: DispatchWorkItem?
+    /// Already told to stop because its user left the screen (2026-11-09,
+    /// fifth audit #38), so a release that hangs isn't asked for every 3 s.
+    var stoppedForConsole = false
     /// The user whose AVM attached this device. One root helper serves
     /// every user on the Mac (fast user switching), so another user's AVM
     /// must not see or release it (2026-10-25, code audit).
@@ -276,39 +284,73 @@ final class DeviceRegistry {
                 os_log("USB runtime started", log: log, type: .default)
             }
             let entry = DeviceEntry(device: device, socketPath: streamSocketPath, connection: connection)
-            let context = Unmanaged.passUnretained(entry).toOpaque()
-            var step = [CChar](repeating: 0, count: 128)
-            var detail = [CChar](repeating: 0, count: 512)
-            os_log("attaching %{public}@ to %{public}@", log: log, type: .default,
-                   device.description, streamSocketPath)
-            let stream = avm_usb_stream_attach(device.vendorID, device.productID,
-                                               device.busNumber, device.deviceAddress,
-                                               streamSocketPath, uid, pid_t(clamping: peerPID),
-                                               verboseStreamLogging ? 1 : 0,
-                                               streamEventCallback, context,
-                                               &step, step.count, &detail, detail.count)
-            guard let stream else {
-                let s = String(cString: step)
-                let d = String(cString: detail)
-                os_log("attach of %{public}@ failed at %{public}@: %{public}@",
-                       log: log, type: .error, device.description, s, d)
-                entry.state = .failed
-                self.report(entry, detail: "\(s): \(d)")
-                reply(false, s, d)
-                return
-            }
-            entry.stream = stream
+            // Listed before the slow part (2026-11-09, fifth audit #39): the
+            // open and capture run on the device's own queue, up to 10 s a
+            // try, and on this one every other device's release waited behind
+            // them. Being listed is also what keeps libusb running under
+            // them, since the idle exit and Restart stop it only with nothing
+            // listed, and what refuses a second attach of the same device.
             self.entries[device] = entry
             idle.devicesChanged(count: self.entries.count)
-            // The pump owns the device from here until it returns. The
-            // stream is freed only after run has come back, on the same
-            // queue, so nothing else can touch a dead pointer.
+            self.watchConsoleWhileListed()
             entry.queue.async {
-                avm_usb_stream_run(stream)
+                let context = Unmanaged.passUnretained(entry).toOpaque()
+                var step = [CChar](repeating: 0, count: 128)
+                var detail = [CChar](repeating: 0, count: 512)
+                os_log("attaching %{public}@ to %{public}@", log: log, type: .default,
+                       device.description, streamSocketPath)
+                let stream = avm_usb_stream_attach(device.vendorID, device.productID,
+                                                   device.busNumber, device.deviceAddress,
+                                                   streamSocketPath, uid, pid_t(clamping: peerPID),
+                                                   verboseStreamLogging ? 1 : 0,
+                                                   streamEventCallback, context,
+                                                   &step, step.count, &detail, detail.count)
+                let stepText = String(cString: step)
+                let detailText = String(cString: detail)
+                let startPump = self.queue.sync {
+                    self.finishAttach(entry, stream: stream, step: stepText, detail: detailText, reply: reply)
+                }
+                guard let stream else { return }
+                // The pump owns the device from here until it returns. The
+                // stream is freed only after run has come back, on the same
+                // queue, so nothing else can touch a dead pointer. Asked to
+                // let go while attaching, free alone releases the device,
+                // and "is now in Windows" is never said for it.
+                if startPump { avm_usb_stream_run(stream) }
                 avm_usb_stream_free(stream)
             }
-            reply(true, nil, nil)
         }
+    }
+
+    /// The attach is back from its own queue. On `queue`. True when the pump
+    /// should run.
+    private func finishAttach(_ entry: DeviceEntry, stream: OpaquePointer?, step: String, detail: String,
+                              reply: @escaping (Bool, String?, String?) -> Void) -> Bool {
+        let device = entry.device
+        guard let stream else {
+            os_log("attach of %{public}@ failed at %{public}@: %{public}@",
+                   log: log, type: .error, device.description, step, detail)
+            if entries[device] === entry { entries[device] = nil }
+            idle.devicesChanged(count: entries.count)
+            watchConsoleWhileListed()
+            entry.state = .failed
+            report(entry, detail: "\(step): \(detail)")
+            reply(false, step, detail)
+            if let pending = entry.detachReply {
+                entry.detachReply = nil
+                pending(false, "\(device.displayName) is not attached, so there is nothing to release.")
+            }
+            return false
+        }
+        entry.stream = stream
+        reply(true, nil, nil)
+        // A release that came in while the device was attaching.
+        if let pending = entry.detachReply {
+            entry.detachReply = nil
+            beginRelease(entry, stream: stream, reply: pending)
+            return false
+        }
+        return true
     }
     // MARK: Detach
     /// requester: the asking connection's user; nil only for the helper's
@@ -322,7 +364,7 @@ final class DeviceRegistry {
                 reply(false, "\(device.displayName) is not attached by you, so there is nothing to release.")
                 return
             }
-            guard let entry = self.entries[device], let stream = entry.stream else {
+            guard let entry = self.entries[device] else {
                 os_log("detach refused: %{public}@ is not held", log: log, type: .default, device.description)
                 reply(false, "\(device.displayName) is not attached, so there is nothing to release.")
                 return
@@ -331,37 +373,99 @@ final class DeviceRegistry {
                 reply(false, "\(device.displayName) is already being released.")
                 return
             }
-            os_log("releasing %{public}@", log: log, type: .default, device.description)
-            entry.state = .releasing
-            entry.detachReply = reply
-            self.report(entry, detail: nil)
-            // If the pump does not come back, answer anyway rather than
-            // leave AVM waiting forever. The device stays listed as
-            // releasing so status stays honest.
-            let timeout = DispatchWorkItem {
-                if let pending = entry.detachReply {
-                    entry.detachReply = nil
-                    os_log("release of %{public}@ timed out", log: log, type: .error, device.description)
-                    pending(false, "The helper asked the stream for \(device.displayName) to stop, but it did not finish within 10 seconds.")
+            guard let stream = entry.stream else {
+                // Still attaching on its own queue (2026-11-09, fifth audit
+                // #39): done when that comes back (finishAttach). Refused
+                // here, an AVM quitting mid-attach left the device held.
+                if entry.state == .attaching {
+                    entry.detachReply = reply
+                    return
                 }
-                // Still not back a minute on (2026-10-26, code audit): the
-                // device would be refused as "already attached" until the
-                // helper restarted, and the helper never went idle. The
-                // entry is set aside (kept alive: the stream's callbacks
-                // still point at it), so the device can be attached again.
-                self.queue.asyncAfter(deadline: .now() + 50) {
-                    guard let current = self.entries[device], current === entry, entry.state == .releasing else { return }
-                    os_log("release of %{public}@ never finished; setting it aside", log: log, type: .error, device.description)
-                    self.entries[device] = nil
-                    self.abandoned.append(entry)
-                    // Counted out (2026-10-28, fifth audit): otherwise the idle
-                    // exit, the one thing that frees a stuck device, never came.
-                    idle.devicesChanged(count: self.entries.count)
-                }
+                os_log("detach refused: %{public}@ is not held", log: log, type: .default, device.description)
+                reply(false, "\(device.displayName) is not attached, so there is nothing to release.")
+                return
             }
-            entry.detachTimeout = timeout
-            self.queue.asyncAfter(deadline: .now() + 10, execute: timeout)
-            avm_usb_stream_stop(stream)
+            self.beginRelease(entry, stream: stream, reply: reply)
+        }
+    }
+
+    /// Tells a device's stream to stop. On `queue`.
+    private func beginRelease(_ entry: DeviceEntry, stream: OpaquePointer,
+                              reply: @escaping (Bool, String?) -> Void) {
+        let device = entry.device
+        os_log("releasing %{public}@", log: log, type: .default, device.description)
+        entry.state = .releasing
+        entry.detachReply = reply
+        report(entry, detail: nil)
+        // If the pump does not come back, answer anyway rather than
+        // leave AVM waiting forever. The device stays listed as
+        // releasing so status stays honest.
+        let timeout = DispatchWorkItem {
+            if let pending = entry.detachReply {
+                entry.detachReply = nil
+                os_log("release of %{public}@ timed out", log: log, type: .error, device.description)
+                pending(false, "The helper asked the stream for \(device.displayName) to stop, but it did not finish within 10 seconds.")
+            }
+            self.setAsideIfStuck(entry, after: 50)
+        }
+        entry.detachTimeout = timeout
+        queue.asyncAfter(deadline: .now() + 10, execute: timeout)
+        avm_usb_stream_stop(stream)
+    }
+
+    /// Still not back a minute on (2026-10-26, code audit): the device would
+    /// be refused as "already attached" until the helper restarted, and the
+    /// helper never went idle. The entry is set aside (kept alive: the
+    /// stream's callbacks still point at it), so the device can be attached
+    /// again. Tests the stream, not the state (2026-11-09, fifth audit #19):
+    /// an unplug's DEVICE_LOST overwrites `.releasing`, and a close hanging
+    /// on a device just gone is the case this exists for.
+    private func setAsideIfStuck(_ entry: DeviceEntry, after seconds: Double) {
+        queue.asyncAfter(deadline: .now() + seconds) {
+            guard self.entries[entry.device] === entry, entry.stream != nil else { return }
+            os_log("release of %{public}@ never finished; setting it aside", log: log, type: .error, entry.device.description)
+            self.entries[entry.device] = nil
+            self.abandoned.append(entry)
+            // Counted out (2026-10-28, fifth audit): otherwise the idle
+            // exit, the one thing that frees a stuck device, never came.
+            idle.devicesChanged(count: self.entries.count)
+            self.watchConsoleWhileListed()
+        }
+    }
+
+    // MARK: Only for the person at the screen
+
+    private var consoleWatch: DispatchSourceTimer?
+
+    /// While anything is listed (2026-11-09, fifth audit #38): attach checks
+    /// only once, so after a fast user switch a USB device stayed streaming
+    /// into the previous user's machine, where the person at the screen could
+    /// neither use it nor detach it. The same 3 s watch a Bluetooth device
+    /// and a keyboard for Windows have. On `queue`.
+    private func watchConsoleWhileListed() {
+        if entries.isEmpty {
+            consoleWatch?.cancel()
+            consoleWatch = nil
+            return
+        }
+        guard consoleWatch == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 3, repeating: 3)
+        timer.setEventHandler { [weak self] in self?.releaseDevicesOfUsersAway() }
+        timer.resume()
+        consoleWatch = timer
+    }
+
+    private func releaseDevicesOfUsersAway() {
+        var consoleUID: uid_t = 0
+        // No answer isn't another person at the screen: a braille display
+        // must not leave a machine over one failed query.
+        guard SCDynamicStoreCopyConsoleUser(nil, &consoleUID, nil) != nil else { return }
+        for entry in entries.values where entry.ownerUID != consoleUID && !entry.stoppedForConsole && entry.detachReply == nil {
+            entry.stoppedForConsole = true
+            entry.endDetail = "its user left the Mac's screen"
+            os_log("%{public}@ going back to the Mac: its user left the screen", log: log, type: .default, entry.device.description)
+            detach(entry.device, requester: nil) { _, _ in }
         }
     }
     // MARK: Release on disconnect (2026-10-25, code audit)
@@ -385,6 +489,29 @@ final class DeviceRegistry {
                     }
                 }
             }
+        }
+    }
+
+    /// Every device back to the Mac, then exit (2026-11-09, fifth audit #6):
+    /// the helper used to die with its streams live, so libusb never gave a
+    /// claimed device back. A stuck stream can't hold the exit up. Only with
+    /// no stream left is libusb stopped (2026-10-29, sixth audit: Restart is
+    /// the remedy for a stuck one, whose pump used libusb's context after
+    /// libusb_exit freed it).
+    func releaseEverythingThenExit(within seconds: Double) {
+        queue.async {
+            for entry in self.entries.values where entry.detachReply == nil {
+                os_log("exiting; releasing %{public}@", log: log, type: .default, entry.device.description)
+                self.detach(entry.device, requester: nil) { _, _ in }
+            }
+            let deadline = Date().addingTimeInterval(seconds)
+            func look() {
+                if self.noStreamsLeft { avm_usb_runtime_stop(); exit(0) }
+                if Date() >= deadline { exit(0) }
+                self.queue.asyncAfter(deadline: .now() + 0.1) { look() }
+            }
+            // After the detaches queued above have started.
+            self.queue.asyncAfter(deadline: .now() + 0.1) { look() }
         }
     }
 
@@ -415,15 +542,18 @@ final class DeviceRegistry {
             entry.state = .yanked
             entry.endDetail = detail
             report(entry, detail: detail)
+            setAsideIfStuck(entry, after: 60)      // no detach follows an unplug (fifth audit #19)
         case AVM_USB_EVENT_REJECTED.rawValue, AVM_USB_EVENT_ERROR.rawValue:
             os_log("%{public}@ stream ended at %{public}@: %{public}@", log: log, type: .error,
                    entry.device.description, step, detail)
             entry.state = .failed
             entry.endDetail = "\(step): \(detail)"
             report(entry, detail: entry.endDetail)
+            setAsideIfStuck(entry, after: 60)
         case AVM_USB_EVENT_SOCKET_CLOSED.rawValue:
             os_log("%{public}@: %{public}@", log: log, type: .default, entry.device.description, detail)
             entry.endDetail = detail
+            setAsideIfStuck(entry, after: 60)
         case AVM_USB_EVENT_RELEASED.rawValue:
             os_log("released %{public}@", log: log, type: .default, entry.device.description)
             entry.stream = nil
@@ -433,6 +563,7 @@ final class DeviceRegistry {
             if entries[entry.device] === entry { entries[entry.device] = nil }
             abandoned.removeAll { $0 === entry }
             idle.devicesChanged(count: entries.count)
+            watchConsoleWhileListed()
             report(entry, detail: entry.endDetail)
             entry.detachTimeout?.cancel()
             entry.detachTimeout = nil
@@ -569,11 +700,7 @@ final class HelperService: NSObject, AVMUSBHelperProtocol {
                log: log, type: .default, connection?.processIdentifier ?? 0)
         reply()
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
-            // Only with no stream left (2026-10-29, sixth audit): Restart is
-            // the remedy for a stuck one, whose pump used libusb's context
-            // after libusb_exit freed it. Exiting lets go of every device.
-            registry.queue.sync { if registry.noStreamsLeft { avm_usb_runtime_stop() } }
-            exit(0)
+            registry.releaseEverythingThenExit(within: 3)
         }
     }
 }
@@ -628,4 +755,9 @@ listener.resume()
 // Nobody may ever connect. Start the idle clock now so a spurious
 // launch doesn't leave a root process sitting around.
 idle.armIfIdleFromOutside()
+// launchd's stop (unregistering, an update): devices go back first.
+signal(SIGTERM, SIG_IGN)
+let terminationSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+terminationSource.setEventHandler { registry.releaseEverythingThenExit(within: 8) }
+terminationSource.resume()
 dispatchMain()
