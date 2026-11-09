@@ -768,6 +768,23 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSLog("AVM: AppDelegate — applicationDidFinishLaunching; running Caps Lock recovery check.")
+        // One AVM at a time (2026-11-08, fourth audit #10): each process
+        // reads configurations.json once and writes the whole list back, so
+        // a second copy (one left in Downloads, a relaunch overlapping a slow
+        // quit) silently undid the first's changes, and both took the control
+        // socket and ran the hourly backup. Test runs and `ctl` pass
+        // arguments and are not AVM proper; a test support folder means a
+        // test's own copy. The copy already open is brought forward.
+        if CommandLine.arguments.count == 1, ProcessInfo.processInfo.environment["AVM_TEST_SUPPORT_DIR"] == nil,
+           let bundleID = Bundle.main.bundleIdentifier,
+           let other = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+               .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated }) {
+            AVMLog.write("AVM: another AVM (pid \(other.processIdentifier), \(other.bundleURL?.path ?? "?")) is already open; bringing it forward and quitting this one")
+            other.activate()
+            // Not NSApp.terminate: applicationWillTerminate would put the
+            // other AVM's Caps Lock back and quit its Windows apps.
+            exit(0)
+        }
         MainActor.assumeIsolated {
             // Not in a test run (2026-10-29, sixth audit): it shares the
             // user's AVM settings, and restored Caps Lock under the user's

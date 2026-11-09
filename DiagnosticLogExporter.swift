@@ -196,6 +196,16 @@ enum DiagnosticLogExporter {
                 .sorted()
             for name in logs {
                 let url = dir.appendingPathComponent(name)
+                // GuestWatch's "state of X when it looked stuck" file is in
+                // its own shape, no timestamped lines (2026-11-08, fourth
+                // audit #7: it was never sent, for a year of saying it was).
+                // It is written whole or not at all, so any content counts.
+                if name.hasSuffix("-stuck.log") {
+                    if (try? fm.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0 > 0 {
+                        sources.append(Source(url: url, destinationName: name))
+                    }
+                    continue
+                }
                 if hasContentLine(url) {
                     sources.append(Source(url: url, destinationName: name))
                 }

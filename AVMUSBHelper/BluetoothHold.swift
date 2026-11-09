@@ -275,9 +275,14 @@ final class BluetoothHold {
 
         let source = DispatchSource.makeReadSource(fileDescriptor: entry.socket, queue: queue)
         source.setEventHandler { [weak self] in self?.readSocket(entry) }
-        // The descriptor stays open until the source is done with it.
+        // The descriptor stays open until the source is done with it, and
+        // until the device's own queue has sent what it was sending
+        // (2026-11-08, fourth audit #6): frames go out on entry.io, and a
+        // close here on the main queue could land before one of them, which
+        // then went into whatever reused the descriptor's number.
         let socket = entry.socket
-        source.setCancelHandler { close(socket) }
+        let io = entry.io
+        source.setCancelHandler { io.async { close(socket) } }
         source.resume()
         entry.readSource = source
     }
@@ -388,9 +393,10 @@ final class BluetoothHold {
         held[entry.id] = nil
         HeldByHelper.remove(entry.device)
         if let source = entry.readSource {
-            source.cancel()                  // closes the socket when done
+            source.cancel()                  // closes the socket when done, on entry.io
         } else {
-            close(entry.socket)
+            let socket = entry.socket
+            entry.io.async { close(socket) }
         }
         entry.readSource = nil
         IOHIDDeviceCancel(entry.device)     // closed in its cancel handler

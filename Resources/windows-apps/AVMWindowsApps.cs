@@ -31,6 +31,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 
@@ -57,6 +59,9 @@ static class AVMWindowsApps
         {
             if (!first) return;
             Directory.CreateDirectory(Folder);
+            // One left by an earlier run would be taken for today's list
+            // (2026-11-08): AVM reads it whenever the list stands still.
+            try { File.Delete(StuckFile); } catch { }
             string last = null, lastStuck = null;
             int ticks = 0;
             while (true)
@@ -84,7 +89,8 @@ static class AVMWindowsApps
                         {
                             Write(RunningFile, now);
                             last = now;
-                            if (lastStuck != null) { lastStuck = null; try { File.Delete(StuckFile); } catch { } }
+                            lastStuck = null;
+                            try { File.Delete(StuckFile); } catch { }
                         }
                     }
                     catch (Exception e)
@@ -104,12 +110,30 @@ static class AVMWindowsApps
 
     static void Handle(string file)
     {
-        string request = File.ReadAllText(file);
+        string request;
+        try { request = File.ReadAllText(file); }
+        catch (IOException)
+        {
+            // Still open by the agent that is writing it (2026-11-08, fourth
+            // audit #5: it shares reading only, so a pass landing between its
+            // open and close answered "failed", and the app then opened
+            // anyway). Next pass, unless it has been ten seconds.
+            if (DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromSeconds(10)) return;
+            throw;
+        }
         // AVM writes the line and its newline at once; without the newline
         // it's still being written, unless it's been ten seconds.
         if (!request.EndsWith("\n") && DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromSeconds(10)) return;
+        // Only AVM's own requests, which its agent writes as SYSTEM (2026-11-08,
+        // fourth audit #2): every signed-in user has a helper reading this
+        // folder, and every user can write to it, so without this one account
+        // could have another's session open a program of its choosing.
+        IdentityReference owner = File.GetAccessControl(file).GetOwner(typeof(SecurityIdentifier));
+        var sid = owner as SecurityIdentifier;
+        bool fromSystem = sid != null && (sid.IsWellKnown(WellKnownSidType.LocalSystemSid) || sid.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid));
         File.Delete(file);
         string id = IdOf(file);
+        if (!fromSystem) { Reply(id, "failed\tthe request was not from AVM"); return; }
         string[] parts = request.Trim().Split('\t');
         if (parts.Length < 3 || parts[1] != "launch") { Reply(id, "failed\tnot understood"); return; }
         string key = parts[2];

@@ -747,14 +747,28 @@ nonisolated enum RestorePoints {
             throw RestorePointError.tool("The restore point's firmware settings couldn't be copied, so nothing was changed: \(error.localizedDescription)")
         }
         await beforeRollback()
-        _ = try await qemuImg(["snapshot", "-a", point.tag, disk(dir).path])
-        // The second drive goes back with it (2026-11-03), if it was there then. A
-        // point from before it leaves it as it is, and can't carry on with open
-        // apps: that memory has no second drive, and QEMU wouldn't load it.
+        // The second drive first (2026-11-08, fourth audit #4): a failure
+        // there then leaves everything as it was. Before, the first disk was
+        // rolled back, the second drive's apply threw, and the firmware and
+        // TPM copies below were never swapped in: the rolled-back Windows
+        // with the live TPM that this whole order exists to prevent. The
+        // second drive goes back with the point (2026-11-03), if it was there
+        // then. A point from before it leaves it as it is, and can't carry on
+        // with open apps: that memory has no second drive, and QEMU wouldn't
+        // load it.
         var secondDriveWasThere = true
         if let second = secondDrive(dir) {
             secondDriveWasThere = await QEMUSavedState.snapshotTags(disk: second)?.contains(point.tag) == true
-            if secondDriveWasThere { _ = try await qemuImg(["snapshot", "-a", point.tag, second.path]) }
+            if secondDriveWasThere {
+                do { _ = try await qemuImg(["snapshot", "-a", point.tag, second.path]) } catch {
+                    for item in staged { try? fm.removeItem(at: item.fresh) }
+                    throw error
+                }
+            }
+        }
+        do { _ = try await qemuImg(["snapshot", "-a", point.tag, disk(dir).path]) } catch {
+            for item in staged { try? fm.removeItem(at: item.fresh) }
+            throw error
         }
         // With memory (2026-10-27): the next Start loads it and carries on
         // from that moment (QEMUSavedState.resumeTag). Without, any note

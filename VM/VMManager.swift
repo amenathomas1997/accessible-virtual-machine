@@ -1387,6 +1387,26 @@ final class VMManager: ObservableObject {
         }
         let runtimeDir = try prepareRuntimeDirectory(for: configuration)
         vmRuntimeDir = runtimeDir
+        // The disk goes where the folder went (2026-11-08, fourth audit #3):
+        // a drive mounted under a new name is found by its UUID
+        // (VMConfiguration.resolvedStoragePath), but diskImagePath was the
+        // absolute path from Setup, so QEMU was handed a file that wasn't
+        // there and exited with its own words.
+        if configuration.isStoredElsewhere, !configuration.diskImagePath.isEmpty {
+            let disk = URL(fileURLWithPath: configuration.diskImagePath)
+            if disk.deletingLastPathComponent().standardizedFileURL.path != runtimeDir.standardizedFileURL.path,
+               !FileManager.default.fileExists(atPath: disk.path),
+               case let moved = runtimeDir.appendingPathComponent(disk.lastPathComponent),
+               FileManager.default.fileExists(atPath: moved.path) {
+                avmLog("startVM: the disk's folder is now \(runtimeDir.path); its path was \(disk.path)")
+                configuration.diskImagePath = moved.path
+                activeConfiguration = configuration
+                if var saved = VMStore.shared?.configurations.first(where: { $0.id == configuration.id }) {
+                    saved.diskImagePath = moved.path
+                    VMStore.shared?.save(saved)
+                }
+            }
+        }
 
         // REINSTALL GUARD: check for the install-complete marker BEFORE any
         // install-media work. If the answer file's specialize pass has written
@@ -4554,9 +4574,30 @@ extension VMManager {
             }
             if clock.now > deadline {
                 _ = try? await sendQMPCommand("job-cancel", arguments: ["id": id])
+                // Dismissed too (2026-11-08, fourth audit #8): a cancelled job
+                // stays in QEMU's list as concluded, and the ids here are fixed
+                // words, so the next point or save failed "already in use".
+                for _ in 0..<150 {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    let jobs = (try? await sendQMPCommand("query-jobs", arguments: nil, timeout: 5)) as? [[String: Any]] ?? []
+                    guard let job = jobs.first(where: { $0["id"] as? String == id }) else { break }
+                    if job["status"] as? String == "concluded" {
+                        _ = try? await sendQMPCommand("job-dismiss", arguments: ["id": id], timeout: 5)
+                        break
+                    }
+                }
                 throw AVMError.qmpCommandFailed("\(command) took longer than \(limit)")
             }
         }
+    }
+
+    /// A job left behind by a failed or cut-short runQMPJob, dismissed if it
+    /// has concluded, so its id can be used again (2026-11-08, fourth audit
+    /// #8). Quiet when QEMU is gone or the job isn't there.
+    func dismissQMPJob(_ id: String) async {
+        let jobs = (try? await sendQMPCommand("query-jobs", arguments: nil, timeout: 5)) as? [[String: Any]] ?? []
+        guard let job = jobs.first(where: { $0["id"] as? String == id }), job["status"] as? String == "concluded" else { return }
+        _ = try? await sendQMPCommand("job-dismiss", arguments: ["id": id], timeout: 5)
     }
 
     /// A restore point taken while the machine runs (2026-10-27), memory
@@ -4603,6 +4644,7 @@ extension VMManager {
             } else {
                 RestorePoints.removeFolder(vmDirectory: runtimeDir, tag: tag)
             }
+            await dismissQMPJob("avm-point")
             throw error
         }
         avmLog("createRunningRestorePoint: \(tag) taken with memory")
@@ -4759,6 +4801,7 @@ extension VMManager {
             // carried on last time". Now it deletes the state quietly.
             if plan.isSavedState { try? QEMUSavedState.carriedOnWord.write(to: marker, atomically: true, encoding: .utf8) }
         } catch {
+            await dismissQMPJob("avm-load")
             // Cut short before the guest ran (2026-10-28, fourth audit):
             // Quit Now or a Force Stop while the state was loading. Nothing
             // ran, so the saved state and its note are still good: they stay
@@ -4798,6 +4841,7 @@ extension VMManager {
                 try? fm.removeItem(at: marker)
             } catch {
                 avmLog("resumeSavedState: couldn't delete the saved state (\(error.localizedDescription)); the marker makes the next Start delete it")
+                await dismissQMPJob("avm-delete")
             }
         }
         try? fm.removeItem(at: QEMUSavedState.hint(in: runtimeDir))
@@ -5254,12 +5298,20 @@ extension VMManager {
                     // A drive that's gone, or a disk that's full (2026-11-05,
                     // second audit: QEMU now pauses on every disk error).
                     let gone = self.activeConfiguration?.storageIsMissing == true
-                    avmLog("diskWatch: QEMU paused the machine with an I/O error (\(gone ? "its drive is disconnected" : "its disk's volume is full"))")
+                    // Not full, so a damaged disk or a failing drive (2026-11-08,
+                    // fourth audit #9): with rerror=stop a read error pauses too,
+                    // and it was called "full" whatever the free space.
+                    let full = free < DiskWatch.gigabyte || free == Int64.max
+                    avmLog("diskWatch: QEMU paused the machine with an I/O error (\(gone ? "its drive is disconnected" : full ? "its disk's volume is full" : "a disk error with \(free / DiskWatch.gigabyte) GB free"))")
                     if gone, let drive {
-                        Announcer.shared.announce("\(machine) has paused: the drive \(drive) was disconnected. Next: connect \(drive) again, then choose Resume in \(machine)'s row. If \(machine) won't start later, choose Check the Disk in its Settings.", tone: .failure)
-                    } else {
+                        // Resume can't work (fourth audit #9): QEMU's open file is on
+                        // the volume that went, and the drive comes back as a new one.
+                        Announcer.shared.announce("\(machine) has paused: the drive \(drive) was disconnected. Next: choose Force Stop in \(machine)'s row, connect \(drive) again, then choose Check the Disk in \(machine)'s Settings before starting it.", tone: .failure)
+                    } else if full {
                         Announcer.shared.announce(drive.map { "\(machine) has paused: the drive \($0) is full. Next: free some space on \($0), then choose Resume in \(machine)'s row." }
                             ?? "\(machine) has paused: your Mac's disk is full. Next: free some space on your Mac, then choose Resume in \(machine)'s row.", tone: .failure)
+                    } else {
+                        Announcer.shared.announce("\(machine) has paused: reading or writing its disk failed, though \(drive.map { "the drive \($0)" } ?? "your Mac's disk") has room. Next: choose Resume in \(machine)'s row once; if it pauses again, choose Force Stop, then Check the Disk in \(machine)'s Settings.", tone: .failure)
                     }
                 }
 
