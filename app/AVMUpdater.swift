@@ -222,6 +222,9 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.40", changes: [
+            "Fixed: 0.4.39 stopped responding, and took more and more memory, a second after a Windows machine came up, until it had to be force-quit. A mistake in yesterday's fix made AVM call one of its own steps over and over. If AVM 0.4.39 is open and stuck, force-quit it (Command-Option-Escape), then install this update. A machine left running by that AVM is stopped when you start it again, as if its power had been cut.",
+        ]),
         ReleaseNote(version: "0.4.39", changes: [
             "Fixed: the Windows apps in Command-Tab could stop changing, so apps you opened or closed in Windows were not added or removed, while opening one from Command-Tab still worked. A file AVM had left open in Windows was keeping its helper from updating the list; AVM now closes it, and the helper tells AVM when it can't update the list so AVM can use the latest one anyway. Every Windows machine gets the new helper when it next starts.",
             "Fixed: applying a saved screen reader setup, or reinstalling the Command-Tab helper, could leave that list unable to update for the same reason.",
