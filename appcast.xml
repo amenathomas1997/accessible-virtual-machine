@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.42</title>
+            <sparkle:version>62</sparkle:version>
+            <sparkle:shortVersionString>0.4.42</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>If a saved session can&#x27;t be carried on, AVM now asks whether to keep it or start fresh, and the session is kept safely even if you quit or the Mac restarts while it asks. A Save that&#x27;s refused for lack of room no longer moves your devices. Settings no longer change the memory or cores of a machine that started while they were open.</li><li>Screen readers in Linux: when Orca stops, AVM starts it again the right way on GNOME, and now on KDE, XFCE and MATE as well. Applying a saved Orca or NVDA setup restarts the reader on every desktop.</li><li>Keyboards: when your Mac&#x27;s own keyboard sleeps, only the keyboard for Windows goes back to the Mac, not a Bluetooth keyboard or braille display too, and a Bluetooth device that did go back returns to its machine once the Mac has a keyboard again.</li><li>Dialogs: Remove AVM&#x27;s first button is now Cancel, the Setup Wizard asks before stopping a download, and the question when you close a machine&#x27;s window is spoken even while the machine has the keyboard. The avmctl command no longer waits for ever on an AVM that&#x27;s stuck.</li><li>Many smaller fixes from two code reviews: the dashboard no longer pauses reading a machine&#x27;s folder, Reinstall Windows clears the old disk&#x27;s figures, AVM&#x27;s own tests leave your settings alone, and the Windows helper for Command-Tab opens programs only from where they&#x27;re installed.</li></ul>]]></description>
+            <pubDate>Mon, 09 Nov 2026 21:48:12 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.42/AVM-0.4.42.zip" sparkle:edSignature="LEO8rahJqnoYX+320bxcq1dOuK8T0rw4IX1YOVpBF73dvCXnl+PtjCfjVaE7Ro88dPHOk0+/OFdq0CZSu0P0Bw==" length="106602838" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.41</title>
             <sparkle:version>61</sparkle:version>
             <sparkle:shortVersionString>0.4.41</sparkle:shortVersionString>
