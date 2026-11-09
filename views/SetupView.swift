@@ -188,6 +188,23 @@ struct SetupView: View {
         linuxGuestOS.displayName
     }
 
+    /// A download under way is asked about (2026-11-09, third audit of the
+    /// day #9): Escape cancelled an hour-old download without a word, after
+    /// "Keep Going in Background" had promised it would go on.
+    private func cancelWizard() {
+        let downloading = [.watching, .downloading, .verifying].contains(isoDownloader.phase)
+            || [.finding, .downloading, .verifying].contains(linuxDownloader.phase)
+            || { if case .building = windowsAutoDownloader.phase { return true }
+                 return [.finding, .downloading, .verifying].contains(windowsAutoDownloader.phase) }()
+        guard downloading else { dismiss(); return }
+        let alert = NSAlert()
+        alert.messageText = "Stop the download?"
+        alert.informativeText = "An installer is still downloading. Closing the Setup Wizard stops it, and what has come so far isn't kept."
+        alert.addButton(withTitle: "Keep Downloading")
+        alert.addButton(withTitle: "Stop and Close")
+        if alert.runModal() == .alertSecondButtonReturn { dismiss() }
+    }
+
     private var linuxGuestOS: GuestOS {
         guard case .ubuntu(let info) = installerKind else { return .ubuntu }
         switch info.distro {
@@ -359,7 +376,7 @@ struct SetupView: View {
             // Actions
             HStack(spacing: 16) {
                 Button("Cancel") {
-                    dismiss()
+                    cancelWizard()
                 }
                 // Not while creating (2026-10-26, code audit): the machine
                 // was made anyway after the window closed.
@@ -727,6 +744,14 @@ struct SetupView: View {
             SecureField("Confirm password", text: $ubuntuPasswordConfirm)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel("Confirm \(linuxName) password")
+
+            // Said up front (2026-11-09, third audit of the day #30): the
+            // AutoYaST profile gives root this password, and nothing had said so.
+            if linuxGuestOS == .opensuse {
+                Text("On openSUSE, the administrator account, root, gets this same password.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Toggle("Sign in automatically", isOn: $ubuntuSignInAutomatically)
                 .accessibilityHint("When on, \(linuxName) starts straight to the desktop with no password prompt")

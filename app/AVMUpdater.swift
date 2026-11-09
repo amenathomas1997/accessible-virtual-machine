@@ -93,7 +93,7 @@ final class AVMUpdater: ObservableObject {
     }
 
     private func showHeldUpdate() {
-        guard announcer.held, NSApp.isActive, FocusLockManager.shared?.isLocked != true else { return }
+        guard announcer.held, NSApp.isActive, !machineHasKeyboard else { return }
         announcer.held = false
         AVMLog.write("AVM: Updates — showing the window held while the keyboard was in a machine.")
         controller.checkForUpdates(nil)
@@ -178,7 +178,7 @@ final class UpdateAnnouncer: NSObject, SPUUpdaterDelegate, SPUStandardUserDriver
     nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
 
     nonisolated func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem, andInImmediateFocus immediateFocus: Bool) -> Bool {
-        MainActor.assumeIsolated { FocusLockManager.shared?.isLocked != true }
+        MainActor.assumeIsolated { !machineHasKeyboard }
     }
 
     nonisolated func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
@@ -217,16 +217,23 @@ final class UpdateAnnouncer: NSObject, SPUUpdaterDelegate, SPUStandardUserDriver
         let build = Int(item.versionString)
         Task { @MainActor in
             if let build { found?(build) }
-            let inGuest = FocusLockManager.shared?.isLocked ?? false
+            let inGuest = machineHasKeyboard
             AVMLog.write("AVM: Updates — found version \(version).")
             Announcer.shared.announce(
                 inGuest
-                    ? "AVM \(version) is available. Its window opens when you leave \(FocusLockManager.shared?.guestName ?? "the machine")."
+                    ? "AVM \(version) is available. Its window opens when you leave \(FocusLockManager.shared?.guestName ?? MacGuestRunner.shared.nameWithKeyboard ?? "the machine")."
                     : "AVM \(version) is available. Its window is in AVM, or opens when you switch to AVM.",
                 tone: .info
             )
         }
     }
+}
+
+/// Either way a machine can have the keyboard (2026-11-09, audit of 0.4.41
+/// #9): a macOS guest doesn't use FocusLockManager, and Sparkle's window could
+/// take its keys.
+@MainActor private var machineHasKeyboard: Bool {
+    FocusLockManager.shared?.isLocked == true || MacGuestRunner.shared.keyboardInGuest
 }
 
 // MARK: - What's New, after an update (2026-10-30)
@@ -253,6 +260,13 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.42", changes: [
+            "If a saved session can't be carried on, AVM now asks whether to keep it or start fresh, and the session is kept safely even if you quit or the Mac restarts while it asks. A Save that's refused for lack of room no longer moves your devices. Settings no longer change the memory or cores of a machine that started while they were open.",
+            "Screen readers in Linux: when Orca stops, AVM starts it again the right way on GNOME, and now on KDE, XFCE and MATE as well. Applying a saved Orca or NVDA setup restarts the reader on every desktop.",
+            "Keyboards: when your Mac's own keyboard sleeps, only the keyboard for Windows goes back to the Mac, not a Bluetooth keyboard or braille display too, and a Bluetooth device that did go back returns to its machine once the Mac has a keyboard again.",
+            "Dialogs: Remove AVM's first button is now Cancel, the Setup Wizard asks before stopping a download, and the question when you close a machine's window is spoken even while the machine has the keyboard. The avmctl command no longer waits for ever on an AVM that's stuck.",
+            "Many smaller fixes from two code reviews: the dashboard no longer pauses reading a machine's folder, Reinstall Windows clears the old disk's figures, AVM's own tests leave your settings alone, and the Windows helper for Command-Tab opens programs only from where they're installed.",
+        ]),
         ReleaseNote(version: "0.4.41", changes: [
             "Safer when something goes wrong: if a machine stops answering, AVM itself no longer freezes. If AVM ever hangs while a machine has the keyboard, Force Quit now works. A save that fails can no longer be loaded later over newer work, and your USB and Bluetooth devices go back into the machine.",
             "Restore points: a restore that can't finish now leaves both drives as they were, and a saved session is only let go once the restore has worked. If a restore point before updates can't be taken, AVM says so.",
@@ -469,7 +483,7 @@ enum ReleaseNotes {
         // Nor at a quiet login (2026-11-09, fifth audit #31): AVM's windows
         // stay away until the user opens AVM, and this took the front from
         // whatever they had started. It waits for that, as for the lock.
-        guard FocusLockManager.shared?.isLocked != true, !BackgroundMode.shared.quietUntilOpened else {
+        guard !machineHasKeyboard, !BackgroundMode.shared.quietUntilOpened else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showWhenOnTheMac(notes) }
             return
         }

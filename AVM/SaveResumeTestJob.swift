@@ -414,7 +414,10 @@ enum SaveResumeTestJob {
                 let atStart = arguments.contains("--at-start")
                 if atStart { RemoteDesktop.savePassword(password, for: config.id) }
                 guard await start(manager, config), let agent = manager.guestAgentSocketPath,
-                      await waitForAgent(agent, seconds: 300) else { await finish(false) }
+                      await waitForAgent(agent, seconds: 300) else {
+                    RemoteDesktop.forgetPassword(for: config.id)
+                    await finish(false)
+                }
                 try? await Task.sleep(for: .seconds(15))
                 let began = Date()
                 if atStart {
@@ -522,6 +525,10 @@ enum SaveResumeTestJob {
                     print("   (no FreeRDP on this Mac; the sign-in wasn't tried)")
                 }
                 RemoteDesktopAdvertiser.shared.unpublish(config.id)
+                // Either way (2026-11-09, third audit of the day #27): the
+                // Settings path saved the password too, and only --at-start
+                // forgot it.
+                RemoteDesktop.forgetPassword(for: config.id)
                 await shutDown(manager)
                 await finish(ok)
             }
@@ -1546,13 +1553,23 @@ enum SaveResumeTestJob {
         return ok
     }
 
+    /// A setting for this process only: the argument domain is first in
+    /// UserDefaults' search and is never written.
+    private static func setForThisRun(_ key: String, to value: Any) {
+        var domain = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        domain[key] = value
+        UserDefaults.standard.setVolatileDomain(domain, forName: UserDefaults.argumentDomain)
+    }
+
     private static func guestWatch(_ folder: URL, _ guest: GuestOS) async -> Bool {
         // Off by default (2026-10-31); this test checks it, so it's on here,
         // and put back: a test machine's run left it on for real machines
         // (2026-11-01 audit).
-        let chosenBefore = UserDefaults.standard.object(forKey: GuestWatchSettings.pointBeforeUpdatesKey)
-        defer { UserDefaults.standard.set(chosenBefore, forKey: GuestWatchSettings.pointBeforeUpdatesKey) }
-        UserDefaults.standard.set(true, forKey: GuestWatchSettings.pointBeforeUpdatesKey)
+        // In the argument domain, never on disk (2026-11-09, third audit of
+        // the day #7): the restore was a defer, and a test killed on an
+        // overrun skipped it, leaving the point before updates, off by default
+        // because Windows twice didn't come back, on for the user's machines.
+        setForThisRun(GuestWatchSettings.pointBeforeUpdatesKey, to: true)
         // A fresh point every run: one from an earlier run under 20 hours
         // old would be kept, and the restart after a new point not tested.
         for point in (try? await RestorePoints.list(vmDirectory: folder)) ?? []
@@ -1665,8 +1682,10 @@ enum SaveResumeTestJob {
     /// app again once the machine stops. The setting is put back after.
     private static func background(_ folder: URL, _ guest: GuestOS) async -> Bool {
         let mode = BackgroundMode.shared
+        // Not written to disk (third audit of the day #7, as above).
         let chosenBefore = mode.runInBackground
-        defer { mode.runInBackground = chosenBefore }
+        mode.keepsChoice = false
+        defer { mode.runInBackground = chosenBefore; mode.keepsChoice = true }
         var config = configuration(folder: folder, guest: guest)
         config.name = "Background test"
         mode.runInBackground = true
@@ -1709,7 +1728,9 @@ enum SaveResumeTestJob {
 
         print("== The setting off")
         mode.runInBackground = false
-        check("the choice is saved", UserDefaults.standard.bool(forKey: "AVMRunInBackground") == false)
+        // Not "the choice is saved" (review of the third audit of the day
+        // #7): nothing is written to disk in a test now, and the check read
+        // the user's own setting.
         return ok
     }
 

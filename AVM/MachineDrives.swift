@@ -125,8 +125,9 @@ final class StorageWatch: ObservableObject {
 final class DiskUsage: ObservableObject {
     static let shared = DiskUsage()
     @Published private var known: [UUID: [DiskWatch.Drive]] = [:]
+    private var loading = Set<UUID>()
 
-    private struct Saved: Codable {
+    nonisolated private struct Saved: Codable {
         let name: String
         let used: Int64
         let total: Int64
@@ -134,10 +135,31 @@ final class DiskUsage: ObservableObject {
 
     func drives(of configuration: VMConfiguration) -> [DiskWatch.Drive] {
         if let drives = known[configuration.id] { return drives }
-        guard let folder = try? configuration.directoryURL(),
-              let data = try? Data(contentsOf: folder.appendingPathComponent(DiskWatch.usageFileName)),
-              let saved = try? JSONDecoder().decode([Saved].self, from: data) else { return [] }
-        return saved.map { DiskWatch.Drive(name: $0.name, used: $0.used, total: $0.total) }
+        // Read once, off the main thread (2026-11-09, third audit of the day
+        // #10): the dashboard's body asked at every redraw, and resolving the
+        // folder and reading the file on a gone network share or a drive
+        // spinning up stalled the dashboard, its menus and speech.
+        let id = configuration.id
+        guard !loading.contains(id) else { return [] }
+        loading.insert(id)
+        // The folder once, here (review): directoryURL is main-actor code.
+        let file = (try? configuration.directoryURL())?.appendingPathComponent(DiskWatch.usageFileName)
+        Task.detached(priority: .utility) {
+            let read: [DiskWatch.Drive]
+            if let file,
+               let data = try? Data(contentsOf: file),
+               let saved = try? JSONDecoder().decode([Saved].self, from: data) {
+                read = saved.map { DiskWatch.Drive(name: $0.name, used: $0.used, total: $0.total) }
+            } else {
+                read = []
+            }
+            await MainActor.run {
+                let usage = DiskUsage.shared
+                usage.loading.remove(id)
+                if usage.known[id] == nil { usage.known[id] = read }
+            }
+        }
+        return []
     }
 
     func note(_ drives: [DiskWatch.Drive], machine: UUID, folder: URL) {
@@ -211,6 +233,12 @@ extension VMManager {
             switch answer?.word {
             case "extended":
                 Announcer.shared.announce("\(machine)'s drive C is now \(answer?.detail ?? "") gigabytes.", tone: .success)
+            // Already all of it (2026-11-09, third audit of the day #18): a
+            // restore point from after the disk was grown and extended put
+            // the partition back whole, and "a partition is in the way" was
+            // said of it.
+            case "same":
+                break
             default:
                 Announcer.shared.announce("\(machine)'s drive C couldn't take the new space. A partition may be in the way. The README's section on making a disk larger says what to do next.", tone: .failure)
             }
@@ -232,6 +260,11 @@ extension VMManager {
                 storeDiskChange(configuration) { $0.secondDriveNeedsFormat = nil }
             case "already":
                 if needsFormat { storeDiskChange(configuration) { $0.secondDriveNeedsFormat = nil } }
+            // No file system any more (2026-11-09, third audit of the day
+            // #22): "AVM tries again at its next Start" was a promise it
+            // couldn't keep, since it never formats a drive that had data.
+            case "lostfs":
+                Announcer.shared.announce("\(machine)'s second drive has no file system any more, so it can't be mounted. AVM doesn't format a drive that had one. Next: go back to a restore point from before, or format it in \(machine) yourself.", tone: .failure)
             default:
                 Announcer.shared.announce("\(machine)'s second drive couldn't be made ready. AVM tries again at its next Start.", tone: .failure)
             }

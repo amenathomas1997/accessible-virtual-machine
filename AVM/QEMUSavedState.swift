@@ -173,7 +173,12 @@ nonisolated enum QEMUSavedState {
         // The hint and marker go only once the saved state has
         // (2026-10-28, fourth audit).
         guard await snapshotTags(disk: disk)?.contains(tag) == false else {
-            AVMLog.write("AVM: SavedState — couldn't confirm the saved state was deleted; keeping its hint and marker.")
+            // With the marker (2026-11-09, third audit of the day #12): a
+            // stopped machine's saved state had none, so the next Start loaded
+            // the old session over the restored disk and said it was resuming.
+            // The quiet word: its loss, if any, was said by the restore.
+            try? carriedOnWord.write(to: dir.appendingPathComponent(loadedMarker), atomically: true, encoding: .utf8)
+            AVMLog.write("AVM: SavedState — couldn't confirm the saved state was deleted; the marker makes the next Start delete it, not load it.")
             return
         }
         AVMLog.write("AVM: SavedState — discarded.")

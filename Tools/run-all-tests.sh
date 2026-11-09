@@ -202,15 +202,18 @@ guest_for() {
     esac
 }
 
-# No test AVM may still be running from the last test.
+# No test AVM may still be running from the last test. Only one running a
+# test (2026-11-09, third audit of the day #25): the path alone matched a
+# build copy the user had open from the same DerivedData.
+TEST_AVM="$BIN .*--test-"
 wait_for_quiet() {
     local i
     for i in $(seq 1 60); do
-        pgrep -f "$BIN" >/dev/null 2>&1 || return 0
+        pgrep -f "$TEST_AVM" >/dev/null 2>&1 || return 0
         sleep 1
     done
     echo "   (an AVM from the last test is still running; stopping it)"
-    pkill -f "$BIN" 2>/dev/null
+    pkill -f "$TEST_AVM" 2>/dev/null
     sleep 2
 }
 
@@ -303,7 +306,7 @@ run_one() {
             # 4-minute test reported in 3 s): the verdict, or the test's
             # AVM gone, is what ends the wait, within the limit.
             local waited=$(( $(date +%s) - start ))
-            while ! grep -qE "^(PASSED|FAILED)" "$log" 2>/dev/null && pgrep -f "$BIN" >/dev/null 2>&1 && [ $waited -lt "$LIMIT" ]; do
+            while ! grep -qE "^(PASSED|FAILED)" "$log" 2>/dev/null && pgrep -f "$TEST_AVM" >/dev/null 2>&1 && [ $waited -lt "$LIMIT" ]; do
                 sleep 2; waited=$((waited + 2))
             done
             [ $waited -lt "$LIMIT" ] || status=124

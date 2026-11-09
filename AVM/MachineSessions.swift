@@ -469,7 +469,9 @@ final class MachineWindow: NSObject, NSWindowDelegate {
             alert.addButton(withTitle: "Save")
             alert.informativeText += " Save keeps it as it is, open apps and all, and its next Start carries on from there."
         }
-        let choice = alert.runModal()
+        // Heard (2026-11-09, third audit of the day #19): with the keyboard
+        // in the machine and VoiceOver off, a plain runModal went unheard.
+        let choice = QuitCoordinator.ask(alert)
         switch choice {
         case .alertFirstButtonReturn:
             if let lock = FocusLockManager.shared, lock.isLocked { lock.unlock() }

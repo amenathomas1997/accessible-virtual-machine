@@ -2751,8 +2751,8 @@ final class PermanentDeleteTests: XCTestCase {
 /// When it fails: bump helperBuildVersion if you haven't, then copy the two
 /// values from the failure message into `recorded`.
 final class HelperVersionTests: XCTestCase {
-    private let recorded = (version: "0.4.41",
-                            sources: "9a93bba1dce4edc959fc5e6e74c0f21755992d40cce83f283ad4e3759aa9f5dd")
+    private let recorded = (version: "0.4.42",
+                            sources: "7bf814788106f9bb3af1ec4503c09f53a0c5c501e2c4f95d4d403933230052b3")
 
     private var helperFolder: URL {
         URL(fileURLWithPath: #filePath)

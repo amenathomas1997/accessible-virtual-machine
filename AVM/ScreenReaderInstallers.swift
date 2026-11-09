@@ -326,7 +326,11 @@ nonisolated enum ScreenReaderInstallers {
         for name in (try? fm.contentsOfDirectory(atPath: cache.path)) ?? []
         where name.hasPrefix("\(reader.rawValue)-") && name != file.lastPathComponent && name != recordURL(of: file).lastPathComponent {
             let url = cache.appendingPathComponent(name)
-            if let version = versionInName(name, of: reader), let keeping = versionInName(file.lastPathComponent, of: reader),
+            // Only names AVM gives (2026-11-09, third audit of the day #26):
+            // with --into a folder of the user's, a file of theirs that began
+            // with the reader's name was deleted.
+            guard let version = versionInName(name, of: reader) else { continue }
+            if let keeping = versionInName(file.lastPathComponent, of: reader),
                version.compare(keeping, options: .numeric) == .orderedDescending { continue }
             // A piece another download is writing is left alone for a day.
             if name.contains(".part"),

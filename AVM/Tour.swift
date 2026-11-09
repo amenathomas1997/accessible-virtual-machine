@@ -54,6 +54,7 @@ enum Tour {
     ]
 
     private static var window: NSWindow?
+    private static var closeObserver: NSObjectProtocol?
 
     static func show() {
         window?.close()
@@ -67,6 +68,12 @@ enum Tour {
             Announcer.shared.stopSystemVoice()
             window?.close()
         })
+        // Its close box too (2026-11-09, third audit of the day #31): only
+        // the Close button stopped the voice.
+        if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
+        closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: panel, queue: .main) { _ in
+            MainActor.assumeIsolated { Announcer.shared.stopSystemVoice() }
+        }
         panel.center()
         window = panel
         NSApp.activate(ignoringOtherApps: true)

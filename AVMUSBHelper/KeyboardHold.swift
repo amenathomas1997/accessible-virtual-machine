@@ -220,10 +220,13 @@ final class KeyboardHold {
                 return
             }
             self.releaseHeld(notify: false)
+            // Said once per keyboard (2026-11-09, third audit of the day
+            // #24): reset at every ask, each re-ask for the same keyboard
+            // repeated "the Mac needs a keyboard of its own".
+            if self.wantedID != keyboardID { self.saidWaiting = false }
             self.wantedID = keyboardID
             self.owner = connection
             self.heldOwnerUID = connection.effectiveUserIdentifier
-            self.saidWaiting = false
             // Not a count left by tries for the last hold (2026-10-29,
             // sixth audit): it was reset only on success or refusal.
             self.exclusiveRetries = 0

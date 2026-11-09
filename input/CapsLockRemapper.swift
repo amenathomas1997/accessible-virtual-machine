@@ -258,6 +258,7 @@ final class CapsLockRemapper {
 
         if writeMapping(merged) {
             AVMLog.write("AVM: CapsLockRemapper — APPLIED (preserved \(preserved.count) existing entr\(preserved.count == 1 ? "y" : "ies")). Success is silent by design.")
+            watchForAVMDying()
         } else {
             // The write failed, so the system is unchanged by THIS apply.
             // Clear the flag so launch recovery does not later "restore" over
@@ -372,6 +373,8 @@ final class CapsLockRemapper {
         }
 
         if writeMapping(original) {
+            deathWatch?.terminate()
+            deathWatch = nil
             clearSavedState()
             log("AVM: CapsLockRemapper — RESTORED (\(context)); \(original.count) original entr\(original.count == 1 ? "y" : "ies") put back.")
         } else {
@@ -384,6 +387,37 @@ final class CapsLockRemapper {
                     tone: .failure)
             }
         }
+    }
+
+    /// A small shell that puts the mapping back when AVM dies (2026-11-09,
+    /// audit of 0.4.41 #7): Force Quit is the way out of a hang, nothing of
+    /// AVM's runs after it, and with Caps Lock as the VoiceOver key every
+    /// VoiceOver command was dead until AVM was opened again. The flag stays,
+    /// and launch recovery finds the entry gone and clears it.
+    private var deathWatch: Process?
+
+    private func watchForAVMDying() {
+        deathWatch?.terminate()
+        deathWatch = nil
+        let script = "while kill -0 \"$1\" 2>/dev/null; do sleep 1; done; exec /usr/bin/hidutil property --set \"$2\""
+        let watch = Process()
+        watch.executableURL = URL(fileURLWithPath: "/bin/sh")
+        watch.arguments = ["-c", script, "avm-capslock-watch", String(ProcessInfo.processInfo.processIdentifier), Self.mappingJSON(savedOriginal())]
+        watch.standardInput = FileHandle.nullDevice
+        watch.standardOutput = FileHandle.nullDevice
+        watch.standardError = FileHandle.nullDevice
+        do {
+            try watch.run()
+            deathWatch = watch
+        } catch {
+            AVMLog.write("AVM: CapsLockRemapper — no watch for a Force Quit: \(error.localizedDescription)")
+        }
+    }
+
+    private func savedOriginal() -> [KeyMapping] {
+        guard let json = UserDefaults.standard.string(forKey: Self.savedMappingKey), let data = json.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([KeyMapping].self, from: data) else { return [] }
+        return decoded
     }
 
     private func clearSavedState() {
@@ -414,13 +448,15 @@ final class CapsLockRemapper {
 
     // MARK: - hidutil write
 
-    private func writeMapping(_ mappings: [KeyMapping]) -> Bool {
+    private static func mappingJSON(_ mappings: [KeyMapping]) -> String {
         let entries = mappings.map {
             "{\"HIDKeyboardModifierMappingSrc\":\($0.src),\"HIDKeyboardModifierMappingDst\":\($0.dst)}"
         }.joined(separator: ",")
-        let json = "{\"UserKeyMapping\":[\(entries)]}"
+        return "{\"UserKeyMapping\":[\(entries)]}"
+    }
 
-        guard let result = Self.runHidutil(["property", "--set", json]) else {
+    private func writeMapping(_ mappings: [KeyMapping]) -> Bool {
+        guard let result = Self.runHidutil(["property", "--set", Self.mappingJSON(mappings)]) else {
             return false
         }
         guard result.status == 0 else {

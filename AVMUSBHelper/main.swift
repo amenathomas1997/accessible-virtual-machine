@@ -534,6 +534,13 @@ final class DeviceRegistry {
             os_log("%{public}@ usbredir %{public}@: %{public}@", log: log, type: type,
                    entry.device.displayName, step, detail)
         case AVM_USB_EVENT_ATTACHED.rawValue:
+            // Not over a release already begun (2026-11-09, third audit of
+            // the day #17): AVM then said "is now in the machine" of a device
+            // on its way back.
+            guard entry.state != .releasing else {
+                os_log("attached %{public}@ while releasing; ignored", log: log, type: .default, entry.device.description)
+                return
+            }
             os_log("attached %{public}@ (%{public}@)", log: log, type: .default, entry.device.description, detail)
             entry.state = .attached
             report(entry, detail: detail)

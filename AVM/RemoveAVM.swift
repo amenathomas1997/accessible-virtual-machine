@@ -29,12 +29,15 @@ enum RemoveAVM {
         alert.alertStyle = .warning
         alert.messageText = "Remove AVM from this Mac?"
         alert.informativeText = "AVM removes its USB helper and its login item, then moves its settings, caches and the AVM Windows Apps folder to the Trash, then the app itself, and quits. Remove AVM and Its Machines also moves every virtual machine on this Mac's disk, and the installers AVM downloaded, to the Trash, and forgets their Remote Desktop passwords. Machines on external drives or in folders you chose stay where they are. Nothing else is gone until you empty the Trash."
+        // Cancel first, as every other destructive question has it
+        // (2026-11-09, third audit of the day #8): Return on what sounds like
+        // an information dialog removed AVM.
+        alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Remove AVM, Keep Machines")
         alert.addButton(withTitle: "Remove AVM and Its Machines")
-        alert.addButton(withTitle: "Cancel")
         switch alert.runModal() {
-        case .alertFirstButtonReturn: remove(machinesToo: false)
-        case .alertSecondButtonReturn: remove(machinesToo: true)
+        case .alertSecondButtonReturn: remove(machinesToo: false)
+        case .alertThirdButtonReturn: remove(machinesToo: true)
         default: return
         }
     }

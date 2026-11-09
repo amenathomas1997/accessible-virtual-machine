@@ -373,6 +373,8 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
 
     @Published private(set) var runningID: UUID?
     @Published private(set) var keyboardInGuest = false
+    /// The macOS machine with the keyboard, if one has it.
+    var nameWithKeyboard: String? { keyboardInGuest ? name : nil }
     private var machineView: VZVirtualMachineView?
     private var statusLabel: NSTextField?
     private weak var giveButton: NSButton?
@@ -968,7 +970,10 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             keysToMacOS = 0
             keysElsewhere = 0
         }
+        let wasInGuest = keyboardInGuest
         keyboardInGuest = inGuest
+        // As a lock's end does: an update window held back shows now.
+        if wasInGuest && !inGuest { NotificationCenter.default.post(name: FocusLockManager.didUnlock, object: nil) }
         statusLabel?.stringValue = inGuest
             ? "Keyboard: \(name). Every key goes to \(name) except Command-Tab and Command-F5, which stay your Mac's. Control-Command-Escape returns to your Mac."
             : "Keyboard: your Mac. Command-Shift-E, or the button, gives it to \(name)."
@@ -1165,7 +1170,9 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         machineView = nil
         statusLabel = nil
         if keyboardInGuest { MacVoiceOver.restoreAfterGuest() }
+        let hadKeyboard = keyboardInGuest
         keyboardInGuest = false
+        if hadKeyboard { NotificationCenter.default.post(name: FocusLockManager.didUnlock, object: nil) }
         hintGiven = false
         runningID = nil
         if let spoken { Announcer.shared.announce(spoken, tone: tone) }

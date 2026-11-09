@@ -133,9 +133,12 @@ enum MacAutoSetup {
             await work(port: port, password: vncPassword, answers: answers, say: say)
         }.value
         switch outcome {
-        case .done:
+        case .done(let voiceOverKeyPressed):
             AVMLog.write("AVM: MacAutoSetup — reached the desktop.")
-            say(answers.voiceOver ? "macOS is set up and signed in as \(answers.fullName), with VoiceOver on." : "macOS is set up and signed in as \(answers.fullName).")
+            // Only when the key went in (2026-11-09, audit of 0.4.41 #8).
+            say(!answers.voiceOver ? "macOS is set up and signed in as \(answers.fullName)."
+                : voiceOverKeyPressed ? "macOS is set up and signed in as \(answers.fullName), with VoiceOver on."
+                : "macOS is set up and signed in as \(answers.fullName), but AVM couldn't turn on its VoiceOver. Press Command-F5 inside the machine.")
             return true
         case .stuck(let screen):
             AVMLog.write("AVM: MacAutoSetup — stopped on a screen that didn't change.")
@@ -149,7 +152,7 @@ enum MacAutoSetup {
     }
 
     enum Outcome: Sendable {
-        case done
+        case done(voiceOverKeyPressed: Bool)
         case stuck(String)
         case failed(String)
     }
@@ -325,20 +328,20 @@ enum MacAutoSetup {
             do {
                 switch step {
                 case .desktop:
+                    var pressed = false
                     if answers.voiceOver {
                         try? await Task.sleep(for: .seconds(3))
                         if let command = findCommandKey(port: port, password: password) {
                             // A fresh connection, and never fatal: setup is done.
                             if let fresh = try? RFBClient(port: port, password: password, wait: 5) {
-                                try? fresh.press(RFBClient.f5, with: [command])
+                                pressed = (try? fresh.press(RFBClient.f5, with: [command])) != nil
                             }
-                            AVMLog.write("AVM: MacAutoSetup — Command is keysym \(String(command, radix: 16)); Command-F5 sent for VoiceOver.")
+                            AVMLog.write("AVM: MacAutoSetup — Command is keysym \(String(command, radix: 16)); Command-F5 \(pressed ? "sent" : "couldn't be sent") for VoiceOver.")
                         } else {
                             AVMLog.write("AVM: MacAutoSetup — no key came through as Command; VoiceOver not turned on.")
-                            await say("macOS is set up, but AVM couldn't turn on its VoiceOver. Press Command-F5 inside the machine.")
                         }
                     }
-                    return .done
+                    return .done(voiceOverKeyPressed: pressed)
                 case .account:
                     // The screen opens with Full Name ready to type in;
                     // Account Name follows from it, then the password twice.

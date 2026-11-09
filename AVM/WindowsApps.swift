@@ -53,8 +53,9 @@ final class WindowsApps {
     /// from SYSTEM, a request still being written waits, the stuck file
     /// deleted at start-up, 2026-11-08; 9: requests in a folder Users can't
     /// write, launch keys checked, one helper per request, survives a
-    /// missing apps folder, 2026-11-09).
-    static let helperVersion = "9"
+    /// missing apps folder, 2026-11-09; 10: programs launched only from
+    /// Program Files, Windows or the user's own profile, 2026-11-09).
+    static let helperVersion = "10"
     static let guestFolder = #"C:\ProgramData\AVM"#
 
     /// What a Mac app stands for: an app open in Windows, one kept in the
@@ -755,7 +756,10 @@ final class WindowsApps {
         }
         let manager = s.manager
         requestNumber += 1
-        let id = "\(requestNumber)-\(Int(Date().timeIntervalSince1970))"
+        // Not guessable (2026-11-09, third audit of the day #11): replies land
+        // in apps, which any account in the machine can write, and a counter
+        // and the time let another account write the reply first.
+        let id = "\(requestNumber)-\(UUID().uuidString.prefix(8))"
         // A file each (2026-10-30 audit): one request.txt for all let a
         // second request, another app opened meanwhile, overwrite this one.
         let replyPath = Self.guestFolder + #"\apps\reply-"# + id + ".txt"

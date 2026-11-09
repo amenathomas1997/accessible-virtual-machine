@@ -384,6 +384,16 @@ final class BluetoothDevices: ObservableObject {
             say("\(entry.name) disconnected, so it's on the Mac for now. It goes back to \(machine.machineName) when it reconnects.", tone: .info)
             return
         }
+        // Given back because the Mac's own keyboard went (2026-11-09, third
+        // audit of the day #4): like a disconnect, but tried at the next
+        // Bluetooth arrival, which is the Mac's keyboard waking, not now.
+        if detail == "the Mac had no other keyboard", case .running = machine.state, !machine.isSaving {
+            awaitingReturn[id] = AwaitingReturn(machine: machine, run: machine.qemuPID, name: entry.name, onMacKeyboard: true)
+            watchForReturns(checkNow: false)
+            AVMLog.write("Bluetooth: \(entry.name) went back for want of a Mac keyboard; it goes back to \(machine.machineName) once the Mac has one", category: "Bluetooth")
+            say("\(entry.name) went back to the Mac: the Mac had no other keyboard. It goes back to \(machine.machineName) once the Mac has a keyboard again.", tone: .info)
+            return
+        }
         say("\(entry.name) went back to the Mac\(detail.map { ": \($0)" } ?? ""). Send it again from Bluetooth Devices when it's back.", tone: .info)
     }
 
@@ -399,6 +409,8 @@ final class BluetoothDevices: ObservableObject {
         weak var machine: VMManager?
         let run: Int
         let name: String
+        /// Waiting for the Mac to have a keyboard, not for its own return.
+        var onMacKeyboard = false
     }
     /// Shown in Return Devices to Mac, where Keep on Mac ends the wait.
     @Published private(set) var awaitingReturn: [String: AwaitingReturn] = [:]
@@ -420,7 +432,7 @@ final class BluetoothDevices: ObservableObject {
     private var checkingReturns = false
     private var checkAgain = false
 
-    private func watchForReturns() {
+    private func watchForReturns(checkNow: Bool = true) {
         if arrivals == nil {
             arrivals = BluetoothArrivals { [weak self] in self?.checkForReturns() }
             if arrivals == nil {
@@ -428,7 +440,7 @@ final class BluetoothDevices: ObservableObject {
             }
         }
         // Back already, before the watch began.
-        checkForReturns()
+        if checkNow { checkForReturns() }
     }
 
     /// Still wanted: its machine is in the same run, running, not saving.
@@ -457,7 +469,9 @@ final class BluetoothDevices: ObservableObject {
                         guard let waiting = awaitingReturn.removeValue(forKey: device.id),
                               let machine = stillWanted(waiting) else { continue }
                         AVMLog.write("Bluetooth: \(waiting.name) reconnected; sending it back to \(machine.machineName)", category: "Bluetooth")
-                        await attach(device, to: machine)
+                        // Refused still, for want of a Mac keyboard: it waits
+                        // for the next arrival (third audit of the day #4).
+                        if await !attach(device, to: machine), waiting.onMacKeyboard { awaitingReturn[device.id] = waiting }
                     }
                     if awaitingReturn.isEmpty { return }
                 }

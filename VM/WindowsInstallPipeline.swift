@@ -1791,12 +1791,24 @@ nonisolated final class WindowsInstallPipeline {
             appropriateFor: nil,
             create: true
         )
-        let dir = appSupport
+        let root = appSupport
             .appendingPathComponent(AVMPaths.supportFolderName)
             .appendingPathComponent("scratch")
-            .appendingPathComponent(vmID.uuidString)
+        let dir = root.appendingPathComponent(vmID.uuidString)
         try? FileManager.default.removeItem(at: dir)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Other builds' leavings a day old go too (2026-11-09, third audit of
+        // the day #28): a crash left a filled answer file, with the account's
+        // password, until that machine was built again.
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? [] {
+            let old = root.appendingPathComponent(name)
+            if let changed = (try? FileManager.default.attributesOfItem(atPath: old.path))?[.modificationDate] as? Date,
+               Date().timeIntervalSince(changed) > 86_400 {
+                try? FileManager.default.removeItem(at: old)
+            }
+        }
+        // The folder is this account's alone; the answer file inside has the
+        // account's password.
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         return dir
     }
 

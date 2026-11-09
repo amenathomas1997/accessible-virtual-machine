@@ -230,7 +230,9 @@ struct SettingsView: View {
                 Button("Close") {
                     dismiss()
                 }
-                .accessibilityHint("Closes settings without saving")
+                // True of the backup folder too (2026-11-09, third audit of the
+                // day #33): that one is saved when it's chosen.
+                .accessibilityHint("Closes settings. Changes not yet saved are dropped. Two are saved at once: the backup folder when it's chosen, and a disk size corrected to what's on disk when settings open.")
                 .keyboardShortcut(.escape, modifiers: [])
 
                 Button(isSaving ? "Saving..." : "Save Settings") {
@@ -398,6 +400,10 @@ struct SettingsView: View {
                     Stepper(value: $secondDriveSize, in: 10...most, step: 10) { Text("Second drive size in gigabytes") }
                         .labelsHidden()
                         .accessibilityHint("Adjust with arrow keys. Minimum 10 GB, maximum \(most) GB.")
+                        // Within the maximum (2026-11-09, third audit of the
+                        // day #13): the seed of 100 stood above it, the control
+                        // read 100, and the drive was made at the maximum.
+                        .onAppear { if secondDriveSize > most { secondDriveSize = most } }
                 }
             }
         }
@@ -1159,8 +1165,9 @@ struct SettingsView: View {
         // out, up to two minutes, rather than force-stopped half way.
         restorePointsBusy = true
         RestorePoints.restoring = saved.name
+        RestorePoints.restoringIDs.insert(saved.id)
         Task { @MainActor in
-            defer { RestorePoints.restoring = nil; restorePointsBusy = false }
+            defer { RestorePoints.restoring = nil; RestorePoints.restoringIDs.remove(saved.id); restorePointsBusy = false }
             var turnedOff = false
             var undo = ""
             var keptLabel: String?
@@ -1243,6 +1250,7 @@ struct SettingsView: View {
                 await loadRestorePoints()
                 if session != nil {
                     Announcer.shared.announce("\(saved.name) is back to \(point.label).\(sizeNote)\(busNote)\(undo) Starting it again.", tone: .success)
+                    RestorePoints.restoringIDs.remove(saved.id)
                     // Not taking the keyboard (2026-11-05 audit): the user is in
                     // Settings, and the machine takes it when they enter it.
                     MachineSessions.shared.start(saved, vmStore: vmStore, focusLock: FocusLockManager.shared, windowless: saved.startsWithoutWindow, takesKeyboard: false)
@@ -1733,7 +1741,12 @@ struct SettingsView: View {
             Announcer.shared.announce(message, tone: .failure)
             return
         }
-        let keptShape = isRunning && shapeChanged
+        // Started while the sheet was open too (2026-11-09, third audit of the
+        // day #6): a new memory or core count written to a machine an avmctl
+        // start or the Dock had started meanwhile failed its next Save and
+        // its next load, with QEMU's words.
+        let running = isRunning || startedMeanwhile
+        let keptShape = running && shapeChanged
         if keptShape {
             cpuCount = saved.cpuCount
             ramSizeGB = saved.ramSizeGB
@@ -1750,7 +1763,7 @@ struct SettingsView: View {
         saveMessage = nil
         isSaving = true
 
-        let growTo: Int? = (!isRunning && diskSizeGB > currentDiskGB) ? diskSizeGB : nil
+        let growTo: Int? = (!running && diskSizeGB > currentDiskGB) ? diskSizeGB : nil
 
         // A saved machine carries on only with the memory, cores and disk it
         // was saved with (2026-10-27, code audit), as on macOS machines:
@@ -1758,7 +1771,7 @@ struct SettingsView: View {
         // a plain start, not a failed resume. A larger disk can't take a
         // snapshot along anyway.
         // Asked for, and not already there.
-        let newSecondDrive: Int? = !isRunning && addSecondDrive && saved.secondDriveGB == nil && configuration.guestOS != .macOS
+        let newSecondDrive: Int? = !running && addSecondDrive && saved.secondDriveGB == nil && configuration.guestOS != .macOS
             ? min(secondDriveSize, max(10, diskGrowthCeilingGB - currentDiskGB)) : nil
         let changesMachine = cpuCount != saved.cpuCount || ramSizeGB != saved.ramSizeGB || growTo != nil || newSecondDrive != nil
             || secureBoot != saved.usesSecureBoot || shareMicrophone != saved.sharesMicrophone
@@ -1981,10 +1994,12 @@ struct SettingsView: View {
 
             let message: String
             if let growTo {
-                message = savedDiskMessage(growTo) + (newSecondDrive == nil ? "" : " The second drive is ready the next time it starts.")
-            } else if newSecondDrive != nil {
-                message = "Settings saved. The second drive is ready the next time \(guest) starts."
-            } else if isRunning {
+                // With its size (2026-11-09, third audit of the day #13): the
+                // drive can be smaller than the control showed.
+                message = savedDiskMessage(growTo) + (newSecondDrive.map { " The second drive, \($0) gigabytes, is ready the next time it starts." } ?? "")
+            } else if let newSecondDrive {
+                message = "Settings saved. The second drive, \(newSecondDrive) gigabytes, is ready the next time \(guest) starts."
+            } else if running {
                 // Not "restart" (sixth audit): a restart inside the machine
                 // keeps the same virtual hardware.
                 message = "Settings saved. USB changes apply right away; the others take effect when \(guest) next starts after shutting down."
@@ -2181,6 +2196,8 @@ extension RestorePoints {
     /// quitting part way left the disk back but the firmware settings and TPM
     /// not, as after a failed restore.
     @MainActor static var restoring: String?
+    /// The machines Start must refuse meanwhile.
+    @MainActor static var restoringIDs = Set<UUID>()
 
     /// The machine as it is now, saved just before going back to `point`
     /// (2026-11-05), and marked so the oldest of these are tidied away. With

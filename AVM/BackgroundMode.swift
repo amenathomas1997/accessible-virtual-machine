@@ -31,9 +31,13 @@ final class BackgroundMode: ObservableObject {
     private static let secondDisplayKey = "AVMSecondDisplay"
     private static let autoStartKey = "AVMAutoStartMachine"
 
+    /// Off in a test (2026-11-09, third audit of the day #7): its flips
+    /// stay in this process.
+    var keepsChoice = true
+
     @Published var runInBackground: Bool {
         didSet {
-            UserDefaults.standard.set(runInBackground, forKey: Self.backgroundKey)
+            if keepsChoice { UserDefaults.standard.set(runInBackground, forKey: Self.backgroundKey) }
             if !runInBackground { comeForward(announce: false) }
         }
     }

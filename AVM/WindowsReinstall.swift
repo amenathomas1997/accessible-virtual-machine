@@ -124,6 +124,15 @@ enum WindowsReinstall {
                      QEMUSavedState.hintFile, QEMUSavedState.loadedMarker, QEMUSavedState.resumeFile, QEMUSavedState.unattendOutFile] {
             try? fm.removeItem(at: dir.appendingPathComponent(name))
         }
+        // The old disk's figures and the second drive's snapshots (2026-11-09,
+        // third audit of the day #20): the dashboard showed the old disk as
+        // full, and restore points of the old disk stayed on the second drive.
+        DiskUsage.shared.forget(machine: configuration.id, folder: dir)
+        if let second = RestorePoints.secondDrive(dir) {
+            for tag in await QEMUSavedState.snapshotTags(disk: second) ?? [] {
+                _ = try? await RestorePoints.qemuImg(["snapshot", "-d", tag, second.path])
+            }
+        }
         AVMLog.write("AVM: Reinstall — \(configuration.name) is ready to install Windows again at its next start.")
     }
 }

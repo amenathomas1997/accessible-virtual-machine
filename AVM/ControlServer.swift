@@ -122,14 +122,30 @@ final class ControlServer {
         }
     }
 
-    nonisolated static func readLine(_ fd: Int32) -> Data {
+    /// `limit` nil for avmctl waiting on a reply (2026-11-09, audit of 0.4.41
+    /// #1): a save takes minutes, its reply's first byte came after the 15
+    /// seconds, and the line ended there, so a request that worked was
+    /// reported as "AVM didn't answer."
+    nonisolated static func readLine(_ fd: Int32, limit: TimeInterval? = 15) -> Data {
         var data = Data()
         var byte: UInt8 = 0
         // A limit for the whole line (2026-11-09, fourth audit #20): the
         // socket's 5 seconds restart with each byte, so one a few seconds
         // apart kept this thread for good.
-        let deadline = ProcessInfo.processInfo.systemUptime + 15
-        while data.count < 65536, ProcessInfo.processInfo.systemUptime < deadline, read(fd, &byte, 1) == 1, byte != 10 { data.append(byte) }
+        let deadline = limit.map { ProcessInfo.processInfo.systemUptime + $0 }
+        while data.count < 65536, deadline.map({ ProcessInfo.processInfo.systemUptime < $0 }) ?? true {
+            let n = read(fd, &byte, 1)
+            if n == 1 {
+                if byte == 10 { break }
+                data.append(byte)
+                continue
+            }
+            // The socket's own timeout ran out with nothing to read (review of
+            // the third audit of the day #14): the deadline decides, not it;
+            // without a timeout on the socket, read blocked for good.
+            if n < 0, errno == EAGAIN || errno == EWOULDBLOCK { continue }
+            break
+        }
         return data
     }
 
@@ -193,6 +209,7 @@ final class ControlServer {
                 // was "already running".
                 return fail(session.vmState == .stopping ? "\(name) is shutting down. Start it again once it has." : "\(name) is already running.")
             }
+            if RestorePoints.restoringIDs.contains(config.id) { return fail("\(name) is being put back to a restore point. Start it once AVM says it's back.") }
             let windowless = request["noWindow"] as? Bool == true || config.startsWithoutWindow
             MachineSessions.shared.start(config, vmStore: store, focusLock: FocusLockManager.shared, windowless: windowless, takesKeyboard: false)
             return ["ok": true, "message": "Starting \(name)\(windowless ? " without a window" : ""). Your keyboard stays on the Mac until you enter it."]
@@ -393,6 +410,10 @@ enum ControlClient {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(s, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         } == 0
         if !ok { close(s); return nil }
+        // So that a read wakes up (review of the third audit of the day #14):
+        // readLine checks its deadline only between reads.
+        var wait = timeval(tv_sec: 5, tv_usec: 0)
+        setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
         return s
     }
 
@@ -416,7 +437,16 @@ enum ControlClient {
         guard let s, let data = try? JSONSerialization.data(withJSONObject: request) else { return nil }
         defer { close(s) }
         ControlServer.write(s, data + Data("\n".utf8))
-        let line = ControlServer.readLine(s)
+        // Minutes, not for ever (2026-11-09, third audit of the day #14): the
+        // 0.4.41 fix took the 15 seconds off, and an AVM stuck on a question
+        // held avmctl, and the script running it, for good.
+        let limit: TimeInterval = 900
+        let began = ProcessInfo.processInfo.systemUptime
+        let line = ControlServer.readLine(s, limit: limit)
+        if line.isEmpty, ProcessInfo.processInfo.systemUptime - began >= limit - 1 {
+            print("AVM didn't answer within 15 minutes. It may be stuck, or waiting on a question; look at it on the Mac.")
+            exit(1)
+        }
         return try? JSONSerialization.jsonObject(with: line) as? [String: Any]
     }
 }

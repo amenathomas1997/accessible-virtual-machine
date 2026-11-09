@@ -248,6 +248,14 @@ nonisolated struct UbuntuAccount: Codable, Equatable {
         if let layout = account.keyboardLayout, layout.range(of: "^[a-z]{2,8}$", options: .regularExpression) == nil {
             return nil
         }
+        // The hash too (2026-11-09, third audit of the day #29): it goes
+        // unquoted into the preseed and quoted into the others, and was the
+        // one field a hand-edited file could put anything in.
+        guard account.passwordHash.count <= 200,
+              account.passwordHash.range(of: "^\\$[0-9a-z]{1,2}\\$[A-Za-z0-9./$]+$", options: .regularExpression) != nil else {
+            ubuntuLog("UbuntuAccount.load: the saved password hash isn't a crypt hash; not using the account")
+            return nil
+        }
         if let variant = account.keyboardVariant, variant.range(of: "^[a-z_]{1,16}$", options: .regularExpression) == nil {
             return nil
         }

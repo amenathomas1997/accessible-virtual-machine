@@ -91,6 +91,8 @@ final class BluetoothHold {
             inputReport = .allocate(capacity: inputSize)
         }
         deinit { inputReport.deallocate() }
+        /// Checks in a row that found the Mac with no other keyboard.
+        var checksWithoutAnother = 0
     }
     private var held: [String: Held] = [:]
     /// Connecting and seizing, one at a time (2026-11-09, fourth audit #30):
@@ -119,6 +121,7 @@ final class BluetoothHold {
                 os_log("Bluetooth device let go: its user left the screen", log: log, type: .default)
                 self.stop(entry, notify: true, detail: "you left the Mac's screen")
             }
+            self.giveBackIfTheMacHasNoKeyboard()
         }
         timer.resume()
         watchTimer = timer
@@ -463,8 +466,56 @@ final class BluetoothHold {
 
     // MARK: Rules
 
+    /// The rule below, while held too (2026-11-09, audit of 0.4.41 #6): with
+    /// the Mac's other keyboard unplugged or sent to a machine, keys reached
+    /// only the guest. Two checks in a row, as KeyboardHold does, and one
+    /// device a check, so that two held keyboards don't both go back.
+    private func giveBackIfTheMacHasNoKeyboard() {
+        let keyboards = held.values.filter { Self.isKeyboard($0.device) }
+        guard !keyboards.isEmpty else { return }
+        let all = Self.allDevices()
+        // One decision across both holds (2026-11-09, third audit of the day
+        // #4): each watch left out every held device and decided alone, so
+        // the keyboard for Windows and a Bluetooth keyboard both went back
+        // when the Mac's own keyboard slept. While the other hold has a
+        // keyboard, it gives that one back (KeyboardHold.checkWhileHeld),
+        // the Mac has a keyboard again, and these stay in their machine.
+        let mine = Set(held.values.compactMap { HeldByHelper.entryID($0.device) })
+        if all.contains(where: { HeldByHelper.contains($0) && Self.isKeyboard($0) && !mine.contains(HeldByHelper.entryID($0) ?? 0) }) {
+            for entry in keyboards { entry.checksWithoutAnother = 0 }
+            return
+        }
+        let others = all.filter { !HeldByHelper.contains($0) }
+        var gaveOneBack = false
+        for entry in keyboards {
+            guard Self.mustStayOnMac(entry.device, among: others, keyboardOnly: true) != nil else {
+                entry.checksWithoutAnother = 0
+                continue
+            }
+            entry.checksWithoutAnother += 1
+            if entry.checksWithoutAnother >= 2, !gaveOneBack {
+                gaveOneBack = true
+                os_log("Bluetooth device let go: the Mac had no other keyboard", log: log, type: .default)
+                stop(entry, notify: true, detail: "the Mac had no other keyboard")
+            }
+        }
+    }
+
+    /// By any of its usages (2026-11-09, audit of 0.4.41 #6): a braille
+    /// display's primary usage is on its own page, and its keys passed as
+    /// no keyboard at all.
+    private static func isKeyboard(_ device: IOHIDDevice) -> Bool {
+        if (property(device, kIOHIDPrimaryUsagePageKey) as? Int) == kHIDPage_GenericDesktop,
+           (property(device, kIOHIDPrimaryUsageKey) as? Int) == kHIDUsage_GD_Keyboard { return true }
+        let pairs = property(device, kIOHIDDeviceUsagePairsKey) as? [[String: Any]] ?? []
+        return pairs.contains {
+            ($0[kIOHIDDeviceUsagePageKey] as? Int) == kHIDPage_GenericDesktop
+                && ($0[kIOHIDDeviceUsageKey] as? Int) == kHIDUsage_GD_Keyboard
+        }
+    }
+
     /// The Mac's only keyboard or only pointing device stays on the Mac.
-    private static func mustStayOnMac(_ device: IOHIDDevice, among all: [IOHIDDevice]) -> String? {
+    private static func mustStayOnMac(_ device: IOHIDDevice, among all: [IOHIDDevice], keyboardOnly: Bool = false) -> String? {
         func isKind(_ d: IOHIDDevice, _ usages: [Int]) -> Bool {
             (property(d, kIOHIDPrimaryUsagePageKey) as? Int) == kHIDPage_GenericDesktop
                 && usages.contains(property(d, kIOHIDPrimaryUsageKey) as? Int ?? -1)
@@ -483,10 +534,10 @@ final class BluetoothHold {
             let product = (property(d, kIOHIDProductKey) as? String ?? "").lowercased()
             return vendor != 0x1050 && transport != "virtual" && !product.contains("karabiner")
         }
-        if isKind(device, keyboards), !all.contains(where: { isKind($0, keyboards) && identifier($0) != id && typable($0) }) {
+        if isKeyboard(device), !all.contains(where: { isKind($0, keyboards) && identifier($0) != id && typable($0) }) {
             return "That is the Mac's only keyboard, and the Mac must keep one."
         }
-        if isKind(device, pointers), !all.contains(where: { isKind($0, pointers) && identifier($0) != id }) {
+        if !keyboardOnly, isKind(device, pointers), !all.contains(where: { isKind($0, pointers) && identifier($0) != id }) {
             return "That is the Mac's only pointing device, and the Mac must keep one."
         }
         return nil

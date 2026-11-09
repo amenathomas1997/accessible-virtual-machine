@@ -209,10 +209,20 @@ static class AVMWindowsApps
             try { full = Path.GetFullPath(key); } catch { return false; }
             if (!string.Equals(full, key, StringComparison.OrdinalIgnoreCase)) return false;
             if (!full.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !File.Exists(full)) return false;
-            string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            string users = string.IsNullOrEmpty(profile) ? null : Path.GetDirectoryName(profile);
-            if (!string.IsNullOrEmpty(users) && full.StartsWith(users + "\\", StringComparison.OrdinalIgnoreCase)
-                && !full.StartsWith(profile + "\\", StringComparison.OrdinalIgnoreCase)) return false;
+            // Only where programs are installed (2026-11-09, third audit of
+            // the day #11): C:\ProgramData and other places Users can write
+            // passed, so another account could plant a stand-in this helper
+            // then launched in the victim's session. Program Files (all
+            // three), Windows but not its Temp, and the user's own profile.
+            string programs = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            string[] roots = { programs, programs + " (x86)", programs + " (Arm)", windows,
+                               Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) };
+            bool under = false;
+            foreach (string root in roots)
+                if (!string.IsNullOrEmpty(root) && full.StartsWith(root.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)) under = true;
+            if (!under) return false;
+            if (!string.IsNullOrEmpty(windows) && full.StartsWith(windows.TrimEnd('\\') + "\\Temp\\", StringComparison.OrdinalIgnoreCase)) return false;
             return true;
         }
         if (StartNames.Count == 0) LoadStartNames();

@@ -33,6 +33,11 @@ extension VMManager {
             Announcer.shared.announce(screenNeedsWindowWords ?? "\(machine)'s screen couldn't be described. Next: make sure it's running, then try again.", tone: .failure)
             return
         }
+        // On with no key (2026-11-09, third audit of the day #32): the Mac's
+        // description came with no word on why Claude's didn't.
+        if UserDefaults.standard.bool(forKey: ClaudeDescribe.enabledKey), ClaudeKey.load() == nil {
+            Announcer.shared.announce("Describe screens with Claude is on, but no key is saved, so here is the Mac's description. Next: paste a key under Describe Screen in AVM's Settings.", tone: .info)
+        }
         if UserDefaults.standard.bool(forKey: ClaudeDescribe.enabledKey), let key = ClaudeKey.load(), await mayUseClaude(for: machine) {
             Announcer.shared.announce("Asking Claude to describe \(machine)'s screen.", tone: .info)
             if let png = Self.png(image, longestSide: 1568) {

@@ -64,7 +64,8 @@ extension VMManager {
     /// Linux guest (2026-11-09, fifth audit #35): the session at the screen,
     /// not whoever has UID 1000. UID 1000 only when no one is at the screen,
     /// or it's the greeter's own account.
-    private var linuxSignedInUser: String {
+    /// Also GuestWatch's, to start Orca (2026-11-09).
+    nonisolated static var linuxSignedInUser: String {
         #"""
         U=; S=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null)
         [ -n "$S" ] && U=$(loginctl show-session "$S" -p Name --value 2>/dev/null)
@@ -109,7 +110,7 @@ extension VMManager {
                     } catch { "AVM-FAILED $($_.Exception.Message)" }
                     """], limit: .seconds(180))
                 : try await agentRun("/bin/sh", ["-c", """
-                    \(linuxSignedInUser)
+                    \(Self.linuxSignedInUser)
                     rm -f \(inGuest)
                     if [ -d "$D/orca" ]; then tar czf \(inGuest) -C "$D" orca && echo AVM-OK; else echo AVM-NONE; fi
                     """], limit: .seconds(120))
@@ -149,8 +150,11 @@ extension VMManager {
 
     /// Virtual Machine > Apply Saved Screen Reader Setup, and each new machine
     /// when that's chosen. What was there stays beside it, as nvda-before-avm
-    /// or orca-before-avm. The running reader stops first, or it would write
-    /// its old settings over these as it quits; GuestWatch then starts it.
+    /// or orca-before-avm. The running reader stops just before the swap, once
+    /// the setup is known to be good, and Apply starts it again and checks
+    /// (2026-11-09, audit of 0.4.41 #2): stopped first, a bad setup left the
+    /// guest silent, and "AVM is starting" it was a promise only GuestWatch
+    /// could keep, and not with its setting off or for Orca outside GNOME.
     /// Unpacked and checked beside the settings, then swapped (2026-11-09,
     /// fifth audit #5): a failed unpack used to leave defaults or half a
     /// setup. The true original is never replaced: a later Apply keeps what
@@ -160,6 +164,7 @@ extension VMManager {
         let machine = machineName
         let windows = runningGuestOS == .windows
         let name = windows ? "NVDA" : "Orca"
+        var stopped = false
         do {
             let file = try Self.screenReaderSetupFile(windows: windows)
             guard FileManager.default.fileExists(atPath: file.path) else {
@@ -177,7 +182,6 @@ extension VMManager {
                     try {
                       \(signedInUser)
                       $d = "C:\\Users\\$u\\AppData\\Roaming\\nvda"; $n = "$d-avm-new"
-                      Stop-Process -Name nvda -Force -ErrorAction SilentlyContinue; Start-Sleep 2
                       if (Test-Path $n) { Remove-Item -Recurse -Force $n }
                       Add-Type -AssemblyName System.IO.Compression.FileSystem
                       $z = [IO.Compression.ZipFile]::OpenRead('\(inGuest)')
@@ -191,6 +195,7 @@ extension VMManager {
                         }
                       } finally { $z.Dispose() }
                       if (-not (Test-Path "$n\\nvda.ini")) { throw 'the setup has no nvda.ini' }
+                      if (Get-Process nvda -ErrorAction SilentlyContinue) { Stop-Process -Name nvda -Force -ErrorAction SilentlyContinue; 'AVM-STOPPED'; Start-Sleep 2 }
                       $moved = $null
                       if (Test-Path $d) {
                         $moved = "$d-before-avm"
@@ -208,22 +213,42 @@ extension VMManager {
                     }
                     """], limit: .seconds(180))
                 : try await agentRun("/bin/sh", ["-c", """
-                    \(linuxSignedInUser)
+                    \(Self.linuxSignedInUser)
                     N="$D/.avm-orca-new"
-                    pkill -x orca; sleep 2
                     chown "$U" \(inGuest); chmod 600 \(inGuest)
-                    runuser -u "$U" -- sh -c "mkdir -p '$D' && rm -rf '$N' && mkdir '$N' && tar xzf \(inGuest) -C '$N' --no-same-owner && [ -d '$N/orca' ] && { M=; if [ -d '$D/orca' ]; then M='$D/orca-before-avm'; if [ -d \\"\\$M\\" ]; then M='$D/orca-before-avm-last'; rm -rf \\"\\$M\\"; fi; mv '$D/orca' \\"\\$M\\" || exit 1; fi; if mv '$N/orca' '$D/orca'; then echo AVM-OK; elif [ -n \\"\\$M\\" ]; then mv \\"\\$M\\" '$D/orca'; fi; }; rm -rf '$N'"
+                    runuser -u "$U" -- sh -c "mkdir -p '$D' && rm -rf '$N' && mkdir '$N' && tar xzf \(inGuest) -C '$N' --no-same-owner && [ -d '$N/orca' ] && { if pkill -x orca; then echo AVM-STOPPED; sleep 2; fi; M=; if [ -d '$D/orca' ]; then M='$D/orca-before-avm'; if [ -d \\"\\$M\\" ]; then M='$D/orca-before-avm-last'; rm -rf \\"\\$M\\"; fi; mv '$D/orca' \\"\\$M\\" || exit 1; fi; if mv '$N/orca' '$D/orca'; then echo AVM-OK; elif [ -n \\"\\$M\\" ]; then mv \\"\\$M\\" '$D/orca'; fi; }; rm -rf '$N'"
                     rm -f \(inGuest)
                     """], limit: .seconds(120))
+            stopped = out.contains("AVM-STOPPED")
             guard !out.contains("AVM-NOUSER") else { throw AVMError.refused("No one is signed in at its own screen.") }
             guard out.contains("AVM-OK") else { throw AVMError.qmpCommandFailed("it didn't unpack") }
             AVMLog.write("AVM: Screen reader setup — \(name)'s applied in \(machine)")
-            Announcer.shared.announce("Your \(name) setup is in \(machine) now, and AVM is starting \(name) again.", tone: .success)
+            Announcer.shared.announce("Your \(name) setup is in \(machine) now.\(stopped ? " AVM is starting \(name) again." : "")", tone: .success)
+            if stopped { await startReaderAfterApply(name, windows: windows) }
             return true
         } catch {
             AVMLog.write("AVM: Screen reader setup — not applied: \(error.localizedDescription)")
             Announcer.shared.announce("Your \(name) setup couldn't be put in \(machine). Reason: \(error.localizedDescription) Next: make sure someone is signed in to \(machine), then try again.", tone: .failure)
+            if stopped { await startReaderAfterApply(name, windows: windows) }
             return false
+        }
+    }
+
+    /// The reader Apply stopped, started again and checked.
+    /// The reader Apply stopped, started again (2026-11-09, audit of 0.4.41
+    /// #9), the same way GuestWatch starts one that died: NVDA by its
+    /// shortcut, Orca through GNOME's setting or directly on other desktops
+    /// (third audit of the day #5; before, Apply on KDE, XFCE or MATE ended
+    /// silent, with GNOME's shortcut as advice).
+    private func startReaderAfterApply(_ name: String, windows: Bool) async {
+        var gnome = false
+        if !windows, let listing = try? await agentRun("/bin/ps", ["-eo", "comm"], limit: .seconds(20)) {
+            gnome = GuestProcesses.parse(listing, windows: false).gnome
+        }
+        if await startScreenReader(name, gnome: gnome) {
+            Announcer.shared.announce("\(name) is running again in \(machineName).", tone: .success)
+        } else {
+            Announcer.shared.announce("\(name) didn't start again in \(machineName). \(Self.readerHelp(name, gnome: gnome))", tone: .failure)
         }
     }
 }

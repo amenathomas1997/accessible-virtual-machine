@@ -194,27 +194,29 @@ extension VMManager {
                         if !now.screenReaders.isEmpty { restartedReader = false }
                     }
                     // Seen before and gone for two checks, about half a minute.
-                    // A reader with no start key (Narrator, Orca outside
-                    // GNOME) got "starting it again didn't work" with nothing
-                    // tried (2026-11-01, audit); turned off on purpose, as a rule.
-                    if let reader = readersSeen.sorted().first, missingChecks == 2, Self.screenReaderKeys(reader, gnome: now.gnome) != nil {
+                    // A reader AVM can't start (Narrator) got "starting it
+                    // again didn't work" with nothing tried (2026-11-01,
+                    // audit); turned off on purpose, as a rule. Orca is
+                    // started on every desktop since 2026-11-09 (third audit
+                    // of the day #3 and #5).
+                    if let reader = readersSeen.sorted().first, missingChecks == 2, Self.canStart(reader) {
                         if !restartedReader, await self.startScreenReader(reader, gnome: now.gnome) {
                             restartedReader = true
                             AVMLog.write("AVM: GuestWatch — \(reader) stopped in \(machine); its shortcut key sent")
                             Announcer.shared.announce("\(reader) stopped in \(machine), so AVM started it again.", tone: .info, routine: true)
                         } else {
                             AVMLog.write("AVM: GuestWatch — \(reader) still not running in \(machine)")
-                            Announcer.shared.announce("\(reader) isn't running in \(machine), and starting it again didn't work. \(Self.readerHelp(reader))", tone: .failure)
+                            Announcer.shared.announce("\(reader) isn't running in \(machine), and starting it again didn't work. \(Self.readerHelp(reader, gnome: now.gnome))", tone: .failure)
                         }
                     }
                     // The chosen one never started: a minute after sign-in.
                     if readersSeen.isEmpty, !toldNoReader, signedInChecks == 4, let reader = chosenReaders.first {
                         toldNoReader = true
-                        let started = await self.startScreenReader(reader, gnome: false)
+                        let started = await self.startScreenReader(reader, gnome: now.gnome)
                         AVMLog.write("AVM: GuestWatch — no screen reader in \(machine) a minute after sign-in; started=\(started)")
                         Announcer.shared.announce(started
                             ? "No screen reader was running in \(machine), so AVM started \(reader)."
-                            : "No screen reader is running in \(machine). \(Self.readerHelp(reader))", tone: .info)
+                            : "No screen reader is running in \(machine). \(Self.readerHelp(reader, gnome: now.gnome))", tone: .info)
                     }
                 }
 
@@ -249,20 +251,43 @@ extension VMManager {
         }
     }
 
-    private nonisolated static func screenReaderKeys(_ reader: String, gnome: Bool) -> [String]? {
+    private nonisolated static func screenReaderKeys(_ reader: String) -> [String]? {
         switch reader {
         case "NVDA": return ["ctrl", "alt", "n"]
         case "JAWS": return ["ctrl", "alt", "j"]
-        case "Orca" where gnome: return ["meta_l", "alt", "s"]
         default: return nil
         }
     }
 
-    /// The screen reader's own shortcut to start it, pressed in the machine.
-    private func startScreenReader(_ reader: String, gnome: Bool) async -> Bool {
-        guard let keys = Self.screenReaderKeys(reader, gnome: gnome) else { return false }
-        let sent = (try? await sendQMPCommand("send-key", arguments: ["keys": keys.map { ["type": "qcode", "data": $0] }])) != nil
-        guard sent else { return false }
+    /// A reader AVM knows how to start. Narrator has no way in.
+    nonisolated static func canStart(_ reader: String) -> Bool {
+        reader == "Orca" || screenReaderKeys(reader) != nil
+    }
+
+    /// Orca, started as the signed-in user over the agent (2026-11-09,
+    /// third audit of the day #3 and #5). On GNOME through its setting, not
+    /// its shortcut: AVM's installs leave the setting on, a killed Orca
+    /// doesn't change it, and Super-Alt-S is a toggle, so the press turned
+    /// Orca off instead of starting it. Elsewhere (KDE, XFCE, MATE) by
+    /// running it, with the display and session bus of a process in the
+    /// user's session, since those desktops have no shortcut for it.
+    nonisolated static func startOrcaScript(gnome: Bool) -> String {
+        let start = gnome
+            ? #"K=org.gnome.desktop.a11y.applications; runuser -u "$U" -- env DBUS_SESSION_BUS_ADDRESS=$B sh -c "gsettings set $K screen-reader-enabled false; sleep 1; gsettings set $K screen-reader-enabled true" && echo AVM-OK"#
+            : #"P=$(pgrep -u "$U" -n -x 'plasmashell|ksmserver|kwin_x11|kwin_wayland|xfce4-session|xfwm4|mate-session|marco|cinnamon-session|lxqt-session|budgie-wm' 2>/dev/null); [ -n "$P" ] || P=$(pgrep -u "$U" -n); E=$(tr '\0' '\n' </proc/$P/environ 2>/dev/null | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XAUTHORITY|XDG_RUNTIME_DIR|XDG_SESSION_TYPE)=' | tr '\n' ' '); runuser -u "$U" -- env DBUS_SESSION_BUS_ADDRESS=$B $E setsid -f orca --replace >/dev/null 2>&1 </dev/null && echo AVM-OK"#
+        return Self.linuxSignedInUser + "\n" + #"[ -n "$U" ] || { echo AVM-NOUSER; exit 0; }; I=$(id -u "$U"); B=unix:path=/run/user/$I/bus"# + "\n" + start + "\n"
+    }
+
+    /// Starts the screen reader in the machine: NVDA and JAWS by their own
+    /// shortcut, Orca as above. True once its process is seen.
+    func startScreenReader(_ reader: String, gnome: Bool) async -> Bool {
+        if reader == "Orca" {
+            guard let out = try? await agentRun("/bin/sh", ["-c", Self.startOrcaScript(gnome: gnome)], limit: .seconds(30)), out.contains("AVM-OK") else { return false }
+        } else {
+            guard let keys = Self.screenReaderKeys(reader) else { return false }
+            let sent = (try? await sendQMPCommand("send-key", arguments: ["keys": keys.map { ["type": "qcode", "data": $0] }])) != nil
+            guard sent else { return false }
+        }
         // Started: its process within 20 seconds.
         for _ in 0..<4 {
             try? await Task.sleep(for: .seconds(5))
@@ -289,11 +314,14 @@ extension VMManager {
         RestorePoints.removeFolder(vmDirectory: runtimeDir, tag: point.tag)
     }
 
-    nonisolated static func readerHelp(_ reader: String) -> String {
+    /// Per desktop for Orca (2026-11-09, third audit of the day #5): KDE,
+    /// XFCE and MATE have no Super-Alt-S.
+    nonisolated static func readerHelp(_ reader: String, gnome: Bool = true) -> String {
         switch reader {
         case "NVDA": return "Next: press Control-Alt-N in it, or use Read Screen, Command-Shift-O, to hear its screen."
         case "JAWS": return "Next: press Control-Alt-J in it, or use Read Screen, Command-Shift-O, to hear its screen."
-        case "Orca": return "Next: press Super-Alt-S in it, or use Read Screen, Command-Shift-O, to hear its screen."
+        case "Orca" where gnome: return "Next: press Super-Alt-S in it, or use Read Screen, Command-Shift-O, to hear its screen."
+        case "Orca": return "Next: start Orca from its desktop's menu, or run orca in a terminal there, or use Read Screen, Command-Shift-O, to hear its screen."
         default: return "Next: start it from the machine's keyboard, or use Read Screen, Command-Shift-O, to hear its screen."
         }
     }

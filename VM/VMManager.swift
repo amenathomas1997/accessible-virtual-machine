@@ -189,6 +189,7 @@
 // decision keyed to user trust: no unsanitized files, no Desktop writes, no
 // surprise clutter.
 
+import AppKit
 import Foundation
 import Combine
 
@@ -1318,6 +1319,16 @@ final class VMManager: ObservableObject {
             throw AVMError.refused("\(configuration.name) is being prepared to reinstall Windows. Next: wait for AVM to say it's ready, then start it.")
         }
 
+        // Nor during a Restore (2026-11-09, audit of 0.4.41 #5): the disk's lock
+        // is free between its steps, and a Dock launch or avmctl started QEMU
+        // and swtpm under the TPM swap.
+        if RestorePoints.restoringIDs.contains(configuration.id) {
+            // Said here: thrown this early, nothing else speaks it.
+            let refusal = "\(configuration.name) is being put back to a restore point. Next: wait for AVM to say it's back, then start it."
+            Announcer.shared.announce(refusal, tone: .failure)
+            throw AVMError.refused(refusal)
+        }
+
         guard case .stopped = state else {
             avmLog("startVM: not stopped, aborting")
             throw AVMError.vmAlreadyRunning
@@ -1943,6 +1954,10 @@ final class VMManager: ObservableObject {
         try await sendQMPCommand("cont", arguments: nil)
         state = .running
         appendConsole("AVM: VM resumed.\n")
+        // Keys the keyboard for Windows still holds (2026-11-09, third audit
+        // of the day #23): a pause QEMU began itself (a guest sleep, a disk
+        // error) refused their key-ups, and Windows repeated them after.
+        await WindowsKeyboard.shared.releaseHeldKeys(before: self)
     }
 
     /// Sends a hardware reset to the guest via QMP `system_reset` — the
@@ -2735,7 +2750,7 @@ final class VMManager: ObservableObject {
             let kept = runtimeDir.appendingPathComponent("install-avm.iso").path
             if attachDVDWithoutBoot, FileManager.default.fileExists(atPath: kept) {
                 args += [
-                    "-drive", "if=none,id=cdrom0,file=\(Self.qemuOptionValue(kept)),media=cdrom,readonly=on",
+                    "-drive", "if=none,id=cdrom0,file=\(Self.qemuOptionValue(kept)),format=raw,media=cdrom,readonly=on",
                     "-device", "usb-storage,drive=cdrom0,bus=usb.0,port=3,removable=on,id=avm-dvd"
                 ]
                 avmLog("buildQEMUArguments: the install DVD rides along without booting, for Setup's remaining steps")
@@ -2754,7 +2769,7 @@ final class VMManager: ObservableObject {
             let rebuiltISOPath = runtimeDir.appendingPathComponent("install-avm.iso").path
             if FileManager.default.fileExists(atPath: rebuiltISOPath) {
                 args += [
-                    "-drive", "if=none,id=cdrom0,file=\(Self.qemuOptionValue(rebuiltISOPath)),media=cdrom,readonly=on",
+                    "-drive", "if=none,id=cdrom0,file=\(Self.qemuOptionValue(rebuiltISOPath)),format=raw,media=cdrom,readonly=on",
                     "-device", "usb-storage,drive=cdrom0,bus=usb.0,port=3,bootindex=0,removable=on,id=avm-dvd"
                 ]
                 avmLog("buildQEMUArguments: attached AVM-built install ISO at \(rebuiltISOPath)")
@@ -3956,7 +3971,10 @@ final class VMManager: ObservableObject {
         case "SUSPEND":
             if case .running = state { state = .paused }
         case "RESUME":
-            if case .paused = state { state = .running }
+            if case .paused = state {
+                state = .running
+                Task { await WindowsKeyboard.shared.releaseHeldKeys(before: self) }
+            }
         case "GUEST_PANICKED":
             state = .error("The guest OS encountered a fatal error (GUEST_PANICKED).")
         default:
@@ -4687,6 +4705,30 @@ extension VMManager {
     /// runQMPJob has ended are listed, so a poller's own job is never taken;
     /// a query with no answer keeps the list for next time (2026-11-09, fifth
     /// audit #21: it was read as "job gone"). Quiet when QEMU is gone.
+    /// Waits, at most `limit` seconds, for a job of this name to leave
+    /// running (2026-11-09, third audit of the day #15). QEMU answers
+    /// query-jobs only once the load or save lets it, so a query that
+    /// times out counts as "still running".
+    func waitForQMPJobToEnd(named name: String, limit: Int) async {
+        let clock = SuspendingClock()
+        let deadline = clock.now + .seconds(limit)
+        // Only while the start stands (review): with QMP gone, every query
+        // failed at once, and this spun out its whole limit.
+        while clock.now < deadline, state == .starting {
+            guard let jobs = (try? await sendQMPCommand("query-jobs", arguments: nil, timeout: 5)) as? [[String: Any]] else {
+                try? await Task.sleep(for: .milliseconds(500))
+                continue
+            }
+            let running = jobs.contains {
+                ($0["id"] as? String)?.hasPrefix(name + "-") == true
+                    && !["concluded", "null"].contains($0["status"] as? String ?? "concluded")
+            }
+            if !running { return }
+            try? await Task.sleep(for: .seconds(1))
+        }
+        avmLog("\(name): still running after \(limit) s; going on")
+    }
+
     func dismissFinishedQMPJobs() async {
         guard !qmpJobsToDismiss.isEmpty,
               let jobs = (try? await sendQMPCommand("query-jobs", arguments: nil, timeout: 5)) as? [[String: Any]] else { return }
@@ -4729,11 +4771,18 @@ extension VMManager {
         await detachDevicesSentMeanwhile()
         let tag = RestorePoints.newTag()
         try RestorePoints.writeFolder(vmDirectory: runtimeDir, tag: tag, label: label, secureBoot: configuration.usesSecureBoot, diskBus: configuration.diskBus ?? "nvme")
+        // Marked pending until the snapshot lands, as a stopped machine's is
+        // (2026-11-09, third audit of the day #21): a Force Stop or Quit
+        // during the save left a folder with firmware and TPM copies that
+        // nothing listed or cleaned. RestorePoints.list removes one an hour old.
+        let pending = runtimeDir.appendingPathComponent(RestorePoints.folderName).appendingPathComponent(tag).appendingPathComponent(RestorePoints.pendingMarker)
+        FileManager.default.createFile(atPath: pending.path, contents: nil)
         await noteSetupDrives(forSnapshot: tag, runtimeDir: runtimeDir)
         do {
             let node = try await diskNodeName()
             try await runQMPJob("snapshot-save", id: "avm-point",
                                 arguments: ["tag": tag, "vmstate": node, "devices": try await snapshotDevices(node)])
+            try? FileManager.default.removeItem(at: pending)
         } catch {
             // Only if QEMU didn't finish it (2026-11-05, second audit): a QEMU
             // force-stopped just after writing the snapshot left one with no
@@ -4741,6 +4790,7 @@ extension VMManager {
             let disk = URL(fileURLWithPath: configuration.diskImagePath)
             if await QEMUSavedState.snapshotTags(disk: disk)?.contains(tag) == true {
                 avmLog("createRunningRestorePoint: \(tag) landed although the job failed (\(error.localizedDescription)); its folder stays")
+                try? FileManager.default.removeItem(at: pending)
             } else {
                 RestorePoints.removeFolder(vmDirectory: runtimeDir, tag: tag)
             }
@@ -4835,6 +4885,11 @@ extension VMManager {
     private func performSaveStateAndStop() async -> Bool {
         guard let configuration = activeConfiguration, let runtimeDir = vmRuntimeDir else { return false }
         let guest = configuration.name
+        // From this save only (2026-11-09, third audit of the day #2): the list
+        // was cleared after a failed save alone, so a Save refused below for
+        // room sent back the devices of a save that worked days before, taking
+        // a braille display from VoiceOver with no question.
+        devicesGivenUpForSave = ([], [])
         do {
             try Self.checkRoomForMemory(of: configuration, in: runtimeDir, for: "its open apps")
         } catch {
@@ -4892,6 +4947,7 @@ extension VMManager {
             return false
         }
         avmLog("saveStateAndStop: saved in \(String(format: "%.1f", Date().timeIntervalSince(started))) s; quitting QEMU")
+        devicesGivenUpForSave = ([], [])
         // A marker from a resume whose query failed would delete this save
         // at the next Start (2026-10-28, second review).
         try? FileManager.default.removeItem(at: runtimeDir.appendingPathComponent(QEMUSavedState.loadedMarker))
@@ -4910,8 +4966,9 @@ extension VMManager {
     }
 
     /// Carries on from the saved state: QEMU was started paused (-S).
-    /// Spoken. On a failed load the machine starts from its disk instead,
-    /// as after a power cut, and that is said.
+    /// Spoken. On a failed load of a restore point the machine starts from
+    /// its disk instead, as after a power cut, and that is said; a saved
+    /// session is the user's to give up, so they are asked.
     func resumeSavedState(_ plan: QEMUSavedState.Plan, configuration: VMConfiguration, runtimeDir: URL) async throws {
         // The machine's name, not its system's (2026-10-28, fourth audit):
         // with two Windows machines, "Windows couldn't be saved" named neither.
@@ -4968,6 +5025,51 @@ extension VMManager {
                     try? fm.moveItem(at: noteAside, to: note)
                 }
                 return
+            }
+            // Asked, not assumed (2026-11-09, audit of 0.4.41 #3): a slow
+            // drive or a timed-out query deleted the whole session, as it
+            // once did for macOS guests. Kept, the machine turns off and the
+            // next Start tries again.
+            // A load that timed out may still be writing (2026-11-09, third
+            // audit of the day #15): a reset or a kill mid-load leaves a
+            // qcow2 QEMU must repair. Bounded.
+            await waitForQMPJobToEnd(named: "avm-load", limit: 120)
+            if plan.isSavedState, !CommandLine.arguments.contains(where: { $0.hasPrefix("--test-") }) {
+                // The marker goes before the question (third audit of the day
+                // #1): it stayed while the question waited, which with Start
+                // When AVM Opens and nobody at the Mac may be hours, and a
+                // Quit, Force Quit or restart meanwhile made the next Start
+                // delete the session Keep It had promised to keep. Start
+                // Fresh writes it again below.
+                try? fm.removeItem(at: marker)
+                let alert = NSAlert()
+                alert.messageText = "\(guest) couldn't carry on from where it was saved"
+                alert.informativeText = "Reason: \(error.localizedDescription) Keep It turns \(guest) off and keeps the saved session, so Start can try again. Start Fresh discards it, and anything open in \(guest) when it was saved is lost."
+                alert.addButton(withTitle: "Keep It")
+                alert.addButton(withTitle: "Start Fresh")
+                // From the run loop, not this job (review): a modal inside a
+                // main-actor job holds up every other machine's work until
+                // it is answered, and nobody may be at the Mac.
+                let answer: NSApplication.ModalResponse = await withCheckedContinuation { done in
+                    CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
+                        MainActor.assumeIsolated { done.resume(returning: QuitCoordinator.ask(alert)) }
+                    }
+                    CFRunLoopWakeUp(CFRunLoopGetMain())
+                }
+                // Force Stop or Quit while the question was up: nothing ran,
+                // and the saved state waits for the next Start. A QEMU that
+                // died (.error) gets the marker back, as the branch above
+                // keeps it (#16), so a state that crashes QEMU isn't loaded
+                // at every Start.
+                guard state == .starting else {
+                    if case .error = state { fm.createFile(atPath: marker.path, contents: nil) }
+                    return
+                }
+                if answer == .alertFirstButtonReturn {
+                    avmLog("resumeSavedState: load failed; the user kept the saved state")
+                    throw AVMError.refused("\(guest)'s saved session is kept, and \(guest) is off. Next: press Start to try again.")
+                }
+                fm.createFile(atPath: marker.path, contents: nil)
             }
             avmLog("resumeSavedState: load failed: \(error.localizedDescription); starting from the disk")
             _ = try? await sendQMPCommand("system_reset", arguments: nil)
@@ -5204,9 +5306,23 @@ extension VMManager {
         // deadline out, so a resize or install that worked was called a failure.
         let clock = SuspendingClock()
         let deadline = clock.now + limit
+        // Three in a row (2026-11-09, audit of 0.4.41 #4): one slow answer
+        // failed the job while it carried on in the guest.
+        var missedPolls = 0
         while clock.now < deadline {
             try await Task.sleep(for: .seconds(1))
-            let status = try await agentCall(["execute": "guest-exec-status", "arguments": ["pid": pid]]) as? [String: Any]
+            let status: [String: Any]?
+            do {
+                status = try await agentCall(["execute": "guest-exec-status", "arguments": ["pid": pid]]) as? [String: Any]
+                missedPolls = 0
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                missedPolls += 1
+                if missedPolls >= 3 { throw error }
+                avmLog("agentRun: no status for \(program) (\(missedPolls) in a row): \(error.localizedDescription)")
+                continue
+            }
             if status?["exited"] as? Bool == true {
                 let out = (status?["out-data"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data()
                 let err = (status?["err-data"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data()

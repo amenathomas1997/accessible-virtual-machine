@@ -188,7 +188,7 @@ nonisolated enum DiskWatch {
         [ -n "$d" ] || { echo nodisk; exit 0; }
         word=already
         if ! blkid "$d" >/dev/null 2>&1; then
-            \(format ? #"mkfs.ext4 -q -L AVMData "$d" || { echo failed; exit 0; }; word=ready"# : "echo failed; exit 0")
+            \(format ? #"mkfs.ext4 -q -L AVMData "$d" || { echo failed; exit 0; }; word=ready"# : "echo lostfs; exit 0")
         fi
         mkdir -p \(linuxSecondDrive)
         uuid=$(blkid -s UUID -o value "$d")
