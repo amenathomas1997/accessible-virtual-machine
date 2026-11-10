@@ -1598,10 +1598,17 @@ final class DiskWatchTests: XCTestCase {
         XCTAssertEqual(DiskWatch.answer("already\n")?.word, "already")
         // Every word the Linux script can say is recognised (fourth audit of 2026-11-09 #5).
         XCTAssertEqual(DiskWatch.answer("lostfs|/mnt/avm-data\n")?.word, "lostfs")
-        for word in ["extended", "same", "ready", "already", "nodisk", "failed", "lostfs"] {
+        for word in ["extended", "same", "blocked", "ready", "already", "nodisk", "failed", "lostfs", "partitioned"] {
             XCTAssertEqual(DiskWatch.answer("\(word)|x\n")?.word, word)
         }
         XCTAssertNil(DiskWatch.answer("readying something\n"))
+    }
+
+    /// Debian's version comes after "GNU/Linux ", and a codename disc has none (fourth audit of 2026-11-09 #31).
+    func testDebianVersionFromDiscInfo() {
+        XCTAssertEqual(UbuntuInstallPipeline.debianVersion(discInfo: #"Debian GNU/Linux 12.5.0 "Bookworm" - Official arm64 NETINST with firmware 20240210-11:28"#), "12.5.0")
+        XCTAssertEqual(UbuntuInstallPipeline.debianVersion(discInfo: #"Debian GNU/Linux forky-DI-alpha1 "Forky" - Official Snapshot arm64 NETINST 20260301"#), "")
+        XCTAssertEqual(UbuntuInstallPipeline.debianVersion(discInfo: "Kali GNU/Linux 2026.3 - Official arm64 NETINST"), "2026.3")
     }
 
     /// The serial log is cut to its end once it passes the limit (fourth audit of 2026-11-09 #8).

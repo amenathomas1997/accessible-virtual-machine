@@ -41,7 +41,30 @@ final class MachineSessions: ObservableObject {
     /// state starts as stopped, which mustn't end it.
     private var begun: Set<UUID> = []
 
-    private init() {}
+    private init() {
+        renameObserver = NotificationCenter.default.addObserver(forName: VMStore.didSaveConfiguration, object: nil, queue: .main) { note in
+            guard let id = note.userInfo?["id"] as? UUID, let name = note.userInfo?["name"] as? String else { return }
+            MainActor.assumeIsolated { MachineSessions.shared.noteSaved(id: id, name: name) }
+        }
+    }
+    private var renameObserver: NSObjectProtocol?
+
+    /// A running machine renamed in Settings (2026-11-10, fourth audit of
+    /// 2026-11-09 #18): Speak Status, Entering, the menus, USB questions and
+    /// the window title kept the old name, beside the new one in the list.
+    private func noteSaved(id: UUID, name: String) {
+        guard let session = sessions[id], session.configuration.name != name else { return }
+        session.noteRenamed(name)
+        windows[id]?.retitle(name)
+        if let lock = FocusLockManager.shared {
+            if lock.holdsKeyboard(for: id) {
+                lock.guestName = name
+                Announcer.keyboardIn = name
+            } else if !lock.isLocked, currentID == id {
+                lock.guestName = name
+            }
+        }
+    }
 
     var current: VMSession? { currentID.flatMap { sessions[$0] } }
 
@@ -269,6 +292,7 @@ final class MachineSessions: ObservableObject {
         watchers[id] = nil
         AVMLog.write("AVM: MachineSessions — a machine ended; \(sessions.count) still running.")
         AVMPasteboard.shared.refreshEnabled()
+        StorageWatch.shared.refresh()
         BackgroundMode.shared.machineStopped()
         if currentID == id {
             currentID = nil
@@ -321,6 +345,8 @@ final class MachineWindow: NSObject, NSWindowDelegate {
     private let vmStore: VMStore
     private let focusLock: FocusLockManager
     private let window: NSWindow
+
+    func retitle(_ name: String) { window.title = name }
     private var shownOnce = false
     private var closing = false
 

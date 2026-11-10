@@ -410,7 +410,12 @@ final class VMStore: ObservableObject {
             configurations.append(configuration)
         }
         saveAll()
+        // For a running machine's new name (2026-11-10, fourth audit of
+        // 2026-11-09 #18): MachineSessions takes it from here.
+        NotificationCenter.default.post(name: VMStore.didSaveConfiguration, object: nil, userInfo: ["id": configuration.id, "name": configuration.name])
     }
+
+    static let didSaveConfiguration = Notification.Name("AVMDidSaveConfiguration")
 
     // MARK: - Secure Boot switch (2026-10-25)
 

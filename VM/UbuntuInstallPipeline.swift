@@ -636,10 +636,7 @@ nonisolated final class UbuntuInstallPipeline {
         let infoURL = probe.appendingPathComponent("info")
         await runTool(xorriso, ["-osirrox", "on", "-indev", isoPath, "-extract", "/.disk/info", infoURL.path])
         let discInfo = ((try? String(contentsOf: infoURL, encoding: .utf8)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        var version = ""
-        if let match = discInfo.range(of: "[0-9]+(\\.[0-9]+)*", options: .regularExpression) {
-            version = String(discInfo[match])
-        }
+        let version = Self.debianVersion(discInfo: discInfo)
         // The netinst installs the desktop from the network, so every Debian
         // installer counts as a desktop one. Kali's is Debian's installer
         // (2026-10-30), with "Kali GNU/Linux 2026.3 ..." as its disc info.
@@ -648,6 +645,16 @@ nonisolated final class UbuntuInstallPipeline {
                                  distro: debianFamily(discInfo: discInfo))
         ubuntuLog("identify: \(info.spokenName), arm64=\(info.isARM64), disc info \"\(discInfo)\"")
         return info
+    }
+
+    /// The release number right after "GNU/Linux ", or "" (any version
+    /// passes) for a testing or alpha disc named by its codename
+    /// (2026-11-10, fourth audit of 2026-11-09 #31): the first number
+    /// anywhere was the alpha's "1", and the disc was refused as older than
+    /// Debian 12.
+    static func debianVersion(discInfo: String) -> String {
+        guard let match = discInfo.range(of: "(?<=GNU/Linux )[0-9]+(\\.[0-9]+)*", options: .regularExpression) else { return "" }
+        return String(discInfo[match])
     }
 
     /// Kali or Debian, from a Debian-installer disc's /.disk/info.

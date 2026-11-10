@@ -2006,8 +2006,14 @@ struct SettingsView: View {
             } else {
                 message = "Settings saved. Changes take effect the next time you start \(guest)."
             }
+            // Said when it wasn't added (2026-11-10, fourth audit of
+            // 2026-11-09 #22): with the machine started meanwhile the drive
+            // was dropped, and the message promised the next start.
+            let driveNote = running && addSecondDrive && saved.secondDriveGB == nil && configuration.guestOS != .macOS
+                ? " The second drive wasn't added, because \(saved.name) is running. Next: shut it down, then turn on Add a second drive again."
+                : ""
             if let secureBootFailure {
-                let full = "\(message) But Secure Boot was not changed. Reason: \(secureBootFailure)"
+                let full = "\(message)\(driveNote) But Secure Boot was not changed. Reason: \(secureBootFailure)"
                 saveMessage = full
                 validationErrors = [full]
                 Announcer.shared.announce(full, tone: .failure)
@@ -2015,9 +2021,9 @@ struct SettingsView: View {
                 isSaving = false
                 return
             }
-            let said = keptShape
+            let said = (keptShape
                 ? "\(message) \(saved.name) started while Settings was open, so its processor cores, memory, microphone, camera, 3D graphics, Secure Boot and disk size stay as they were; shut it down to change them."
-                : message
+                : message) + driveNote
             saveMessage = said
             Announcer.shared.announce(said, tone: .info)
             isSaving = false

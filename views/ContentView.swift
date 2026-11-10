@@ -608,7 +608,7 @@ private struct DashboardContent: View {
 
     private func stoppedStatus(_ config: VMConfiguration) -> String {
         if config.isATemplate { return "Template" }
-        if QEMUSavedState.looksSaved(config) { return "Saved" }
+        if StorageWatch.shared.looksSaved(config) { return "Saved" }
         return "Shut down"
     }
 
@@ -687,7 +687,7 @@ private struct DashboardContent: View {
                            isTemplate: config.isATemplate, openSettings: { openSettings(config) })
         } else {
             // Saved (2026-10-27): its Start carries on.
-            if QEMUSavedState.looksSaved(config) {
+            if StorageWatch.shared.looksSaved(config) {
                 Text("Saved: Start carries on where you left it")
                     .font(.caption)
                     .accessibilityLabel("\(config.name): Saved. Start carries on where you left it")
@@ -699,7 +699,7 @@ private struct DashboardContent: View {
                     startVM(config: config)
                 }
                 .accessibilityLabel("Start \(config.name)")
-                .accessibilityHint(QEMUSavedState.looksSaved(config) ? "Carries on from where it was saved" : "Starts this virtual machine")
+                .accessibilityHint(StorageWatch.shared.looksSaved(config) ? "Carries on from where it was saved" : "Starts this virtual machine")
             }
 
             Button("Settings") {

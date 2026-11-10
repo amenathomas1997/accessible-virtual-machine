@@ -75,7 +75,10 @@ extension VMManager {
                 }
                 let out = try await agentRun("pnputil.exe", ["/add-driver", folder + #"\viogpu3d.inf"#, "/install"], limit: .seconds(180))
                 guard out.contains("Driver package installed on device") || out.contains("Added driver packages:  1") else {
-                    throw AVMError.qmpCommandFailed(out.trimmingCharacters(in: .whitespacesAndNewlines))
+                    // Logged, bounded, not spoken (2026-11-10, fourth audit of
+                    // 2026-11-09 #21): the guest's words, said after "Reason:".
+                    AVMLog.write("AVM: Windows 3D — pnputil said: \(out.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))")
+                    throw AVMError.qmpCommandFailed("Windows' driver installer didn't install it; its words are in AVM's log.")
                 }
                 AVMLog.write("AVM: Windows 3D — driver installed in \(machine)")
                 Announcer.shared.announce("\(machine)'s 3D graphics driver is installed. Next: restart \(machine) to use it. The first restart can take several minutes.", tone: .success)

@@ -786,9 +786,9 @@ final class WindowsApps {
                 BackgroundMode.shared.comeForward(announce: false)
                 MachineSessions.shared.enter(machine)
             } else {
-                let why = parts.count > 2 ? parts[2] : "it didn't open"
+                let why = parts.count > 2 ? String(parts[2].prefix(300)) : "it didn't open"
                 AVMLog.write("Windows apps: \(name) didn't open in \(machineName): \(why)", category: "WindowsApps")
-                Announcer.shared.announce("\(name) didn't open in Windows: \(why).", tone: .failure)
+                Announcer.shared.announce("\(name) didn't open in Windows: \(Self.spokenReason(why)).", tone: .failure)
             }
             return
         }
@@ -859,6 +859,17 @@ final class WindowsApps {
     /// the reset drops anything an account granted itself before the
     /// lockdown first ran, leaving SYSTEM and Administrators in full and
     /// Users reading; delete-child lets a helper remove a request it took.
+    /// The helper's own reasons, said as they are; anything else, which a
+    /// program in the guest could have written to sound like a Mac prompt,
+    /// is only logged (2026-11-10, fourth audit of 2026-11-09 #21).
+    nonisolated static func spokenReason(_ why: String) -> String {
+        let known = ["the request was not from AVM", "not understood", "the request was too old",
+                     "Windows doesn't know that program", "it didn't open a window within 90 seconds", "it didn't open"]
+        if known.contains(why) { return why }
+        if why.hasPrefix("windows kept another window in front") { return "Windows kept another window in front" }
+        return "something in Windows stopped it; the details are in AVM's log"
+    }
+
     static let lockDownScript = #"""
         $avm = 'C:\ProgramData\AVM'
         foreach ($p in $avm, "$avm\apps", "$avm\requests") {

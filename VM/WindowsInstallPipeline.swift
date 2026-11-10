@@ -913,7 +913,13 @@ nonisolated final class WindowsInstallPipeline {
     private func validateMountedISO(input: PipelineInput, resolved: ResolvedEdition, wimlib: URL, mount: URL) async -> ISOValidation {
         let installWim = mount.appendingPathComponent("sources/install.wim")
         guard FileManager.default.fileExists(atPath: installWim.path) else {
-            // Certain: a Windows install ISO always has sources/install.wim.
+            // An installer with install.esd is a Windows installer AVM can't
+            // use as it is (2026-11-10, fourth audit of 2026-11-09 #30): it
+            // was told it wasn't a Windows 11 installer at all.
+            if FileManager.default.fileExists(atPath: mount.appendingPathComponent("sources/install.esd").path) {
+                return .hardStop(reason: "This Windows installer keeps its system image as install.esd, which AVM's setup can't use as it is; it needs install.wim. Next: choose Download Windows 11 in the Setup Wizard, which makes a disc AVM can use, or use Microsoft's Windows 11 ARM64 disc.")
+            }
+            // A Windows install ISO otherwise always has sources/install.wim.
             return .hardStop(reason: "This doesn't look like a Windows 11 installer — it has no install image (sources/install.wim). Make sure you selected a Windows 11 ARM64 ISO.")
         }
 

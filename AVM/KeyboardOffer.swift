@@ -64,12 +64,23 @@ enum KeyboardOffer {
         // Not Now first, so Return doesn't hand a keyboard to Windows (2026-11-05 audit).
         alert.addButton(withTitle: "Not Now")
         alert.addButton(withTitle: "Use for Windows")
-        let answer = alert.runModal()
+        // Heard (2026-11-10, fourth audit of 2026-11-09 #25): asked just
+        // after leaving a machine, usually with VoiceOver off, it came up
+        // unspoken, and Return declined it for good in silence.
+        let answer = QuitCoordinator.ask(alert)
+        // Closed by another question (review): abortModal ends the innermost
+        // alert, this one, and that isn't the user's Not Now. Asked again at
+        // a later start.
+        if answer != .alertFirstButtonReturn, answer != .alertSecondButtonReturn {
+            AVMLog.write("AVM: KeyboardOffer — the question was closed without an answer; asking at a later start.")
+            return
+        }
         guard answer == .alertSecondButtonReturn else {
             var declined = UserDefaults.standard.stringArray(forKey: declinedKey) ?? []
             declined.append("\(configuration.id.uuidString)|\(keyboard.id)")
             UserDefaults.standard.set(declined, forKey: declinedKey)
             AVMLog.write("AVM: KeyboardOffer — \(keyboard.name) stays on the Mac for \(configuration.name) (Not Now).")
+            Announcer.shared.announce("\(keyboard.name) stays with your Mac. AVM won't offer it again for \(configuration.name); you can choose it in \(configuration.name)'s Settings, under Devices.", tone: .info)
             return
         }
         // Saved as Settings saves it, from the list's copy, so nothing else

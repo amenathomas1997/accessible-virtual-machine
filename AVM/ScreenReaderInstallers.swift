@@ -111,13 +111,17 @@ nonisolated enum ScreenReaderInstallers {
             let base = "manifests/n/NVAccess/NVDA"
             let version = try await newestFolder(base)
             let yaml = try await text(raw + "\(base)/\(version)/NVAccess.NVDA.installer.yaml")
-            return try installer(reader, version: version, yaml: yaml, architecture: "x86")
+            // Any of its blocks (2026-11-10, fourth audit of 2026-11-09 #29):
+            // NVDA has one installer for every Windows, and since NVDA 2026
+            // went 64-bit the manifest may list it as x64 only, so asking
+            // for x86 alone fell back to the pinned version every time.
+            return try installer(reader, version: version, yaml: yaml, architectures: ["x64", "x86", "arm64", "neutral"])
         case .jaws:
             let base = "manifests/f/FreedomScientific/JAWS"
             let year = try await newestFolder(base)
             let version = try await newestFolder("\(base)/\(year)")
             let yaml = try await text(raw + "\(base)/\(year)/\(version)/FreedomScientific.JAWS.\(year).installer.yaml")
-            return try installer(reader, version: version, yaml: yaml, architecture: "arm64")
+            return try installer(reader, version: version, yaml: yaml, architectures: ["arm64"])
         }
     }
 
@@ -157,6 +161,11 @@ nonisolated enum ScreenReaderInstallers {
 
     /// InstallerUrl and InstallerSha256 of the entry for `architecture`.
     static func installer(_ reader: ScreenReader, version: String, yaml: String, architecture: String) throws -> ScreenReaderInstaller {
+        try installer(reader, version: version, yaml: yaml, architectures: [architecture])
+    }
+
+    /// The first of `architectures` the manifest has, in that order.
+    static func installer(_ reader: ScreenReader, version: String, yaml: String, architectures: [String]) throws -> ScreenReaderInstaller {
         var blocks: [[String: String]] = []
         for line in yaml.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -170,10 +179,10 @@ nonisolated enum ScreenReaderInstallers {
                 .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
             blocks[blocks.count - 1][key] = value
         }
-        guard let block = blocks.first(where: { $0["Architecture"] == architecture }),
+        guard let block = architectures.lazy.compactMap({ wanted in blocks.first { $0["Architecture"] == wanted } }).first,
               let link = block["InstallerUrl"].flatMap(URL.init(string:)),
               let sha = block["InstallerSha256"], sha.count == 64 else {
-            throw ScreenReaderInstallerError.download("winget's \(reader.displayName) manifest has no \(architecture) installer")
+            throw ScreenReaderInstallerError.download("winget's \(reader.displayName) manifest has no \(architectures.joined(separator: " or ")) installer")
         }
         return ScreenReaderInstaller(reader: reader, version: version, url: link, checksum: .sha256(sha.uppercased()))
     }

@@ -212,11 +212,25 @@ extension VMManager {
                     // The chosen one never started: a minute after sign-in.
                     if readersSeen.isEmpty, !toldNoReader, signedInChecks == 4, let reader = chosenReaders.first {
                         toldNoReader = true
-                        let started = await self.startScreenReader(reader, gnome: now.gnome)
-                        AVMLog.write("AVM: GuestWatch — no screen reader in \(machine) a minute after sign-in; started=\(started)")
-                        Announcer.shared.announce(started
-                            ? "No screen reader was running in \(machine), so AVM started \(reader)."
-                            : "No screen reader is running in \(machine). \(Self.readerHelp(reader, gnome: now.gnome))", tone: .info)
+                        // Not an Orca the user turned off (2026-11-10, fourth
+                        // audit of 2026-11-09 #16): from 0.4.42 this set GNOME's
+                        // setting off and on at every boot, rewriting it for
+                        // later logins too. Started only with the setting on;
+                        // outside GNOME, where AVM can't tell, advice as before.
+                        var orcaOff = false
+                        if reader == "Orca", now.gnome { orcaOff = await self.orcaSettingIsOn() == false }
+                        if reader == "Orca", !now.gnome || orcaOff {
+                            AVMLog.write("AVM: GuestWatch — Orca isn't running in \(machine) a minute after sign-in\(now.gnome ? ", and it's turned off; left so" : ""); not started")
+                            if !now.gnome {
+                                Announcer.shared.announce("No screen reader is running in \(machine). \(Self.readerHelp(reader, gnome: false))", tone: .info)
+                            }
+                        } else {
+                            let started = await self.startScreenReader(reader, gnome: now.gnome)
+                            AVMLog.write("AVM: GuestWatch — no screen reader in \(machine) a minute after sign-in; started=\(started)")
+                            Announcer.shared.announce(started
+                                ? "No screen reader was running in \(machine), so AVM started \(reader)."
+                                : "No screen reader is running in \(machine). \(Self.readerHelp(reader, gnome: now.gnome))", tone: .info)
+                        }
                     }
                 }
 
@@ -270,12 +284,24 @@ extension VMManager {
     /// doesn't change it, and Super-Alt-S is a toggle, so the press turned
     /// Orca off instead of starting it. Elsewhere (KDE, XFCE, MATE) by
     /// running it, with the display and session bus of a process in the
-    /// user's session, since those desktops have no shortcut for it.
+    /// user's session, since those desktops have no shortcut for it. Process
+    /// names are cut to 15 characters, so Cinnamon's session is
+    /// cinnamon-sessio (2026-11-10, fourth audit of 2026-11-09 #17).
     nonisolated static func startOrcaScript(gnome: Bool) -> String {
         let start = gnome
             ? #"K=org.gnome.desktop.a11y.applications; runuser -u "$U" -- env DBUS_SESSION_BUS_ADDRESS=$B sh -c "gsettings set $K screen-reader-enabled false; sleep 1; gsettings set $K screen-reader-enabled true" && echo AVM-OK"#
-            : #"P=$(pgrep -u "$U" -n -x 'plasmashell|ksmserver|kwin_x11|kwin_wayland|xfce4-session|xfwm4|mate-session|marco|cinnamon-session|lxqt-session|budgie-wm' 2>/dev/null); [ -n "$P" ] || P=$(pgrep -u "$U" -n); E=$(tr '\0' '\n' </proc/$P/environ 2>/dev/null | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XAUTHORITY|XDG_RUNTIME_DIR|XDG_SESSION_TYPE)=' | tr '\n' ' '); runuser -u "$U" -- env DBUS_SESSION_BUS_ADDRESS=$B $E setsid -f orca --replace >/dev/null 2>&1 </dev/null && echo AVM-OK"#
+            : #"P=$(pgrep -u "$U" -n -x 'plasmashell|ksmserver|kwin_x11|kwin_wayland|xfce4-session|xfwm4|mate-session|marco|cinnamon-sessio|cinnamon|lxqt-session|budgie-wm' 2>/dev/null); [ -n "$P" ] || P=$(pgrep -u "$U" -n); E=$(tr '\0' '\n' </proc/$P/environ 2>/dev/null | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XAUTHORITY|XDG_RUNTIME_DIR|XDG_SESSION_TYPE)=' | tr '\n' ' '); runuser -u "$U" -- env DBUS_SESSION_BUS_ADDRESS=$B $E setsid -f orca --replace >/dev/null 2>&1 </dev/null && echo AVM-OK"#
         return Self.linuxSignedInUser + "\n" + #"[ -n "$U" ] || { echo AVM-NOUSER; exit 0; }; I=$(id -u "$U"); B=unix:path=/run/user/$I/bus"# + "\n" + start + "\n"
+    }
+
+    /// GNOME's Orca setting for the signed-in user: true on, false off, nil
+    /// when it couldn't be read.
+    func orcaSettingIsOn() async -> Bool? {
+        let script = Self.linuxSignedInUser + "\n" + #"[ -n "$U" ] || { echo AVM-NOUSER; exit 0; }; I=$(id -u "$U"); runuser -u "$U" -- env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$I/bus gsettings get org.gnome.desktop.a11y.applications screen-reader-enabled"#
+        guard let out = try? await agentRun("/bin/sh", ["-c", script], limit: .seconds(20)) else { return nil }
+        if out.contains("true") { return true }
+        if out.contains("false") { return false }
+        return nil
     }
 
     /// Starts the screen reader in the machine: NVDA and JAWS by their own

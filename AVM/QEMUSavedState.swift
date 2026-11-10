@@ -101,6 +101,16 @@ nonisolated enum QEMUSavedState {
         return (json["snapshots"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
     }
 
+    /// When the snapshot named `tag` was taken, by the disk's own record;
+    /// nil when it isn't there or couldn't be read.
+    static func snapshotDate(disk: URL, tag: String) async -> Date? {
+        guard let output = try? await RestorePoints.qemuImg(["info", "--output=json", "-U", disk.path]),
+              let json = try? JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any],
+              let entry = (json["snapshots"] as? [[String: Any]] ?? []).last(where: { $0["name"] as? String == tag }),
+              let seconds = (entry["date-sec"] as? NSNumber)?.doubleValue else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
     /// What this Start carries on from, if anything. A saved state left
     /// behind by a load whose delete failed is deleted here instead; a
     /// saved state wins over a restore note (it's newer: saving needs the

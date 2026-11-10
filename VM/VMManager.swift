@@ -1531,6 +1531,11 @@ final class VMManager: ObservableObject {
             throw AVMError.refused("AVM can't tell whether \(configuration.name) is saved with its apps open, so it didn't start. Next: try again; if this keeps happening, report the problem from the Help menu.")
         }
         let resuming = resumePlan != nil
+        // After each wait in this part (2026-11-10, fourth audit of
+        // 2026-11-09 #19): a Force Stop during plan() let this start go on
+        // removing media, renaming files on the answer image and taking a
+        // restore point beside the next Start's same steps.
+        try ensureStillStarting()
         if let resumePlan { avmLog("startVM: this Start carries on from \(resumePlan.tag)") }
         // A saved state on a machine that is back on its old disk connection
         // (2026-10-28, second review): it can't be carried on here, and left
@@ -1540,6 +1545,7 @@ final class VMManager: ObservableObject {
             avmLog("startVM: a saved state on an NVMe start; discarding it")
             await QEMUSavedState.discard(configuration: configuration)
             Announcer.shared.announce("\(configuration.name) was saved with its apps open on its other disk connection, which it isn't using now, so it starts fresh. Anything that wasn't saved in its apps is lost.", tone: .info)
+            try ensureStillStarting()
         }
 
         if installComplete {
@@ -1912,6 +1918,16 @@ final class VMManager: ObservableObject {
     /// outlive Force Stop by two seconds (SIGKILL comes then), still holding
     /// the disk's lock, and a new QEMU exited on it: "stopped unexpectedly",
     /// with no reason. The limit is past that SIGKILL.
+    /// Up to five seconds for a force-stopped QEMU of this machine to end,
+    /// so its disks can be read as it left them. Nothing thrown.
+    private func waitForQEMUToEnd(of configuration: VMConfiguration) async {
+        let clock = SuspendingClock()
+        let deadline = clock.now + .seconds(5)
+        while clock.now < deadline, (Self.forceStoppedProcesses[configuration.id] ?? []).contains(where: \.isRunning) {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
     private func waitForForceStoppedProcesses(of configuration: VMConfiguration) async throws {
         guard let processes = Self.forceStoppedProcesses[configuration.id] else { return }
         let clock = SuspendingClock()
@@ -3602,7 +3618,8 @@ final class VMManager: ObservableObject {
     /// than an hour's reinstall. The VM is stopped here, as restore points
     /// need; it is an internal disk snapshot, so it takes a moment.
     private func saveFreshInstallRestorePoint(configuration: VMConfiguration, runtimeDir: URL) async {
-        guard let existing = try? await RestorePoints.list(vmDirectory: runtimeDir), existing.isEmpty else { return }
+        guard let existing = try? await RestorePoints.list(vmDirectory: runtimeDir), existing.isEmpty,
+              state == .starting else { return }   // not after a Force Stop (review of #19)
         do {
             _ = try await RestorePoints.create(vmDirectory: runtimeDir, label: "Fresh install", secureBoot: configuration.usesSecureBoot, diskBus: configuration.diskBus ?? "nvme")
             appendConsole("AVM: Saved a restore point called Fresh install.\n")
@@ -3625,7 +3642,8 @@ final class VMManager: ObservableObject {
     static let automaticLabelPrefix = "Automatic"
 
     private func saveWeeklyRestorePoint(configuration: VMConfiguration, runtimeDir: URL) async {
-        guard let existing = try? await RestorePoints.list(vmDirectory: runtimeDir), !existing.isEmpty else { return }
+        guard let existing = try? await RestorePoints.list(vmDirectory: runtimeDir), !existing.isEmpty,
+              state == .starting else { return }   // not after a Force Stop (review of #19)
         // Automatic points carry a marker file, not just a name (2026-10-26,
         // code audit): a user's own point named "Automatic updates test"
         // would otherwise be deleted by the weekly clean-up.
@@ -3735,6 +3753,9 @@ final class VMManager: ObservableObject {
     }
     /// The running machine's id, for code outside that follows it.
     var machineID: UUID? { activeConfiguration?.id }
+
+    /// See VMSession.noteRenamed.
+    func noteRenamed(_ name: String) { activeConfiguration?.name = name }
 
     static var currentGuestName: String {
         shared?.activeConfiguration?.name ?? GuestOS.windows.displayName
@@ -4750,7 +4771,11 @@ extension VMManager {
     /// running (2026-11-09, third audit of the day #15). QEMU answers
     /// query-jobs only once the load or save lets it, so a query that
     /// times out counts as "still running".
-    func waitForQMPJobToEnd(named name: String, limit: Int) async {
+    /// True when the job concluded without an error, false when it failed
+    /// or was gone, nil when it still ran at the limit (2026-11-10, fourth
+    /// audit of 2026-11-09 #26).
+    @discardableResult
+    func waitForQMPJobToEnd(named name: String, limit: Int) async -> Bool? {
         let clock = SuspendingClock()
         let deadline = clock.now + .seconds(limit)
         // Only while the start stands (review): with QMP gone, every query
@@ -4760,14 +4785,16 @@ extension VMManager {
                 try? await Task.sleep(for: .milliseconds(500))
                 continue
             }
-            let running = jobs.contains {
-                ($0["id"] as? String)?.hasPrefix(name + "-") == true
-                    && !["concluded", "null"].contains($0["status"] as? String ?? "concluded")
+            let mine = jobs.filter { ($0["id"] as? String)?.hasPrefix(name + "-") == true }
+            let running = mine.contains { !["concluded", "null"].contains($0["status"] as? String ?? "concluded") }
+            if !running {
+                guard let last = mine.last, last["status"] as? String == "concluded" else { return false }
+                return last["error"] == nil
             }
-            if !running { return }
             try? await Task.sleep(for: .seconds(1))
         }
         avmLog("\(name): still running after \(limit) s; going on")
+        return nil
     }
 
     func dismissFinishedQMPJobs() async {
@@ -4959,12 +4986,53 @@ extension VMManager {
         // and the load failed. A hint with no snapshot is dropped by plan().
         try? "Saved \(Date())\n".write(to: QEMUSavedState.hint(in: runtimeDir), atomically: true, encoding: .utf8)
         let started = Date()
+        var savedDevices: [String] = []
         do {
             let node = try await diskNodeName()
+            let devices = try await snapshotDevices(node)
+            savedDevices = devices
+            // A stale one first (2026-11-10, fourth audit of 2026-11-09 #14):
+            // snapshot-save never overwrites, and a saved state left by a
+            // resume whose delete failed made this save fail, so Save and
+            // Quit wouldn't quit. The machine is running, so any saved state
+            // on its disks is spent. A tag that isn't there is no error.
+            try? await runQMPJob("snapshot-delete", id: "avm-unsave",
+                                 arguments: ["tag": QEMUSavedState.tag, "devices": devices], limit: .seconds(120))
             try await runQMPJob("snapshot-save", id: "avm-save",
-                                arguments: ["tag": QEMUSavedState.tag, "vmstate": node, "devices": try await snapshotDevices(node)])
+                                arguments: ["tag": QEMUSavedState.tag, "vmstate": node, "devices": devices])
         } catch {
             avmLog("saveStateAndStop: save failed: \(error.localizedDescription)")
+            // QEMU gone (Force Stop, a crash) after the snapshot was written
+            // (2026-11-10, fourth audit of 2026-11-09 #13): the save is whole,
+            // and treating it as failed deleted it at the next Start, unsaid.
+            // QEMU names the snapshot on each disk only once it's complete.
+            // Only this save's snapshot, by its date (review): a stale one
+            // (#14's) was otherwise kept and called saved, and loaded at the
+            // next Start over all later work. Read once QEMU has ended
+            // (review): a Force Stop's SIGTERM waits for the save to let go
+            // of QEMU's main loop, so the save can still finish after .stopped.
+            let gone: Bool = { if case .error = state { return true }; return state == .stopped }()
+            if gone {
+                await waitForQEMUToEnd(of: configuration)
+                func thisSave(_ disk: URL) async -> Bool {
+                    guard let date = await QEMUSavedState.snapshotDate(disk: disk, tag: QEMUSavedState.tag) else { return false }
+                    return date >= started.addingTimeInterval(-2)
+                }
+                var landed = false
+                if !savedDevices.isEmpty { landed = await thisSave(URL(fileURLWithPath: configuration.resolvedDiskImagePath)) }
+                // The second drive only when this save named it (review).
+                if landed, savedDevices.count > 1, let second = RestorePoints.secondDrive(runtimeDir), !(await thisSave(second)) {
+                    landed = false
+                }
+                if landed {
+                    avmLog("saveStateAndStop: QEMU ended, but the save had landed; it's kept")
+                    devicesGivenUpForSave = ([], [])
+                    try? FileManager.default.removeItem(at: runtimeDir.appendingPathComponent(QEMUSavedState.loadedMarker))
+                    Announcer.shared.announce("\(guest) is saved, though it was turned off as the save ended. Start it to carry on where you left it.", tone: .success)
+                    return true
+                }
+                Announcer.shared.announce("\(guest) was turned off before its save finished, so the session wasn't saved. Its disk is as it was when it stopped.", tone: .failure)
+            }
             // A save QEMU finished after AVM gave up would be carried on
             // over newer work at a later Start; it goes now.
             // The marker first (2026-11-09, fifth audit #3): the delete below
@@ -5046,6 +5114,9 @@ extension VMManager {
             // carried on last time". Now it deletes the state quietly.
             if plan.isSavedState { try? QEMUSavedState.carriedOnWord.write(to: marker, atomically: true, encoding: .utf8) }
         } catch {
+            // Before the dismiss below (review of 2026-11-10): a load that
+            // ended meanwhile was dismissed first, and then read as failed.
+            let lateLoadEnded = state == .starting ? await waitForQMPJobToEnd(named: "avm-load", limit: 120) : nil
             await dismissFinishedQMPJobs()
             // Cut short before the guest ran (2026-10-28, fourth audit):
             // Quit Now or a Force Stop while the state was loading. Nothing
@@ -5074,67 +5145,87 @@ extension VMManager {
             // A load that timed out may still be writing (2026-11-09, third
             // audit of the day #15): a reset or a kill mid-load leaves a
             // qcow2 QEMU must repair. Bounded.
-            await waitForQMPJobToEnd(named: "avm-load", limit: 120)
-            if plan.isSavedState, !CommandLine.arguments.contains(where: { $0.hasPrefix("--test-") }) {
-                // The marker goes before the question (third audit of the day
-                // #1): it stayed while the question waited, which with Start
-                // When AVM Opens and nobody at the Mac may be hours, and a
-                // Quit, Force Quit or restart meanwhile made the next Start
-                // delete the session Keep It had promised to keep. Start
-                // Fresh writes it again below.
-                try? fm.removeItem(at: marker)
-                let alert = NSAlert()
-                alert.messageText = "\(guest) couldn't carry on from where it was saved"
-                alert.informativeText = "Reason: \(error.localizedDescription) Keep It turns \(guest) off and keeps the saved session, so Start can try again. Start Fresh discards it, and anything open in \(guest) when it was saved is lost."
-                alert.addButton(withTitle: "Keep It")
-                alert.addButton(withTitle: "Start Fresh")
-                // From the run loop, not this job (review): a modal inside a
-                // main-actor job holds up every other machine's work until
-                // it is answered, and nobody may be at the Mac.
-                let answer: NSApplication.ModalResponse = await withCheckedContinuation { done in
-                    CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
-                        MainActor.assumeIsolated { done.resume(returning: QuitCoordinator.ask(alert)) }
-                    }
-                    CFRunLoopWakeUp(CFRunLoopGetMain())
-                }
-                // Force Stop or Quit while the question was up: nothing ran,
-                // and the saved state waits for the next Start. A QEMU that
-                // died (.error) gets the marker back, as the branch above
-                // keeps it (#16), so a state that crashes QEMU isn't loaded
-                // at every Start.
-                guard state == .starting else {
-                    if case .error = state { fm.createFile(atPath: marker.path, contents: nil) }
-                    return
-                }
-                // Only Start Fresh discards (2026-11-09, fourth audit of the
-                // day #4): a USB question closing itself ends the innermost
-                // modal with abortModal, which can be this one, and .abort
-                // read as Start Fresh threw away a session nobody chose to.
-                if answer != .alertSecondButtonReturn {
-                    avmLog("resumeSavedState: load failed; the saved state is kept (answer \(answer.rawValue))")
-                    throw AVMError.refused("\(guest)'s saved session is kept, and \(guest) is off. Next: press Start to try again.")
-                }
-                fm.createFile(atPath: marker.path, contents: nil)
-            }
-            avmLog("resumeSavedState: load failed: \(error.localizedDescription); starting from the disk")
-            _ = try? await sendQMPCommand("system_reset", arguments: nil)
-            _ = try? await sendQMPCommand("cont", arguments: nil)
-            // Checked (2026-11-09, fifth audit #30): either command refused or
-            // timed out left QEMU paused at -S while AVM said Running.
-            var guestRuns = false
-            for _ in 0..<3 where !guestRuns && state == .starting {
-                if let status = try? await sendQMPCommand("query-status", arguments: nil) as? [String: Any],
-                   status["running"] as? Bool == true {
-                    guestRuns = true
-                } else {
-                    try? await Task.sleep(for: .milliseconds(500))
+            // Finished after all (2026-11-10, fourth audit of 2026-11-09
+            // #26): a load that ends well during this wait has the guest
+            // ready, and asking, or starting fresh, threw that away.
+            var lateLoad = false
+            if lateLoadEnded == true, state == .starting {
+                // Running for certain, as the fresh path checks (review).
+                for _ in 0..<3 where !lateLoad && state == .starting {
                     _ = try? await sendQMPCommand("cont", arguments: nil)
+                    if let status = try? await sendQMPCommand("query-status", arguments: nil) as? [String: Any],
+                       status["running"] as? Bool == true {
+                        lateLoad = true
+                    } else {
+                        try? await Task.sleep(for: .milliseconds(500))
+                    }
                 }
+                avmLog("resumeSavedState: the load finished after AVM stopped waiting; \(lateLoad ? "carrying on" : "but the machine didn't run")")
             }
-            guard guestRuns || state != .starting else {
-                throw AVMError.refused("\(guest) couldn't carry on from where it was saved, and couldn't start fresh either. Reason: QEMU didn't let the machine run after the failed load (\(error.localizedDescription)). Next: try Start again. If it fails again, save the diagnostic log and report the problem.")
+            if lateLoad {
+                carriedOn = true
+            } else {
+                if plan.isSavedState, !CommandLine.arguments.contains(where: { $0.hasPrefix("--test-") }) {
+                    // The marker goes before the question (third audit of the day
+                    // #1): it stayed while the question waited, which with Start
+                    // When AVM Opens and nobody at the Mac may be hours, and a
+                    // Quit, Force Quit or restart meanwhile made the next Start
+                    // delete the session Keep It had promised to keep. Start
+                    // Fresh writes it again below.
+                    try? fm.removeItem(at: marker)
+                    let alert = NSAlert()
+                    alert.messageText = "\(guest) couldn't carry on from where it was saved"
+                    alert.informativeText = "Reason: \(error.localizedDescription) Keep It turns \(guest) off and keeps the saved session, so Start can try again. Start Fresh discards it, and anything open in \(guest) when it was saved is lost."
+                    alert.addButton(withTitle: "Keep It")
+                    alert.addButton(withTitle: "Start Fresh")
+                    // From the run loop, not this job (review): a modal inside a
+                    // main-actor job holds up every other machine's work until
+                    // it is answered, and nobody may be at the Mac.
+                    let answer: NSApplication.ModalResponse = await withCheckedContinuation { done in
+                        CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
+                            MainActor.assumeIsolated { done.resume(returning: QuitCoordinator.ask(alert)) }
+                        }
+                        CFRunLoopWakeUp(CFRunLoopGetMain())
+                    }
+                    // Force Stop or Quit while the question was up: nothing ran,
+                    // and the saved state waits for the next Start. A QEMU that
+                    // died (.error) gets the marker back, as the branch above
+                    // keeps it (#16), so a state that crashes QEMU isn't loaded
+                    // at every Start.
+                    guard state == .starting else {
+                        if case .error = state { fm.createFile(atPath: marker.path, contents: nil) }
+                        return
+                    }
+                    // Only Start Fresh discards (2026-11-09, fourth audit of the
+                    // day #4): a USB question closing itself ends the innermost
+                    // modal with abortModal, which can be this one, and .abort
+                    // read as Start Fresh threw away a session nobody chose to.
+                    if answer != .alertSecondButtonReturn {
+                        avmLog("resumeSavedState: load failed; the saved state is kept (answer \(answer.rawValue))")
+                        throw AVMError.refused("\(guest)'s saved session is kept, and \(guest) is off. Next: press Start to try again.")
+                    }
+                    fm.createFile(atPath: marker.path, contents: nil)
+                }
+                avmLog("resumeSavedState: load failed: \(error.localizedDescription); starting from the disk")
+                _ = try? await sendQMPCommand("system_reset", arguments: nil)
+                _ = try? await sendQMPCommand("cont", arguments: nil)
+                // Checked (2026-11-09, fifth audit #30): either command refused or
+                // timed out left QEMU paused at -S while AVM said Running.
+                var guestRuns = false
+                for _ in 0..<3 where !guestRuns && state == .starting {
+                    if let status = try? await sendQMPCommand("query-status", arguments: nil) as? [String: Any],
+                       status["running"] as? Bool == true {
+                        guestRuns = true
+                    } else {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        _ = try? await sendQMPCommand("cont", arguments: nil)
+                    }
+                }
+                guard guestRuns || state != .starting else {
+                    throw AVMError.refused("\(guest) couldn't carry on from where it was saved, and couldn't start fresh either. Reason: QEMU didn't let the machine run after the failed load (\(error.localizedDescription)). Next: try Start again. If it fails again, save the diagnostic log and report the problem.")
+                }
+                Announcer.shared.announce("\(guest) couldn't carry on from where it was saved, so it's starting fresh. Anything that wasn't saved inside \(guest) is lost. Reason: \(error.localizedDescription)", tone: .failure)
             }
-            Announcer.shared.announce("\(guest) couldn't carry on from where it was saved, so it's starting fresh. Anything that wasn't saved inside \(guest) is lost. Reason: \(error.localizedDescription)", tone: .failure)
         }
         // A restore point stays a restore point; its note is spent.
         try? fm.removeItem(at: note)
@@ -5431,7 +5522,9 @@ extension VMManager {
                 let out = try await agentRun("/bin/sh", ["-c", script], limit: .seconds(600))
                 avmLog("diskSwitch: setup said: \(out.suffix(500))")
                 guard out.contains("avm-virtio-ready") else {
-                    throw AVMError.qmpCommandFailed(String(out.suffix(200)))
+                    // Not the guest's words, which are logged above (2026-11-10,
+                    // fourth audit of 2026-11-09 #21).
+                    throw AVMError.qmpCommandFailed("the setup in the machine didn't finish; its words are in AVM's log.")
                 }
             }
         } catch {

@@ -36,7 +36,11 @@ extension VMManager {
             while true {
                 // An answer that isn't one is a failure, not the end of the
                 // file (2026-11-09, fifth audit #34): half a setup was kept.
-                guard let reply = try await agentCall(["execute": "guest-file-read", "arguments": ["handle": handle, "count": 1 << 20]]) as? [String: Any],
+                // Smaller reads, each given a minute (2026-11-10): the copy
+                // failed "no answer" now and then in Windows, at this step,
+                // with the 10-second default and 1 MB a read; a zip just
+                // made can be held while Windows Defender scans it (inferred).
+                guard let reply = try await agentCall(["execute": "guest-file-read", "arguments": ["handle": handle, "count": 1 << 18]], timeout: 60) as? [String: Any],
                       let chunk = (reply["buf-b64"] as? String).flatMap({ Data(base64Encoded: $0) }) else {
                     throw AVMError.refused("The machine stopped answering partway through the copy.")
                 }
@@ -104,6 +108,10 @@ extension VMManager {
         let machine = machineName
         let windows = runningGuestOS == .windows
         let name = windows ? "NVDA" : "Orca"
+        // Which step a failure came in (2026-11-10): an occasional "no
+        // answer" in Windows, seen in the test job since 2026-11-09, said
+        // nothing of where.
+        var step = "locking AVM's folder"
         do {
             let inGuest = windows ? #"C:\ProgramData\AVM\sr-setup.zip"# : "/tmp/avm-sr-setup.tgz"
             // As Apply does, before SYSTEM works there (2026-11-09, fifth
@@ -113,6 +121,7 @@ extension VMManager {
             if windows {
                 _ = try await agentRun("powershell.exe", ["-NoProfile", "-Command", WindowsApps.lockDownScript], limit: .seconds(60))
             }
+            step = "copying the settings in the machine"
             // The earlier zip goes first and errors stop the script
             // (2026-11-09, fifth audit #34): a failed Compress-Archive left it
             // there, still said AVM-OK, and the old setup was saved as new.
@@ -128,7 +137,7 @@ extension VMManager {
                       if (Test-Path "$d\\nvda.ini") {
                         $t = "C:\\ProgramData\\AVM\\sr-copy-" + [guid]::NewGuid().ToString('N')
                         try {
-                          robocopy $d $t /E /XJ /XF *.log /XD updates | Out-Null
+                          robocopy $d $t /E /XJ /XF *.log /XD updates addons scratchpad | Out-Null
                           if ($LASTEXITCODE -ge 8) { throw "robocopy stopped with $LASTEXITCODE" }
                           Compress-Archive -Force -Path "$t\\*" -DestinationPath '\(inGuest)'
                           'AVM-OK'
@@ -139,7 +148,7 @@ extension VMManager {
                 : try await agentRun("/bin/sh", ["-c", """
                     \(Self.linuxSignedInUser)
                     rm -f \(inGuest)
-                    if [ -d "$D/orca" ]; then tar czf \(inGuest) -C "$D" orca && echo AVM-OK; else echo AVM-NONE; fi
+                    if [ -d "$D/orca" ]; then tar czf \(inGuest) --exclude='*.py' --exclude='orca/orca-scripts' -C "$D" orca && echo AVM-OK; else echo AVM-NONE; fi
                     """], limit: .seconds(120))
             if out.contains("AVM-NOUSER") {
                 Announcer.shared.announce("\(name)'s setup couldn't be saved from \(machine). Reason: no one is signed in at its own screen. Next: sign in to \(machine) in its window, then try again.", tone: .failure)
@@ -153,6 +162,7 @@ extension VMManager {
                 AVMLog.write("AVM: Screen reader setup — the copy in the guest failed: \(out.prefix(300))")
                 throw AVMError.refused("The copy inside the machine didn't finish.")
             }
+            step = "bringing the copy to the Mac"
             let file = try Self.screenReaderSetupFile(windows: windows)
             // The guest's copy goes either way (2026-11-09, fifth audit #35).
             var copyError: Error?
@@ -162,9 +172,13 @@ extension VMManager {
                 : try? await agentRun("/bin/rm", ["-f", inGuest], limit: .seconds(30))
             if let copyError { throw copyError }
             AVMLog.write("AVM: Screen reader setup — \(name)'s saved from \(machine)")
-            Announcer.shared.announce("\(name)'s setup is saved from \(machine). Next: in another machine, choose Virtual Machine, Apply Saved Screen Reader Setup.", tone: .success)
+            // Without add-ons or Orca's Python (2026-11-10, fourth audit of
+            // 2026-11-09 #20): they're programs, and a saved setup goes into
+            // every machine it's applied to, new installs too. Said, so
+            // they're added by hand.
+            Announcer.shared.announce("\(name)'s setup is saved from \(machine).\(windows ? " Its add-ons aren't included; add them in each machine from NVDA's Add-on Store." : " Its scripts and customizations aren't included.") Next: in another machine, choose Virtual Machine, Apply Saved Screen Reader Setup.", tone: .success)
         } catch {
-            AVMLog.write("AVM: Screen reader setup — not saved: \(error.localizedDescription)")
+            AVMLog.write("AVM: Screen reader setup — not saved, while \(step): \(error.localizedDescription)")
             Announcer.shared.announce("\(name)'s setup couldn't be saved from \(machine). Reason: \(error.localizedDescription) Next: make sure \(machine) has finished starting, then try again.", tone: .failure)
         }
     }
@@ -217,6 +231,8 @@ extension VMManager {
                       try {
                         foreach ($e in $z.Entries) {
                           if ($e.FullName -match '^[\\\\/]|\\.\\.[\\\\/]|^[A-Za-z]:|\\.\\.$') { throw "unsafe entry $($e.FullName)" }
+                          # Add-ons are programs; a setup saved before 0.4.44 may have them (review).
+                          if ($e.FullName -match '^(addons|scratchpad)[\\\\/]') { continue }
                           $t = Join-Path $n $e.FullName
                           if ($e.FullName -match '[\\\\/]$') { New-Item -ItemType Directory -Force $t | Out-Null; continue }
                           New-Item -ItemType Directory -Force (Split-Path $t) | Out-Null
@@ -255,7 +271,7 @@ extension VMManager {
                     \(Self.linuxSignedInUser)
                     N="$D/.avm-orca-new"
                     chown "$U" \(inGuest); chmod 600 \(inGuest)
-                    runuser -u "$U" -- sh -c "mkdir -p '$D' && rm -rf '$N' && mkdir '$N' && tar xzf \(inGuest) -C '$N' --no-same-owner && [ -d '$N/orca' ] && { if pkill -x orca; then echo AVM-STOPPED; sleep 2; fi; M=; if [ -d '$D/orca' ]; then M='$D/orca-before-avm'; if [ -d \\"\\$M\\" ]; then M='$D/orca-before-avm-last'; rm -rf \\"\\$M\\"; fi; mv '$D/orca' \\"\\$M\\" || exit 1; fi; if mv '$N/orca' '$D/orca'; then echo AVM-OK; elif [ -n \\"\\$M\\" ]; then mv \\"\\$M\\" '$D/orca'; fi; }; rm -rf '$N'"
+                    runuser -u "$U" -- sh -c "mkdir -p '$D' && rm -rf '$N' && mkdir '$N' && tar xzf \(inGuest) -C '$N' --no-same-owner --exclude='*.py' --exclude='orca/orca-scripts' && [ -d '$N/orca' ] && { if pkill -x orca; then echo AVM-STOPPED; sleep 2; fi; M=; if [ -d '$D/orca' ]; then M='$D/orca-before-avm'; if [ -d \\"\\$M\\" ]; then M='$D/orca-before-avm-last'; rm -rf \\"\\$M\\"; fi; mv '$D/orca' \\"\\$M\\" || exit 1; fi; if mv '$N/orca' '$D/orca'; then echo AVM-OK; elif [ -n \\"\\$M\\" ]; then mv \\"\\$M\\" '$D/orca'; fi; }; rm -rf '$N'"
                     rm -f \(inGuest)
                     """], limit: .seconds(120))
             stopped = out.contains("AVM-STOPPED")

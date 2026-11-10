@@ -466,6 +466,16 @@ final class BluetoothDevices: ObservableObject {
                     guard !awaitingReturn.isEmpty else { return }
                     guard case .success(let present) = await USBHelperClient.shared.listBluetoothDevices() else { break }
                     for device in present {
+                        // Not until the Mac has a keyboard of its own
+                        // (2026-11-10, fourth audit of 2026-11-09 #15): each
+                        // try put a bridge into the machine, took it out and
+                        // said the device stayed, at every arrival. Any
+                        // keyboard arriving, USB too, looks again
+                        // (BluetoothArrivals counts keyboards of any kind).
+                        if let waiting = awaitingReturn[device.id], waiting.onMacKeyboard, await !macHasAnotherKeyboard(besides: waiting.name) {
+                            AVMLog.write("Bluetooth: \(waiting.name) is back, but the Mac still has no keyboard of its own; it waits", category: "Bluetooth")
+                            continue
+                        }
                         guard let waiting = awaitingReturn.removeValue(forKey: device.id),
                               let machine = stillWanted(waiting) else { continue }
                         AVMLog.write("Bluetooth: \(waiting.name) reconnected; sending it back to \(machine.machineName)", category: "Bluetooth")
@@ -477,6 +487,28 @@ final class BluetoothDevices: ObservableObject {
                 }
             } while checkAgain
         }
+    }
+
+    /// A keyboard the Mac keeps: not the keyboard for Windows, not a device
+    /// AVM has sent or is waiting to send (counted by name, as the helper's
+    /// list has its own ids, so two alike are told apart), and not a key or
+    /// remapping device the helper doesn't count either. A rough check: when
+    /// it's wrong the helper still decides, as before. True when the list
+    /// can't be read.
+    private func macHasAnotherKeyboard(besides name: String) async -> Bool {
+        guard case .success(let list) = await USBHelperClient.shared.listKeyboards(registering: false) else { return true }
+        var ours: [String: Int] = [:]
+        for taken in attached.values.map(\.name) + awaitingReturn.values.map(\.name) { ours[taken, default: 0] += 1 }
+        if awaitingReturn.values.contains(where: { $0.name == name }) == false { ours[name, default: 0] += 1 }
+        var listed: [String: Int] = [:]
+        for entry in list {
+            guard let id = entry["id"] as? String, id != WindowsKeyboard.shared.keyboardID else { continue }
+            let entryName = entry["name"] as? String ?? ""
+            let lower = entryName.lowercased()
+            if ["yubikey", "karabiner", "virtual"].contains(where: lower.contains) { continue }
+            listed[entryName, default: 0] += 1
+        }
+        return listed.contains { $0.value > ours[$0.key, default: 0] }
     }
 
     /// A machine whose bridge devices can be removed over QMP: running, or
@@ -569,6 +601,12 @@ final class BluetoothArrivals {
             let transport = IORegistryEntryCreateCFProperty(service, "Transport" as CFString, kCFAllocatorDefault, 0)?
                 .takeRetainedValue() as? String ?? ""
             if transport.lowercased().contains("bluetooth") { bluetooth = true }
+            // A keyboard of any kind too (review of 2026-11-10, fourth audit
+            // of 2026-11-09 #15): a device waiting for the Mac to have a
+            // keyboard looks again when a USB one is plugged in.
+            let page = IORegistryEntryCreateCFProperty(service, kIOHIDPrimaryUsagePageKey as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? Int
+            let usage = IORegistryEntryCreateCFProperty(service, kIOHIDPrimaryUsageKey as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? Int
+            if page == 1, usage == 6 { bluetooth = true }
             IOObjectRelease(service)
             service = IOIteratorNext(iterator)
         }

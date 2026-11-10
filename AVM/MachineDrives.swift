@@ -23,6 +23,9 @@ nonisolated struct StorageStatus: Equatable, Sendable {
     let onMacBytes: Int64?
     let availableBytes: Int?
     var hasMacSavedState = false
+    /// A Windows or Linux machine's saved-session hint (2026-11-10, fourth
+    /// audit of 2026-11-09 #12).
+    var hasQEMUSavedHint = false
 }
 
 /// Checks on machines kept outside AVM's own folder, off the main thread
@@ -72,6 +75,19 @@ final class StorageWatch: ObservableObject {
         return statuses[configuration.id]
     }
 
+    /// For the dashboard (2026-11-10, fourth audit of 2026-11-09 #12): a
+    /// machine in a folder of the user's choosing is answered from the last
+    /// check, so a sleeping or gone drive doesn't stall every redraw. One in
+    /// AVM's own folder is read at once, as before.
+    func looksSaved(_ configuration: VMConfiguration) -> Bool {
+        guard configuration.storageFolderPath != nil else { return QEMUSavedState.looksSaved(configuration) }
+        return status(of: configuration)?.hasQEMUSavedHint ?? false
+    }
+
+    /// Looks again now: a machine stopped or was saved (review of the fourth
+    /// audit of 2026-11-09 #12), so "Saved" isn't stale until a redraw.
+    func refresh() { check() }
+
     /// False until known otherwise: Start refuses by its own check anyway.
     func isMissing(_ configuration: VMConfiguration) -> Bool {
         status(of: configuration)?.missing ?? false
@@ -116,7 +132,8 @@ final class StorageWatch: ObservableObject {
         }
         let available = (try? folder.resourceValues(forKeys: [.volumeAvailableCapacityKey]))?.volumeAvailableCapacity
         return StorageStatus(missing: false, onMacBytes: bytes, availableBytes: available,
-                             hasMacSavedState: FileManager.default.fileExists(atPath: MacGuestFiles(folder: folder).savedState.path))
+                             hasMacSavedState: FileManager.default.fileExists(atPath: MacGuestFiles(folder: folder).savedState.path),
+                             hasQEMUSavedHint: FileManager.default.fileExists(atPath: QEMUSavedState.hint(in: folder).path))
     }
 }
 
@@ -239,6 +256,8 @@ extension VMManager {
             // said of it.
             case "same":
                 break
+            case "blocked":
+                Announcer.shared.announce("\(machine)'s drive C couldn't take the new space: a partition after it is in the way. The README's section on making a disk larger says what to do next.", tone: .failure)
             default:
                 Announcer.shared.announce("\(machine)'s drive C couldn't take the new space. A partition may be in the way. The README's section on making a disk larger says what to do next.", tone: .failure)
             }
@@ -263,6 +282,14 @@ extension VMManager {
             // No file system any more (2026-11-09, third audit of the day
             // #22): "AVM tries again at its next Start" was a promise it
             // couldn't keep, since it never formats a drive that had data.
+            // Partitioned in the machine (fourth audit of 2026-11-09 #27).
+            case "partitioned":
+                // Once per machine (review): the script runs at every Start.
+                let saidKey = "AVMSecondDrivePartitionedSaid-\(configuration.id.uuidString)"
+                if needsFormat { storeDiskChange(configuration) { $0.secondDriveNeedsFormat = nil } }
+                guard !UserDefaults.standard.bool(forKey: saidKey) else { break }
+                UserDefaults.standard.set(true, forKey: saidKey)
+                Announcer.shared.announce("\(machine)'s second drive has partitions of its own, so AVM leaves it as it is and doesn't mount it. Next: mount it in \(machine) yourself.", tone: .info)
             case "lostfs":
                 Announcer.shared.announce("\(machine)'s second drive has no file system any more, so it can't be mounted. AVM doesn't format a drive that had one. Next: go back to a restore point from before, or format it in \(machine) yourself.", tone: .failure)
             default:

@@ -192,15 +192,22 @@ struct SetupView: View {
     /// day #9): Escape cancelled an hour-old download without a word, after
     /// "Keep Going in Background" had promised it would go on.
     private func cancelWizard() {
-        let downloading = [.watching, .downloading, .verifying].contains(isoDownloader.phase)
-            || [.finding, .downloading, .verifying].contains(linuxDownloader.phase)
+        let browser = [.watching, .downloading, .verifying].contains(isoDownloader.phase)
+        let byAVM = [.finding, .downloading, .verifying].contains(linuxDownloader.phase)
             || { if case .building = windowsAutoDownloader.phase { return true }
                  return [.finding, .downloading, .verifying].contains(windowsAutoDownloader.phase) }()
-        guard downloading else { dismiss(); return }
+        guard browser || byAVM else { dismiss(); return }
         let alert = NSAlert()
-        alert.messageText = "Stop the download?"
-        alert.informativeText = "An installer is still downloading. Closing the Setup Wizard stops it, and what has come so far isn't kept."
-        alert.addButton(withTitle: "Keep Downloading")
+        alert.messageText = byAVM ? "Stop the download?" : "Stop watching for the download?"
+        // By who downloads (2026-11-10, fourth audit of 2026-11-09 #24):
+        // Microsoft's page downloads in the browser, which carries on; AVM
+        // only stops watching for the file.
+        alert.informativeText = byAVM
+            ? "An installer is still downloading. Closing the Setup Wizard stops it, and what has come so far isn't kept."
+            : isoDownloader.phase == .verifying
+                ? "AVM is checking the Windows file your browser downloaded. Closing the Setup Wizard stops the check; the file stays in Downloads, and you can choose it next time."
+                : "Your browser is still downloading Windows. Closing the Setup Wizard stops AVM watching for it; the browser carries on. Next time, choose the file in Downloads once it's finished."
+        alert.addButton(withTitle: byAVM ? "Keep Downloading" : "Keep Watching")
         alert.addButton(withTitle: "Stop and Close")
         if alert.runModal() == .alertSecondButtonReturn { dismiss() }
     }

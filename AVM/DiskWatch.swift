@@ -143,14 +143,20 @@ nonisolated enum DiskWatch {
 
     // MARK: Growing and adding, inside the guest
 
-    /// Drive C takes all the space after it. It says "extended", or "same" when
-    /// there's nothing to take, then the size in gigabytes.
+    /// Drive C takes all the space after it. It says "extended", "same" when
+    /// there's nothing to take, or "blocked" when the disk has free space C
+    /// can't reach, then the size in gigabytes. "blocked" (2026-11-10, fourth
+    /// audit of 2026-11-09 #28): a recovery partition after C made SizeMax
+    /// C's own size, and since "same" is quiet the grown disk went unused
+    /// with nothing said.
     static let extendDriveCScript = """
     $ErrorActionPreference = 'Stop'
-    Update-Disk -Number (Get-Partition -DriveLetter C).DiskNumber
+    $n = (Get-Partition -DriveLetter C).DiskNumber
+    Update-Disk -Number $n
     $max = (Get-PartitionSupportedSize -DriveLetter C).SizeMax
     $now = (Get-Partition -DriveLetter C).Size
-    if ($max -gt $now + 16MB) { Resize-Partition -DriveLetter C -Size $max; $word = 'extended' } else { $word = 'same' }
+    $free = (Get-Disk -Number $n).Size - (Get-Partition -DiskNumber $n | Measure-Object -Property Size -Sum).Sum
+    if ($max -gt $now + 16MB) { Resize-Partition -DriveLetter C -Size $max; $word = 'extended' } elseif ($free -gt 1GB) { $word = 'blocked' } else { $word = 'same' }
     "$word|$([math]::Round((Get-Partition -DriveLetter C).Size / 1GB))"
     """
 
@@ -190,9 +196,17 @@ nonisolated enum DiskWatch {
         if ! blkid "$d" >/dev/null 2>&1; then
             \(format ? #"mkfs.ext4 -q -L AVMData "$d" || { echo failed; exit 0; }; word=ready"# : "echo lostfs; exit 0")
         fi
+        # A file system on the whole disk, or it's left alone (2026-11-10,
+        # fourth audit of 2026-11-09 #27): partitioned in the machine, the
+        # disk has no UUID of its own, and "UUID=" went into fstab.
+        # Only a file system that mounts (review): LVM, LUKS or swap on the
+        # whole disk has a UUID and a type too, and its line failed at every Start.
+        uuid=$(blkid -s UUID -o value "$d"); type=$(blkid -s TYPE -o value "$d")
+        case "$type" in ext2|ext3|ext4|xfs|btrfs|vfat|exfat|ntfs|ntfs3) ;; *) type=; esac
+        [ -n "$uuid" ] && [ -n "$type" ] || { sed -i '\\|^UUID= \(linuxSecondDrive) |d' /etc/fstab; echo partitioned; exit 0; }
         mkdir -p \(linuxSecondDrive)
-        uuid=$(blkid -s UUID -o value "$d")
-        grep -q ' \(linuxSecondDrive) ' /etc/fstab || echo "UUID=$uuid \(linuxSecondDrive) ext4 defaults,nofail 0 2" >> /etc/fstab
+        # AVM's line names this file system: one made again has a new UUID.
+        grep -q "^UUID=$uuid \(linuxSecondDrive) " /etc/fstab || { sed -i '\\| \(linuxSecondDrive) |d' /etc/fstab; echo "UUID=$uuid \(linuxSecondDrive) $type defaults,nofail 0 2" >> /etc/fstab; }
         grep -q ' \(linuxSecondDrive) ' /proc/mounts || mount \(linuxSecondDrive) || { echo failed; exit 0; }
         chmod 1777 \(linuxSecondDrive)
         command -v restorecon >/dev/null && restorecon -R \(linuxSecondDrive)
@@ -235,7 +249,7 @@ nonisolated enum DiskWatch {
         // lostfs too (2026-11-09, fourth audit of the day #5): the script
         // said it from 0.4.42, but unlisted it read as no answer, and the
         // promise to try again that #22 removed was still spoken.
-        let words = ["extended", "same", "ready", "already", "nodisk", "failed", "lostfs"]
+        let words = ["extended", "same", "blocked", "ready", "already", "nodisk", "failed", "lostfs", "partitioned"]
         guard let line = output.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) })
             .last(where: { line in words.contains { line == $0 || line.hasPrefix($0 + "|") } }) else { return nil }
         let parts = line.split(separator: "|", maxSplits: 1).map(String.init)

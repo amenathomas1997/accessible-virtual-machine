@@ -21,7 +21,8 @@ final class VMSession: ObservableObject {
     // MARK: - Dependencies
 
     let manager: VMManager
-    let configuration: VMConfiguration
+    /// As started; only its name follows a rename (noteRenamed).
+    private(set) var configuration: VMConfiguration
     /// false: the machine's window opens without taking the Mac's
     /// keyboard (2026-10-28): a machine started when AVM opens that has a
     /// keyboard for Windows of its own.
@@ -48,6 +49,13 @@ final class VMSession: ObservableObject {
     /// The machine in front (MachineSessions), several being able to run
     /// at once since 2026-10-27.
     static var current: VMSession? { MachineSessions.shared.current }
+
+    /// Renamed while running (2026-11-10, fourth audit of 2026-11-09 #18):
+    /// what AVM said kept the old name. The rest waits for the next start.
+    func noteRenamed(_ name: String) {
+        configuration.name = name
+        manager.noteRenamed(name)
+    }
 
     init(configuration: VMConfiguration) {
         self.configuration = configuration

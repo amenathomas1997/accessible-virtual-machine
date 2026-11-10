@@ -190,7 +190,15 @@ final class USBPlugPrompt {
 
     /// Windows has booted. Called when the SPICE agent connects, and by
     /// the fallback. Only the first call in a run does anything.
-    func windowsIsUp(because reason: String) {
+    /// `machine`: whose agent connected. Only the watched machine's counts
+    /// (2026-11-10, fourth audit of 2026-11-09 #23): with two starting
+    /// together, the other's agent let the held devices go while this one's
+    /// firmware still reset USB.
+    func windowsIsUp(because reason: String, machine: UUID? = nil) {
+        if let machine, let watched = USBHotPlugWatcher.shared.vmID, machine != watched {
+            log("another machine's agent connected; still holding for the watched one")
+            return
+        }
         guard windowsHasBooted == false else { return }
         windowsHasBooted = true
         bootFallback?.cancel()
