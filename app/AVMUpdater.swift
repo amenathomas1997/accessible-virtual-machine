@@ -260,6 +260,13 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.43", changes: [
+            "Privacy: passwords you copy from Passwords, 1Password or another password manager now stay on the Mac for Windows and Linux machines too, as they already did for macOS. Machines can no longer reach services that run only on your Mac, such as another machine's Remote Desktop set to This Mac only; the Internet works as before.",
+            "Keyboard: the keyboard now stays tied to the machine you entered. Sending a device to another machine from AVM's list can no longer leave the menu bar and Dock hidden, or send your typing to the wrong machine.",
+            "Safer starts: if a saved session can't be carried on and another question closes AVM's, the session is now kept, not discarded. A machine whose firmware settings file was damaged by a full disk starts again, and AVM says so if it can't. AVM notices within ten seconds when a full disk pauses a machine.",
+            "Windows setup: AVM says JAWS is talking only when JAWS really installed, and if a newer NVDA or JAWS won't download, the copy already on your Mac is installed instead of none. Saving and applying an NVDA setup is safer in machines with more than one account.",
+            "Smaller fixes from a code review: a Linux second drive that lost its file system is described truthfully, and a machine's console log can no longer fill your Mac's disk.",
+        ]),
         ReleaseNote(version: "0.4.42", changes: [
             "If a saved session can't be carried on, AVM now asks whether to keep it or start fresh, and the session is kept safely even if you quit or the Mac restarts while it asks. A Save that's refused for lack of room no longer moves your devices. Settings no longer change the memory or cores of a machine that started while they were open.",
             "Screen readers in Linux: when Orca stops, AVM starts it again the right way on GNOME, and now on KDE, XFCE and MATE as well. Applying a saved Orca or NVDA setup restarts the reader on every desktop.",
