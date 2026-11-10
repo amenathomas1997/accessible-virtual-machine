@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.43</title>
+            <sparkle:version>63</sparkle:version>
+            <sparkle:shortVersionString>0.4.43</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>Privacy: passwords you copy from Passwords, 1Password or another password manager now stay on the Mac for Windows and Linux machines too, as they already did for macOS. Machines can no longer reach services that run only on your Mac, such as another machine&#x27;s Remote Desktop set to This Mac only; the Internet works as before.</li><li>Keyboard: the keyboard now stays tied to the machine you entered. Sending a device to another machine from AVM&#x27;s list can no longer leave the menu bar and Dock hidden, or send your typing to the wrong machine.</li><li>Safer starts: if a saved session can&#x27;t be carried on and another question closes AVM&#x27;s, the session is now kept, not discarded. A machine whose firmware settings file was damaged by a full disk starts again, and AVM says so if it can&#x27;t. AVM notices within ten seconds when a full disk pauses a machine.</li><li>Windows setup: AVM says JAWS is talking only when JAWS really installed, and if a newer NVDA or JAWS won&#x27;t download, the copy already on your Mac is installed instead of none. Saving and applying an NVDA setup is safer in machines with more than one account.</li><li>Smaller fixes from a code review: a Linux second drive that lost its file system is described truthfully, and a machine&#x27;s console log can no longer fill your Mac&#x27;s disk.</li></ul>]]></description>
+            <pubDate>Tue, 10 Nov 2026 15:15:26 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.43/AVM-0.4.43.zip" sparkle:edSignature="g2Vwatxg4VqucdbGBupgN/9vGfyOmlG5xzbvlZEd1in6peFFISGubDkq4MLrS5pOce4w/MfT0Hb5Qkz9Q0gIBg==" length="106614477" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.42</title>
             <sparkle:version>62</sparkle:version>
             <sparkle:shortVersionString>0.4.42</sparkle:shortVersionString>
