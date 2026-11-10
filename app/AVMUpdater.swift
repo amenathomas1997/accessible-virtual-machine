@@ -260,6 +260,13 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.44", changes: [
+            "Saving: if a machine is turned off just as its save ends, AVM now checks whether the save landed and keeps it when it did, instead of guessing. Restore points are taken only once a machine has really started, and a session that loads late is carried on rather than thrown away.",
+            "Renaming a machine now updates its window title and what VoiceOver says when you enter it, straight away.",
+            "Drives: a Linux second drive that was reformatted or partitioned is found again by its new identity, and AVM tells you once if it can't use it. If drive C can't be extended because something blocks it, AVM says so.",
+            "Screen readers: saving an NVDA or Orca setup no longer copies add-ons, scripts or update files, so setups are smaller and safer to apply. Saving a large setup from Windows no longer stops with no answer. Orca is only restarted when it is turned on in GNOME's settings, and Cinnamon is now recognised.",
+            "Smaller fixes from a code review: AVM recognises any Bluetooth keyboard when it offers to share one, download wording says whether your browser or AVM is downloading, NVDA on Arm is found, and spoken errors are clearer.",
+        ]),
         ReleaseNote(version: "0.4.43", changes: [
             "Privacy: passwords you copy from Passwords, 1Password or another password manager now stay on the Mac for Windows and Linux machines too, as they already did for macOS. Machines can no longer reach services that run only on your Mac, such as another machine's Remote Desktop set to This Mac only; the Internet works as before.",
             "Keyboard: the keyboard now stays tied to the machine you entered. Sending a device to another machine from AVM's list can no longer leave the menu bar and Dock hidden, or send your typing to the wrong machine.",
