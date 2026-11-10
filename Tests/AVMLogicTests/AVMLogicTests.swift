@@ -1596,7 +1596,29 @@ final class DiskWatchTests: XCTestCase {
         XCTAssertEqual(DiskWatch.answer("noise\r\nextended|414\r\n")?.word, "extended")
         XCTAssertEqual(DiskWatch.answer("ready|E\n")?.detail, "E")
         XCTAssertEqual(DiskWatch.answer("already\n")?.word, "already")
+        // Every word the Linux script can say is recognised (fourth audit of 2026-11-09 #5).
+        XCTAssertEqual(DiskWatch.answer("lostfs|/mnt/avm-data\n")?.word, "lostfs")
+        for word in ["extended", "same", "ready", "already", "nodisk", "failed", "lostfs"] {
+            XCTAssertEqual(DiskWatch.answer("\(word)|x\n")?.word, word)
+        }
         XCTAssertNil(DiskWatch.answer("readying something\n"))
+    }
+
+    /// The serial log is cut to its end once it passes the limit (fourth audit of 2026-11-09 #8).
+    func testSerialLogTrimKeepsTheEnd() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("avm-serial-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(repeating: 0x61, count: 1000).write(to: url)
+        DiskWatch.trimSerialLog(url, limit: 2000, keep: 100)
+        XCTAssertEqual(try Data(contentsOf: url).count, 1000)
+        try (Data(repeating: 0x61, count: 3000) + Data("END".utf8)).write(to: url)
+        DiskWatch.trimSerialLog(url, limit: 2000, keep: 100)
+        let text = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+        XCTAssertTrue(text.hasSuffix("END"))
+        XCTAssertTrue(text.contains("[AVM: the log passed"))
+        XCTAssertLessThan(text.utf8.count, 200)
+        XCTAssertEqual(String(decoding: try DiskWatch.tail(of: url, bytes: 3), as: UTF8.self), "END")
+        XCTAssertEqual(try DiskWatch.tail(of: url, bytes: 10_000).count, text.utf8.count)
     }
 
     func testTheSecondDriveTravelsButTheFiguresDont() {

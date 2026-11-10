@@ -588,7 +588,7 @@ struct VMView: View {
                 avmPublicLog("VMView onAppear — a rebuilt screen; the keyboard stays where it is.")
             } else if session.entersOnFirstShow {
                 avmPublicLog("VMView onAppear — auto-locking focus.")
-                focusLock.lock()
+                focusLock.lock(machine: session.configuration.id)
             } else {
                 avmPublicLog("VMView onAppear — not taking the keyboard: the machine has its own.")
             }
@@ -600,7 +600,7 @@ struct VMView: View {
             // audit): another machine's screen closing mustn't take it.
             // Not the old screen of a rebuild (2026-10-28, fifth audit).
             if session.rebuildingScreen { return }
-            if focusLock.isLocked, MachineSessions.shared.currentID == nil || MachineSessions.shared.currentID == session.configuration.id {
+            if focusLock.isLocked, MachineSessions.shared.currentID == nil || focusLock.holdsKeyboard(for: session.configuration.id) {
                 NSLog("AVM: VMView onDisappear — unlocking focus (view went away while locked).")
                 focusLock.unlock()
             }
@@ -973,6 +973,19 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
         return enabled
     }
 
+    /// Copies password managers mark as secret or passing (the nspasteboard
+    /// .org conventions Passwords and 1Password follow) stay on the Mac.
+    /// For every guest (2026-11-09, fourth audit of the day #1): only the
+    /// macOS guest's clipboard left them out, and Windows and Linux were
+    /// offered a password copied from Passwords at the next entry.
+    nonisolated static func isPrivate(_ board: NSPasteboard) -> Bool {
+        let marks: Set<String> = ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"]
+        return (board.types ?? []).contains { marks.contains($0.rawValue) }
+    }
+
+    /// Sharing is on and what's on the Mac's clipboard may go to a guest.
+    private var mayOffer: Bool { isEnabled && !Self.isPrivate(NSPasteboard.general) }
+
     /// Reads the running VM's saved setting. Main actor: called on connect,
     /// when Settings are saved, and before each change check.
     @MainActor
@@ -1000,7 +1013,7 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
         let changed = count != seenChangeCount
         seenChangeCount = count
         lock.unlock()
-        if changed {
+        if changed, !Self.isPrivate(NSPasteboard.general) {
             AVMLog.write("AVM: Clipboard — the Mac's clipboard changed; offering it to the guest.")
             NotificationCenter.default.post(name: .csPasteboardChanged, object: nil)
         }
@@ -1025,12 +1038,12 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
     }
 
     func canReadItem(for type: CSPasteboardType) -> Bool {
-        guard isEnabled, let macType = Self.macType(type) else { return false }
+        guard mayOffer, let macType = Self.macType(type) else { return false }
         return NSPasteboard.general.availableType(from: [macType]) != nil
     }
 
     func data(for type: CSPasteboardType) -> Data? {
-        guard isEnabled, let macType = Self.macType(type) else { return nil }
+        guard mayOffer, let macType = Self.macType(type) else { return nil }
         return NSPasteboard.general.data(forType: macType)
     }
 
@@ -1043,7 +1056,7 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
     }
 
     func string() -> String? {
-        guard isEnabled else { return nil }
+        guard mayOffer else { return nil }
         return NSPasteboard.general.string(forType: .string)
     }
 
@@ -1062,7 +1075,9 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
         // clipboard after 30 seconds otherwise erased whatever the user had
         // copied on the Mac since.
         lock.lock(); let ours = NSPasteboard.general.changeCount == seenChangeCount; lock.unlock()
-        guard ours else { return }
+        // Nor a private copy (the review of 2026-11-09's fourth audit #1):
+        // marked seen though never offered, it read as the guest's own.
+        guard ours, !Self.isPrivate(NSPasteboard.general) else { return }
         NSPasteboard.general.clearContents()
         noteOwnWrite()
     }
@@ -1075,7 +1090,7 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
     /// a guest can take it.
     @MainActor func offerToNewGuest() {
         refreshEnabled()
-        guard isEnabled, NSPasteboard.general.string(forType: .string) != nil else { return }
+        guard mayOffer, NSPasteboard.general.string(forType: .string) != nil else { return }
         lock.lock(); seenChangeCount = NSPasteboard.general.changeCount; lock.unlock()
         NotificationCenter.default.post(name: .csPasteboardChanged, object: nil)
     }

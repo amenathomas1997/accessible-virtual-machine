@@ -234,7 +234,8 @@
         <RunSynchronousCommand wcm:action="add">
           <Order>11</Order>
           <Description>AVM: report: JAWS</Description>
-          <Path>cmd /c if exist "%ProgramFiles%\Freedom Scientific\JAWS" for %d in (C D E F G H I J K L) do @if exist %d:\AVMDONE.TAG echo jaws-installed&gt;&gt;%d:\AVMSTATUS.TXT</Path>
+          <!-- jfw.exe, not the folder (2026-11-09, fourth audit of the day #7): an install killed at 30 minutes leaves the folder, and the user was told JAWS was talking. -->
+          <Path>cmd /c for /d %v in ("%ProgramFiles%\Freedom Scientific\JAWS\*") do @if exist "%v\jfw.exe" for %d in (C D E F G H I J K L) do @if exist %d:\AVMDONE.TAG echo jaws-installed&gt;&gt;%d:\AVMSTATUS.TXT</Path>
         </RunSynchronousCommand>
         <RunSynchronousCommand wcm:action="add">
           <Order>12</Order>

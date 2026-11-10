@@ -248,6 +248,16 @@ nonisolated enum ScreenReaderInstallers {
             // The last try's piece goes too (2026-10-29, seventh audit): up to
             // 1.5 GB stayed in the temporary folder.
             if let resumeData { discardResumeFile(resumeData) }
+            // A good copy already here instead (2026-11-09, fourth audit of the
+            // day #11): a newer release that wouldn't download meant Narrator
+            // alone, though the last one, checked, was in the cache.
+            if lastError != nil, !Task.isCancelled, let kept = await newestGoodCopy(of: reader, in: cache), kept != file {
+                AVMLog.write("AVM: ScreenReaders — \(reader.displayName) \(installer.version) didn't download; using the copy already downloaded (\(kept.lastPathComponent)).")
+                let version = versionInName(kept.lastPathComponent, of: reader).map { " \($0)" } ?? ""
+                await say("\(reader.displayName) \(installer.version) couldn't be downloaded, so the \(reader.displayName)\(version) already on this Mac is installed instead. \(reader.displayName) can update itself in Windows later.", false)
+                got[reader] = kept
+                continue
+            }
             if let lastError, !Task.isCancelled {
                 await say("\(reader.displayName) couldn't be downloaded after \(downloadAttempts) tries, so it won't be installed this time. Reason: \(lastError.localizedDescription) Windows still has Narrator: in Windows, press Control Command Return to turn it on, then install \(reader.displayName) from its maker's website there.", true)
             }

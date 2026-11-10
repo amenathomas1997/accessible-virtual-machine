@@ -573,7 +573,7 @@ private struct DashboardContent: View {
             status = macStatus(config)
         } else if let session = machines.session(for: config.id) {
             status = QEMUMachineRow.status(of: session, name: config.name,
-                                           keyboardIn: focusLock.isLocked && machines.currentID == config.id)
+                                           keyboardIn: focusLock.holdsKeyboard(for: config.id))
         } else {
             status = stoppedStatus(config)
         }
@@ -1047,7 +1047,7 @@ private struct QEMUMachineRow: View {
     private var name: String { savedName }
 
     private var status: String {
-        Self.status(of: session, name: name, keyboardIn: focusLock.isLocked && machines.currentID == session.configuration.id)
+        Self.status(of: session, name: name, keyboardIn: focusLock.holdsKeyboard(for: session.configuration.id))
     }
 
     /// Also the table's Status column.
@@ -1603,8 +1603,10 @@ enum DashboardStatus {
             }
         }
         if running.contains(where: { $0.vmState == .running || $0.vmState == .paused }) {
-            if focusLock.isLocked, let current = machines.current {
-                parts.append("The keyboard is in \(current.configuration.name).")
+            // The machine holding it, not the current one (fourth audit of
+            // 2026-11-09 #3).
+            if focusLock.isLocked, let holder = running.first(where: { focusLock.holdsKeyboard(for: $0.configuration.id) }) ?? machines.current {
+                parts.append("The keyboard is in \(holder.configuration.name).")
             } else {
                 parts.append("The keyboard is on the Mac.")
             }

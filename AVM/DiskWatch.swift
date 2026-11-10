@@ -200,9 +200,42 @@ nonisolated enum DiskWatch {
         """
     }
 
+    /// The most a machine's firmware-serial.log may hold while it runs
+    /// (2026-11-09, fourth audit of the day #8): a guest writing to its
+    /// serial port without end filled the Mac's disk.
+    static let serialLogLimit = 32 << 20
+    /// What is kept of it when it's trimmed: its end.
+    static let serialLogKept = 4 << 20
+
+    /// Cuts the serial log to its last serialLogKept bytes once it passes
+    /// serialLogLimit. QEMU appends (append=on), so its next write lands
+    /// at the new end.
+    static func trimSerialLog(_ url: URL, limit: Int = serialLogLimit, keep: Int = serialLogKept) {
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber,
+              size.intValue > limit,
+              let handle = try? FileHandle(forUpdating: url) else { return }
+        defer { try? handle.close() }
+        let kept = (try? handle.seek(toOffset: UInt64(max(0, size.intValue - keep)))).flatMap { _ in try? handle.read(upToCount: keep) } ?? Data()
+        let note = Data("\n[AVM: the log passed \(limit >> 20) MB and was cut to its last \(keep >> 20) MB]\n".utf8)
+        try? handle.truncate(atOffset: 0)
+        try? handle.write(contentsOf: note + kept)
+    }
+
+    /// The last `bytes` of a file, or all of it when it's smaller.
+    static func tail(of url: URL, bytes: Int) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let end = try handle.seekToEnd()
+        try handle.seek(toOffset: end > UInt64(bytes) ? end - UInt64(bytes) : 0)
+        return try handle.read(upToCount: bytes) ?? Data()
+    }
+
     /// A script's last line that says something, split at the bar.
     static func answer(_ output: String) -> (word: String, detail: String)? {
-        let words = ["extended", "same", "ready", "already", "nodisk", "failed"]
+        // lostfs too (2026-11-09, fourth audit of the day #5): the script
+        // said it from 0.4.42, but unlisted it read as no answer, and the
+        // promise to try again that #22 removed was still spoken.
+        let words = ["extended", "same", "ready", "already", "nodisk", "failed", "lostfs"]
         guard let line = output.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) })
             .last(where: { line in words.contains { line == $0 || line.hasPrefix($0 + "|") } }) else { return nil }
         let parts = line.split(separator: "|", maxSplits: 1).map(String.init)

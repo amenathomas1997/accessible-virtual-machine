@@ -315,7 +315,10 @@ enum DiagnosticLogExporter {
             if source.destinationName.hasPrefix("firmware-serial") {
                 // Written by the guest, not by AVM, so never passed through
                 // the sanitizer (2026-10-25, privacy audit). It is here.
-                let text = String(decoding: try Data(contentsOf: source.url), as: UTF8.self)
+                // Its last 8 MB only (2026-11-09, fourth audit of the day #8):
+                // a guest can write as much as it likes, and the whole file
+                // was read and scanned in memory.
+                let text = String(decoding: try DiskWatch.tail(of: source.url, bytes: 8 << 20), as: UTF8.self)
                 try Data(AVMLog.sanitize(text).utf8).write(to: target)
             } else {
                 try fm.copyItem(at: source.url, to: target)

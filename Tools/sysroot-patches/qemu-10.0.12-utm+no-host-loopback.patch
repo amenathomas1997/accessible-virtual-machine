@@ -1,0 +1,22 @@
+AVM: guests don't reach the Mac's own loopback
+
+QEMU's user networking hands a guest's connections to 10.0.2.2 (and to its
+IPv6 prefix) to the Mac's 127.0.0.1. Every guest could therefore reach
+whatever listens only on the Mac's loopback: other machines' Remote Desktop
+forwards, which AVM calls "This Mac only", and any local server the user
+runs (2026-11-09, AVM's fourth audit of the day #2). libslirp has a switch
+for this, disable_host_loopback, which -netdev user doesn't expose; this
+turns it on. The Internet, the guest's DNS at 10.0.2.3 and the Mac's
+forwards into the guest (hostfwd) work as before.
+
+--- a/net/slirp.c
++++ b/net/slirp.c
+@@ -657,6 +657,8 @@
+     cfg.vnameserver6 = ip6_dns;
+     cfg.vdnssearch = dnssearch;
+     cfg.vdomainname = vdomainname;
++    /* AVM: a guest reaches the Internet, not the Mac's own 127.0.0.1. */
++    cfg.disable_host_loopback = true;
+     s->slirp = slirp_new(&cfg, &slirp_cb, s);
+     QTAILQ_INSERT_TAIL(&slirp_stacks, s, entry);
+ 

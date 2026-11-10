@@ -60,6 +60,31 @@ extension VMManager {
         #"$u = (Get-CimInstance Win32_ComputerSystem).UserName; if ($u) { $u = $u.Split('\')[-1] }; if (-not $u) { 'AVM-NOUSER'; return }"#
     }
 
+    /// Save and Apply run as SYSTEM in the signed-in user's own AppData,
+    /// which that user can change (2026-11-09, fourth audit of the day #10):
+    /// a junction there made SYSTEM copy, delete or write somewhere else.
+    /// So a link anywhere on the way to the settings stops the script; the
+    /// copy skips links inside (robocopy /XJ); the setup is unpacked in
+    /// AVM's own folder, which users can't write, and moved in whole; and
+    /// old copies go with rmdir /s, which removes a link without following
+    /// it; the user's rights are given before the move. A user who swaps a folder for a link in the moment between the
+    /// check and the move is not ruled out, in a guest with other accounts.
+    private static let windowsLinkChecks = #"""
+        function AvmNoLink($path) {
+          $p = $path
+          while ($p -and $p.Length -gt 3) {
+            $i = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
+            if ($i -and ($i.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "$p is a link" }
+            $p = Split-Path $p
+          }
+        }
+        function AvmRemoveTree($path) {
+          AvmNoLink $path
+          if (Test-Path -LiteralPath $path) { cmd /c rmdir /s /q "$path" | Out-Null }
+          if (Test-Path -LiteralPath $path) { throw "$path couldn't be removed" }
+        }
+        """#
+
     /// Sets U and D to the desktop's user and their .local/share, in a
     /// Linux guest (2026-11-09, fifth audit #35): the session at the screen,
     /// not whoever has UID 1000. UID 1000 only when no one is at the screen,
@@ -94,14 +119,16 @@ extension VMManager {
             let out = windows
                 ? try await agentRun("powershell.exe", ["-NoProfile", "-Command", """
                     $ErrorActionPreference = 'Stop'
+                    \(Self.windowsLinkChecks)
                     try {
                       \(signedInUser)
                       $d = "C:\\Users\\$u\\AppData\\Roaming\\nvda"
                       Remove-Item -Force '\(inGuest)' -ErrorAction SilentlyContinue
+                      AvmNoLink $d
                       if (Test-Path "$d\\nvda.ini") {
                         $t = "C:\\ProgramData\\AVM\\sr-copy-" + [guid]::NewGuid().ToString('N')
                         try {
-                          robocopy $d $t /E /XF *.log /XD updates | Out-Null
+                          robocopy $d $t /E /XJ /XF *.log /XD updates | Out-Null
                           if ($LASTEXITCODE -ge 8) { throw "robocopy stopped with $LASTEXITCODE" }
                           Compress-Archive -Force -Path "$t\\*" -DestinationPath '\(inGuest)'
                           'AVM-OK'
@@ -179,10 +206,12 @@ extension VMManager {
             let out = windows
                 ? try await agentRun("powershell.exe", ["-NoProfile", "-Command", """
                     $ErrorActionPreference = 'Stop'
+                    \(Self.windowsLinkChecks)
                     try {
                       \(signedInUser)
-                      $d = "C:\\Users\\$u\\AppData\\Roaming\\nvda"; $n = "$d-avm-new"
-                      if (Test-Path $n) { Remove-Item -Recurse -Force $n }
+                      $d = "C:\\Users\\$u\\AppData\\Roaming\\nvda"; $n = "C:\\ProgramData\\AVM\\sr-new-" + [guid]::NewGuid().ToString('N')
+                      foreach ($p in $d, "$d-before-avm", "$d-before-avm-last", "$d-avm-new") { AvmNoLink $p }
+                      AvmRemoveTree "$d-avm-new"
                       Add-Type -AssemblyName System.IO.Compression.FileSystem
                       $z = [IO.Compression.ZipFile]::OpenRead('\(inGuest)')
                       try {
@@ -195,17 +224,27 @@ extension VMManager {
                         }
                       } finally { $z.Dispose() }
                       if (-not (Test-Path "$n\\nvda.ini")) { throw 'the setup has no nvda.ini' }
+                      # The user's own rights, given here where users can't
+                      # write, not after the move (the review of 2026-11-09's
+                      # fourth audit #10): an icacls /t on the user's folder
+                      # could be pointed through a link swapped in meanwhile.
+                      $sid = (New-Object Security.Principal.NTAccount($u)).Translate([Security.Principal.SecurityIdentifier]).Value
+                      icacls $n /grant "*$($sid):(OI)(CI)F" /t /c /q | Out-Null
+                      if ($LASTEXITCODE -ne 0) { throw "icacls stopped with $LASTEXITCODE" }
                       if (Get-Process nvda -ErrorAction SilentlyContinue) { Stop-Process -Name nvda -Force -ErrorAction SilentlyContinue; 'AVM-STOPPED'; Start-Sleep 2 }
                       $moved = $null
                       if (Test-Path $d) {
                         $moved = "$d-before-avm"
                         if (Test-Path $moved) {
                           $moved = "$d-before-avm-last"
-                          if (Test-Path $moved) { Remove-Item -Recurse -Force $moved }
+                          AvmRemoveTree $moved
                         }
-                        Move-Item $d $moved
+                        AvmNoLink $d
+                        [IO.Directory]::Move($d, $moved)
                       }
-                      try { Move-Item $n $d } catch { if ($moved) { Move-Item $moved $d }; throw }
+                      # Directory.Move, not Move-Item: it refuses a $d that
+                      # appeared meanwhile, where Move-Item moves into it.
+                      try { [IO.Directory]::Move($n, $d) } catch { if ($moved) { [IO.Directory]::Move($moved, $d) }; throw }
                       'AVM-OK'
                     } finally {
                       Remove-Item -Force '\(inGuest)' -ErrorAction SilentlyContinue

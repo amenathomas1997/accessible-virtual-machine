@@ -126,7 +126,12 @@ final class MachineSessions: ObservableObject {
         currentID = id
         VMManager.shared = session.manager
         VMActivity.shared.follow(session.manager.state)
-        FocusLockManager.shared?.guestName = session.configuration.name
+        // Not while the keyboard is in another machine (fourth audit of
+        // 2026-11-09 #3): a row's device button makes this one current, and
+        // the keyboard's announcements would have named it.
+        if let lock = FocusLockManager.shared, !lock.isLocked || lock.holdsKeyboard(for: id) {
+            lock.guestName = session.configuration.name
+        }
         // A USB device plugged in is offered to the machine being watched
         // for; it moves to this one only when that machine has stopped, so
         // switching windows never drops a pending question (2026-10-27,
@@ -165,7 +170,10 @@ final class MachineSessions: ObservableObject {
         // Current first (2026-10-28, second review): a window made now for a
         // machine running without one otherwise saw the keyboard in another
         // machine and said "Enter it from AVM's list" while being entered.
-        if let lock = FocusLockManager.shared, lock.isLocked, currentID != id {
+        // The machine holding the keyboard, not the current one (fourth audit
+        // of 2026-11-09 #3): with B made current by a row button and the
+        // keyboard in A, entering B kept the keyboard in A.
+        if let lock = FocusLockManager.shared, lock.isLocked, !lock.holdsKeyboard(for: id) {
             lock.unlock(bringListForward: false)
         }
         makeCurrent(id)
@@ -191,7 +199,7 @@ final class MachineSessions: ObservableObject {
         // item, activate() hasn't landed yet, and lock() refused with
         // "switch to AVM" though AVM was coming forward.
         if NSApp.isActive {
-            FocusLockManager.shared?.lock()
+            FocusLockManager.shared?.lock(machine: id)
         } else {
             var token: NSObjectProtocol?
             var done = false
@@ -200,7 +208,7 @@ final class MachineSessions: ObservableObject {
                     guard !done else { return }
                     done = true
                     if let token { NotificationCenter.default.removeObserver(token) }
-                    FocusLockManager.shared?.lock()
+                    FocusLockManager.shared?.lock(machine: id)
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
@@ -208,7 +216,7 @@ final class MachineSessions: ObservableObject {
                     guard !done else { return }
                     done = true
                     if let token { NotificationCenter.default.removeObserver(token) }
-                    FocusLockManager.shared?.lock()
+                    FocusLockManager.shared?.lock(machine: id)
                 }
             }
         }
@@ -248,7 +256,9 @@ final class MachineSessions: ObservableObject {
     /// becomes current.
     func end(_ id: UUID) {
         guard sessions[id] != nil else { return }
-        if currentID == id, let lock = FocusLockManager.shared, lock.isLocked { lock.unlock() }
+        // The machine the keyboard is in, not the current one (fourth audit
+        // of 2026-11-09 #3).
+        if let lock = FocusLockManager.shared, lock.holdsKeyboard(for: id) { lock.unlock() }
         // Gone from the list before its window closes (2026-10-28, code
         // review): closing it makes another machine's window key, whose
         // makeCurrent moves the USB watcher only once this session is gone.
@@ -380,7 +390,7 @@ final class MachineWindow: NSObject, NSWindowDelegate {
         // On its own display, or the second one, when chosen
         // (MachineDisplays).
         MachineDisplays.placeOpening(window, for: latestConfiguration)
-        let elsewhere = focusLock.isLocked && MachineSessions.shared.currentID != session.configuration.id
+        let elsewhere = focusLock.isLocked && !focusLock.holdsKeyboard(for: session.configuration.id)
         if entering {
             show()
         } else if elsewhere {
@@ -446,7 +456,7 @@ final class MachineWindow: NSObject, NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
         // The keyboard was in another machine (2026-10-28, code review): it
         // comes back to the Mac, so the lock never outlives its window.
-        if let lock = FocusLockManager.shared, lock.isLocked, MachineSessions.shared.currentID != session.configuration.id {
+        if let lock = FocusLockManager.shared, lock.isLocked, !lock.holdsKeyboard(for: session.configuration.id) {
             // Without bringing the list forward (2026-10-28, second review):
             // this window was just chosen.
             lock.unlock(bringListForward: false)

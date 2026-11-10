@@ -122,6 +122,19 @@ class FocusLockManager: ObservableObject {
     // MARK: - Published State
     @Published var isLocked: Bool = false
 
+    /// The machine the keyboard was put in (2026-11-09, fourth audit of the
+    /// day #3). The lock followed "the current machine", which a row's
+    /// device buttons change: with the keyboard in A and B made current,
+    /// A's end left the lock on with no window behind it (menu bar and
+    /// Dock hidden, Caps Lock still F19), and keys later went into B
+    /// unannounced.
+    private(set) var lockedMachineID: UUID?
+
+    /// True while the keyboard is in this machine.
+    func holdsKeyboard(for id: UUID) -> Bool {
+        isLocked && (lockedMachineID ?? MachineSessions.shared.currentID) == id
+    }
+
     /// The guest's name for "Enter Windows" / "Enter Ubuntu" and the
     /// keyboard announcements. A published mirror of
     /// VMManager.currentGuestName (the one source), so the menu redraws:
@@ -328,7 +341,8 @@ class FocusLockManager: ObservableObject {
     }
 
     // MARK: - Lock (Enter Windows Full Screen)
-    func lock() {
+    /// `machine`: the machine being entered; the current one if nil.
+    func lock(machine: UUID? = nil) {
         AVMLog.write("AVM: FocusLock.lock() called — isLocked was \(isLocked)")
         guard !isLocked else {
             AVMLog.write("AVM: FocusLock.lock() — already locked, no-op.")
@@ -354,6 +368,7 @@ class FocusLockManager: ObservableObject {
             .disableSessionTermination
         ]
         registerHotKey()
+        lockedMachineID = machine ?? MachineSessions.shared.currentID
         isLocked = true
         Announcer.keyboardIn = VMManager.currentGuestName
         startEnforcement()
@@ -395,6 +410,11 @@ class FocusLockManager: ObservableObject {
         NSApp.presentationOptions = []
         unregisterHotKey()
         isLocked = false
+        lockedMachineID = nil
+        // The current machine's name again (fourth audit of 2026-11-09, its
+        // review): kept as the locked machine's while another was made
+        // current, the menu named one machine and acted on the other.
+        guestName = VMManager.currentGuestName
         Announcer.keyboardIn = nil
         // Caps Lock back to normal Mac behavior BEFORE the transition
         // announcement, for the same queue-flush reason as lock().

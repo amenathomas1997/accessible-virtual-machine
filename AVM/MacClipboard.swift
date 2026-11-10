@@ -93,19 +93,12 @@ final class MacClipboard {
         return String(data: data, encoding: .utf8)
     }
 
-    /// Copies password managers mark as secret or passing (the nspasteboard
-    /// .org conventions Passwords and 1Password follow) stay on the Mac.
-    private static let privateTypes: Set<NSPasteboard.PasteboardType> = [
-        NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"),
-        NSPasteboard.PasteboardType("org.nspasteboard.TransientType"),
-    ]
-
     private func sync() {
         let board = NSPasteboard.general
         // The Mac's clipboard changed: to macOS.
         if board.changeCount != lastChangeCount {
             lastChangeCount = board.changeCount
-            let isPrivate = !(board.types.map(Set.init) ?? []).isDisjoint(with: Self.privateTypes)
+            let isPrivate = AVMPasteboard.isPrivate(board)
             if !isPrivate, let text = board.string(forType: .string) {
                 writeFresh(text, to: toMacOS)
             }

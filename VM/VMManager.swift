@@ -769,6 +769,59 @@ final class VMManager: ObservableObject {
     /// expects; padding it, as the plain template is padded, would keep
     /// neither the keys nor the format. Missing pieces throw, so a VM that
     /// asked for Secure Boot never boots without it unannounced.
+    /// The firmware's variable store (2026-11-09, fourth audit of the day
+    /// #9): QEMU takes only exactly 64 MiB, and the plain store was written
+    /// unchecked, so a disk-full write left a short file every later Start
+    /// kept and QEMU refused. A store of any other size is set aside, not
+    /// deleted, and made again; a store that can't be made throws.
+    nonisolated static let wrongSizeNVRAMName = "nvram-wrong-size.fd"
+
+    private func prepareNVRAM(configuration: VMConfiguration, runtimeDir: URL) throws {
+        let fm = FileManager.default
+        let nvram = runtimeDir.appendingPathComponent("nvram.fd")
+        let pflashSize = 67_108_864 // 64 MiB, the aarch64 virt pflash size
+        func size() -> Int? { ((try? fm.attributesOfItem(atPath: nvram.path))?[.size] as? NSNumber)?.intValue }
+        if let found = size(), found != pflashSize {
+            // One kept, the latest, for a report; never exported (MachineArchive).
+            let aside = runtimeDir.appendingPathComponent(Self.wrongSizeNVRAMName)
+            try? fm.removeItem(at: aside)
+            try fm.moveItem(at: nvram, to: aside)
+            avmLog("prepareNVRAM: nvram.fd was \(found) bytes, not \(pflashSize); set aside as \(aside.lastPathComponent) and made again")
+        }
+        if configuration.usesSecureBoot {
+            try prepareSecureBootNVRAM(configuration: configuration, runtimeDir: runtimeDir)
+            return
+        }
+        guard size() == nil else { return }
+        // Built from the PROPER vars template (edk2-arm-vars.fd, note "arm",
+        // shared across arm/aarch64 per the 60-edk2-aarch64.json firmware
+        // descriptor), padded to the pflash size. The code .fd is the
+        // firmware executable, NOT a variable store.
+        var data: Data
+        if let varsTemplate = bundledBinaryURL(named: "edk2-arm-vars.fd"),
+           let templateData = try? Data(contentsOf: URL(fileURLWithPath: varsTemplate.path)) {
+            data = templateData
+        } else {
+            data = Data()
+            avmLog("prepareNVRAM: WARNING — edk2-arm-vars.fd not bundled; writing a blank 64MB NVRAM")
+            appendConsole("AVM: WARNING — edk2-arm-vars.fd missing; using blank NVRAM.\n")
+        }
+        if data.count < pflashSize { data.append(Data(count: pflashSize - data.count)) }
+        do {
+            try data.write(to: nvram, options: .atomic)
+        } catch {
+            try? fm.removeItem(at: nvram)
+            avmLog("prepareNVRAM: FAILED to write NVRAM: \(error)")
+            throw AVMError.diskCreationFailed("The firmware settings file couldn't be written: \(error.localizedDescription)")
+        }
+        guard size() == pflashSize else {
+            let got = size() ?? 0
+            try? fm.removeItem(at: nvram)
+            throw AVMError.diskCreationFailed("The firmware settings file came out \(got) bytes, not 64 MB.")
+        }
+        avmLog("prepareNVRAM: created padded NVRAM (\(data.count) bytes) from edk2-arm-vars.fd")
+    }
+
     private func prepareSecureBootNVRAM(configuration: VMConfiguration, runtimeDir: URL) throws {
         guard configuration.usesSecureBoot else { return }
         let nvram = runtimeDir.appendingPathComponent("nvram.fd")
@@ -1589,12 +1642,16 @@ final class VMManager: ObservableObject {
             appendConsole("AVM: swtpm not found in bundle — TPM emulation disabled.\n")
         }
 
-        // Secure Boot's variable store, before the arguments that use it.
-        // Throws, spoken, rather than quietly booting without Secure Boot.
+        // The firmware's variable store, before the arguments that use it.
+        // Throws, spoken, rather than quietly booting without Secure Boot,
+        // or (2026-11-09, fourth audit of the day #9) on a store QEMU would
+        // refuse, heard only as "stopped unexpectedly" at every Start.
         do {
-            try prepareSecureBootNVRAM(configuration: configuration, runtimeDir: runtimeDir)
+            try prepareNVRAM(configuration: configuration, runtimeDir: runtimeDir)
         } catch {
-            let message = "\(configuration.name) could not start with Secure Boot. Reason: \(error.localizedDescription) Next: save the diagnostic log and report the problem, or turn off Secure Boot in Settings."
+            let message = configuration.usesSecureBoot
+                ? "\(configuration.name) could not start with Secure Boot. Reason: \(error.localizedDescription) Next: save the diagnostic log and report the problem, or turn off Secure Boot in Settings."
+                : "\(configuration.name) could not start: its firmware settings couldn't be written. Reason: \(error.localizedDescription) Next: make room on the Mac's drive, then press Start again."
             Announcer.shared.announce(message, tone: .failure)
             state = .error(message)
             throw error
@@ -2656,31 +2713,8 @@ final class VMManager: ObservableObject {
         if let firmware = bundledBinaryURL(named: firmwareName) {
             let nvramPath = runtimeDir.appendingPathComponent("nvram.fd").path
 
-            // Build the writable NVRAM from the PROPER vars template (edk2-arm-vars.fd,
-            // note "arm", shared across arm/aarch64 per the 60-edk2-aarch64.json
-            // firmware descriptor), padded to the 64MB pflash size. The code .fd is
-            // the firmware executable, NOT a variable store.
-            if !FileManager.default.fileExists(atPath: nvramPath) {
-                let pflashSize = 67108864 // 64 MiB, the aarch64 virt pflash size
-                if let varsTemplate = bundledBinaryURL(named: "edk2-arm-vars.fd"),
-                   let templateData = try? Data(contentsOf: URL(fileURLWithPath: varsTemplate.path)) {
-                    var nvramData = templateData
-                    if nvramData.count < pflashSize {
-                        nvramData.append(Data(count: pflashSize - nvramData.count))
-                    }
-                    do {
-                        try nvramData.write(to: URL(fileURLWithPath: nvramPath))
-                        avmLog("buildQEMUArguments: created padded NVRAM (\(nvramData.count) bytes) from edk2-arm-vars.fd")
-                    } catch {
-                        avmLog("buildQEMUArguments: FAILED to write NVRAM: \(error)")
-                    }
-                } else {
-                    let blank = Data(count: pflashSize)
-                    try? blank.write(to: URL(fileURLWithPath: nvramPath))
-                    avmLog("buildQEMUArguments: WARNING — edk2-arm-vars.fd not bundled; wrote blank 64MB NVRAM")
-                    appendConsole("AVM: WARNING — edk2-arm-vars.fd missing; using blank NVRAM.\n")
-                }
-            }
+            // The variable store is made, and checked, by prepareNVRAM before
+            // these arguments (2026-11-09, fourth audit of the day #9).
 
             args += [
                 "-drive", "if=pflash,format=raw,file=\(Self.qemuOptionValue(firmware.path)),readonly=on",
@@ -3025,8 +3059,15 @@ final class VMManager: ObservableObject {
         // AVM-owned runtime dir (no Desktop, no home-path exposure to the
         // user's visible file space); and it is the natural firmware-level
         // feed for the Stage D diagnostic bundle. Cost: one small file per VM.
+        // Appended to, and emptied here at each start as plain file: did
+        // (2026-11-09, fourth audit of the day #8): a guest writing to its
+        // serial port without end filled the Mac's disk; DiskWatch now
+        // keeps the file under DiskWatch.serialLogLimit while the machine
+        // runs, which only works when QEMU writes at the file's end.
         let firmwareSerialLog = runtimeDir.appendingPathComponent("firmware-serial.log").path
-        args += ["-serial", "file:\(firmwareSerialLog)"]
+        try? FileManager.default.removeItem(atPath: firmwareSerialLog)
+        args += ["-chardev", "file,id=avmserial,path=\(Self.qemuOptionValue(firmwareSerialLog)),append=on"]
+        args += ["-serial", "chardev:avmserial"]
         avmLog("buildQEMUArguments: firmware serial log -> \(firmwareSerialLog)")
 
         args += ["-display", "none"]
@@ -3971,10 +4012,10 @@ final class VMManager: ObservableObject {
         case "SUSPEND":
             if case .running = state { state = .paused }
         case "RESUME":
-            if case .paused = state {
-                state = .running
-                Task { await WindowsKeyboard.shared.releaseHeldKeys(before: self) }
-            }
+            // Never runs (see beginQMPEventMonitoring). 0.4.42 let held keys
+            // go here too; resumeVM is where that happens (fourth audit of
+            // 2026-11-09 #6).
+            if case .paused = state { state = .running }
         case "GUEST_PANICKED":
             state = .error("The guest OS encountered a fatal error (GUEST_PANICKED).")
         default:
@@ -5065,8 +5106,12 @@ extension VMManager {
                     if case .error = state { fm.createFile(atPath: marker.path, contents: nil) }
                     return
                 }
-                if answer == .alertFirstButtonReturn {
-                    avmLog("resumeSavedState: load failed; the user kept the saved state")
+                // Only Start Fresh discards (2026-11-09, fourth audit of the
+                // day #4): a USB question closing itself ends the innermost
+                // modal with abortModal, which can be this one, and .abort
+                // read as Start Fresh threw away a session nobody chose to.
+                if answer != .alertSecondButtonReturn {
+                    avmLog("resumeSavedState: load failed; the saved state is kept (answer \(answer.rawValue))")
                     throw AVMError.refused("\(guest)'s saved session is kept, and \(guest) is off. Next: press Start to try again.")
                 }
                 fm.createFile(atPath: marker.path, contents: nil)
@@ -5545,9 +5590,9 @@ extension VMManager {
 // MARK: - Disk space (2026-10-27; the decisions are in AVM/DiskWatch.swift)
 
 extension VMManager {
-    /// Once a minute while the machine runs: the Mac's free space, and
-    /// whether QEMU paused it for a full disk; every five minutes, its own
-    /// drives through the guest agent (once it's installed).
+    /// Once a minute while the machine runs, the Mac's free space; every ten
+    /// seconds, whether QEMU paused it for a disk error; every five minutes,
+    /// its own drives through the guest agent (once it's installed).
     func startDiskWatch(configuration: VMConfiguration, runtimeDir: URL, installed: Bool) {
         diskWatchTask?.cancel()
         let machine = configuration.name
@@ -5556,12 +5601,21 @@ extension VMManager {
             var hostSpoken: Int64?
             var guestSpoken: Set<String> = []
             var minute = 0
+            var tick = 0
             var heardDrives = false
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
+                // The pause check every ten seconds (2026-11-09, fourth audit
+                // of the day #6): AVM reads no QMP events (handleQMPLine has
+                // no callers), so this poll is how a pause QEMU makes itself
+                // is seen, and once a minute left up to 60 seconds of
+                // "Running" over a frozen machine, typed keys going nowhere.
+                try? await Task.sleep(for: .seconds(10))
                 guard let self, !Task.isCancelled else { return }
                 guard self.state == .running || self.state == .paused else { continue }
-                minute += 1
+                tick += 1
+                let wholeMinute = tick % 6 == 0
+                if wholeMinute { minute += 1 }
+                DiskWatch.trimSerialLog(runtimeDir.appendingPathComponent("firmware-serial.log"))
 
                 // The plain figure when the other has none (2026-10-29,
                 // sixth audit): exFAT drives give no "important usage"
@@ -5570,7 +5624,7 @@ extension VMManager {
                 // A zero "important usage" figure counts as none (seventh audit).
                 let free = values?.volumeAvailableCapacityForImportantUsage.flatMap { $0 > 0 ? $0 : nil }
                     ?? values?.volumeAvailableCapacity.map { Int64($0) } ?? Int64.max
-                let host = DiskWatch.hostWarning(free: free, lastSpoken: hostSpoken)
+                let host = wholeMinute ? DiskWatch.hostWarning(free: free, lastSpoken: hostSpoken) : (speak: nil, lastSpoken: hostSpoken)
                 hostSpoken = host.lastSpoken
                 if host.speak != nil {
                     avmLog("diskWatch: \(drive == nil ? "the Mac" : "the machine's drive") has \(free / DiskWatch.gigabyte) GB free")
@@ -5606,7 +5660,7 @@ extension VMManager {
                 }
 
                 // Each minute until it first answers, for the dashboard.
-                if installed, !heardDrives || minute % 5 == 0, self.state == .running, let path = self.guestAgentSocketPath,
+                if wholeMinute, installed, !heardDrives || minute % 5 == 0, self.state == .running, let path = self.guestAgentSocketPath,
                    let reply = try? await GuestAgent.call([#"{"execute":"guest-get-fsinfo"}"#], socketPath: path, timeout: 10).first,
                    let json = try? JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any] {
                     let drives = DiskWatch.drives(fromFsinfo: json["return"])

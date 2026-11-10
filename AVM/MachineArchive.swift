@@ -608,7 +608,8 @@ nonisolated enum MachineFileCopier {
     /// Names that only mean something while a machine runs.
     static func isTransient(_ name: String) -> Bool {
         let names: Set<String> = [".DS_Store", ".lock", "SavedState.vzvmsave",
-                                  "mac-setup.json", "watchdog-screen.ppm", "guest-screen.ppm", "firmware-serial.log", DiskWatch.usageFileName]
+                                  "mac-setup.json", "watchdog-screen.ppm", "guest-screen.ppm", "firmware-serial.log", DiskWatch.usageFileName,
+                                  "nvram-wrong-size.fd"]
         if names.contains(name) { return true }
         for suffix in [".sock", ".log", ".ppm", ".restoring", ".vzvmsave"] where name.hasSuffix(suffix) {
             return true
