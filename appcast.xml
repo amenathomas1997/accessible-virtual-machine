@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.46</title>
+            <sparkle:version>66</sparkle:version>
+            <sparkle:shortVersionString>0.4.46</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>Starting a machine no longer hangs when the Mac&#x27;s sound output isn&#x27;t answering, for example wireless headphones that are turned off while their USB receiver is still plugged in. Before, the machine took minutes to fail with &quot;Timed out waiting for a QMP response&quot;. Now AVM checks the sound output first and, within a few seconds, tells you which device isn&#x27;t answering and what to do: turn it on, or choose another output in the Mac&#x27;s Sound settings.</li></ul>]]></description>
+            <pubDate>Wed, 11 Nov 2026 20:34:19 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.46/AVM-0.4.46.zip" sparkle:edSignature="wsOlrXVtZ+1GOtI9RFBx8fzo9RLmHo3gjpYwmxa3wXxsmIiHm8ZuGcB7FYeWnWTLXMG6czGL66lmEeyZvIaEBg==" length="106681059" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.45</title>
             <sparkle:version>65</sparkle:version>
             <sparkle:shortVersionString>0.4.45</sparkle:shortVersionString>
