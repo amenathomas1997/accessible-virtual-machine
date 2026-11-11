@@ -129,6 +129,15 @@ final class KeyboardHold {
     /// virtual keyboards, which show macOS a keyboard but aren't one a
     /// person can type with (2026-10-26, keyboard audit: one keyboard plus
     /// a YubiKey passed the old "two keyboards" count).
+    private static func isTypingKeyboard(_ device: IOHIDDevice) -> Bool {
+        let vendor = property(device, kIOHIDVendorIDKey) as? Int ?? 0
+        let transport = (property(device, kIOHIDTransportKey) as? String ?? "").lowercased()
+        return (property(device, kIOHIDPrimaryUsagePageKey) as? Int ?? 0) == kHIDPage_GenericDesktop
+            && (property(device, kIOHIDPrimaryUsageKey) as? Int ?? 0) == kHIDUsage_GD_Keyboard
+            && vendor != 0x1050 && transport != "virtual"
+            && !(property(device, kIOHIDProductKey) as? String ?? "").lowercased().contains("karabiner")
+    }
+
     private static func otherKeyboards(_ all: [IOHIDDevice], than wanted: String) -> Int {
         let ids = all.filter { device in
             if HeldByHelper.contains(device) { return false }   // in a machine already
@@ -183,6 +192,11 @@ final class KeyboardHold {
                 "name": Self.property(device, kIOHIDProductKey) as? String ?? "Keyboard",
                 "transport": Self.property(device, kIOHIDTransportKey) as? String ?? "",
                 "builtIn": NSNumber(value: interfaces.contains(where: Self.isBuiltIn)),
+                // A keyboard to type on, by the rule that decides what must
+                // stay on the Mac (2026-11-10, audit of that day #15): this
+                // list also holds mice and scanners with a keyboard part,
+                // and AVM counted those as a keyboard the Mac would keep.
+                "typing": NSNumber(value: interfaces.contains(where: Self.isTypingKeyboard)),
             ] as NSDictionary
         }
     }

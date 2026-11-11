@@ -204,7 +204,11 @@ final class Announcer {
             return false
         }
         let start = max(Date(), voiceOverBusyUntil)
-        voiceOverBusyUntil = start.addingTimeInterval(0.5 + Double(message.count) / 14)
+        // Ten seconds a line at most (2026-11-10, audit of that day #32):
+        // a page read from a machine's screen booked two minutes, however
+        // soon VoiceOver finished or was silenced, and every line from the
+        // background waited out its share of that.
+        voiceOverBusyUntil = start.addingTimeInterval(min(0.5 + Double(message.count) / 14, 10))
         if NSApp.isActive {
             let post = {
                 let element: Any = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp as Any
@@ -358,7 +362,11 @@ final class Announcer {
 
     /// The machine the keyboard is in (FocusLockManager), or nil.
     nonisolated(unsafe) static var keyboardIn: String?
-    /// The machines whose screen reader is running now (GuestWatch).
+    /// That machine's id (2026-11-10, audit of that day #8): the hold went
+    /// by name, GuestWatch kept the name from Start, and a rename while
+    /// running left AVM talking over the machine's screen reader.
+    nonisolated(unsafe) static var keyboardInID: String?
+    /// The machines whose screen reader is running now (GuestWatch), by id.
     nonisolated(unsafe) static var readerRunningIn: Set<String> = []
     private var held: [String] = []
     private var heldIn: String?
@@ -376,7 +384,7 @@ final class Announcer {
     /// A routine line would wait now. Progress lines, stale by the time
     /// they'd be said, ask this and skip themselves.
     static var isHoldingRoutineLines: Bool {
-        holds(routine: true, keyboardIn: keyboardIn, readerRunningIn: readerRunningIn, settingOn: holdSettingOn)
+        holds(routine: true, keyboardIn: keyboardInID, readerRunningIn: readerRunningIn, settingOn: holdSettingOn)
     }
 
     /// The Mac itself took the keyboard back (sleep, a locked screen), so

@@ -9,6 +9,16 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+/// Windows Setup's report on the UNATTEND volume (AVMSTATUS.TXT).
+nonisolated enum WindowsSetupReport {
+    /// Specialize begun and not finished (2026-11-10, audit of that day
+    /// #4). The pass's last command replaces the report with
+    /// "specialize-done", and a retired report always holds that line.
+    static func stoppedInSpecialize(_ report: String) -> Bool {
+        report.contains("specialize-started") && !report.contains("specialize-done") && !report.contains("first-sign-in-done")
+    }
+}
+
 nonisolated enum GuestWatchSettings {
     static let restartReaderKey = "AVMRestartStoppedScreenReader"
     static let pointBeforeUpdatesKey = "AVMRestorePointBeforeUpdates"
@@ -464,3 +474,27 @@ nonisolated enum BackupSchedule {
     }
 }
 
+// MARK: - Keeping the Mac awake
+
+/// The Mac stays awake through work nobody is at the keyboard for
+/// (2026-11-10, audit of that day #11): an unattended install runs 20 to 60
+/// minutes and a download as long, a MacBook left alone went to sleep in
+/// the middle, and the install stopped, the download dropped, and the
+/// minute-counting alarms fired on waking. Idle sleep only: closing the lid
+/// still sleeps. One hold per piece of work, by its key.
+@MainActor
+enum KeepAwake {
+    private static var holds: [String: NSObjectProtocol] = [:]
+
+    static func begin(_ key: String, reason: String) {
+        guard holds[key] == nil else { return }
+        holds[key] = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled], reason: reason)
+        AVMLog.write("AVM: KeepAwake — the Mac stays awake: \(reason)")
+    }
+
+    static func end(_ key: String) {
+        guard let hold = holds.removeValue(forKey: key) else { return }
+        ProcessInfo.processInfo.endActivity(hold)
+        AVMLog.write("AVM: KeepAwake — released (\(key))")
+    }
+}

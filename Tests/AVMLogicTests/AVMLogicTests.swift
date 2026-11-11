@@ -2780,8 +2780,8 @@ final class PermanentDeleteTests: XCTestCase {
 /// When it fails: bump helperBuildVersion if you haven't, then copy the two
 /// values from the failure message into `recorded`.
 final class HelperVersionTests: XCTestCase {
-    private let recorded = (version: "0.4.42",
-                            sources: "7bf814788106f9bb3af1ec4503c09f53a0c5c501e2c4f95d4d403933230052b3")
+    private let recorded = (version: "0.4.45",
+                            sources: "7112d891cfe4d29cf38d17cd7d26e5c781b94bddafff30cd161da62b697f0b52")
 
     private var helperFolder: URL {
         URL(fileURLWithPath: #filePath)
@@ -2822,5 +2822,58 @@ final class HelperVersionTests: XCTestCase {
         } else if sources != recorded.sources || current != recorded.version {
             XCTFail("The helper's version or sources changed. If this is deliberate, set HelperVersionTests.recorded to \(values)")
         }
+    }
+
+    /// Audit of 2026-11-10 #10: only a plain US keyboard is typed into.
+    func testKeyboardLayoutIfNotUS() {
+        XCTAssertNil(VMConfiguration.layoutIfNotUS(windowsPreload: "00000409\r\n"))
+        XCTAssertEqual(VMConfiguration.layoutIfNotUS(windowsPreload: "00020409"), "00020409", "US International")
+        XCTAssertEqual(VMConfiguration.layoutIfNotUS(windowsPreload: "0000040c"), "0000040c")
+        XCTAssertNil(VMConfiguration.layoutIfNotUS(windowsPreload: "something else"), "unknown isn't refused")
+        XCTAssertNil(VMConfiguration.layoutIfNotUS(x11Layout: "us\n"))
+        XCTAssertEqual(VMConfiguration.layoutIfNotUS(x11Layout: "de\n"), "de")
+        XCTAssertEqual(VMConfiguration.layoutIfNotUS(x11Layout: "us\nvariant dvorak\n"), "us dvorak")
+        XCTAssertNil(VMConfiguration.layoutIfNotUS(x11Layout: ""))
+    }
+
+    /// Audit of 2026-11-10 #42: the names macOS still uses for some zones.
+    func testLinuxTimeZoneNames() {
+        XCTAssertEqual(UbuntuInstallPipeline.linuxTimeZone("Asia/Calcutta"), "Asia/Kolkata")
+        XCTAssertEqual(UbuntuInstallPipeline.linuxTimeZone("Europe/Kiev"), "Europe/Kyiv")
+        XCTAssertEqual(UbuntuInstallPipeline.linuxTimeZone("America/Chicago"), "America/Chicago")
+    }
+
+    /// Audit of 2026-11-10 #30: a saved session names the QEMU that made it.
+    func testSavedSessionMadeByAnotherQEMU() {
+        let hint = "Saved 2026-11-10\n" + QEMUSavedState.madeByLine(qemu: "10.0.12") + "\n"
+        XCTAssertFalse(QEMUSavedState.madeByAnother(hint: hint, qemu: "10.0.12"))
+        XCTAssertTrue(QEMUSavedState.madeByAnother(hint: hint, qemu: "11.0.0"))
+        XCTAssertFalse(QEMUSavedState.madeByAnother(hint: "Saved 2026-11-01\n", qemu: "10.0.12"), "a hint from before the line says nothing")
+    }
+
+    /// Audit of 2026-11-10 #4: only a report that began specialize and
+    /// didn't finish it starts the install over.
+    func testSetupStoppedInSpecialize() {
+        XCTAssertTrue(WindowsSetupReport.stoppedInSpecialize("specialize-started\r\nvioserial-ok\r\n"))
+        XCTAssertFalse(WindowsSetupReport.stoppedInSpecialize(""), "a machine from before the report is finished")
+        XCTAssertFalse(WindowsSetupReport.stoppedInSpecialize("specialize-done\r\nfirst-sign-in-started\r\n"))
+        XCTAssertFalse(WindowsSetupReport.stoppedInSpecialize("specialize-done\r\nnvda-ok\r\nfirst-sign-in-done\r\n"))
+        XCTAssertFalse(WindowsSetupReport.stoppedInSpecialize("specialize-started\r\n" + "specialize-done\r\n"), "the retired report beside a new one")
+    }
+
+    /// Audit of 2026-11-10 #3: a translated disc is matched by edition id.
+    func testWindowsEditionIsFoundOnATranslatedDisc() {
+        let french: [(name: String, editionID: String?)] = [
+            ("Windows 11 Famille", "Core"), ("Windows 11 Famille Unilingue", "CoreSingleLanguage"),
+            ("Windows 11 Éducation", "Education"), ("Windows 11 Professionnel", "Professional"),
+        ]
+        XCTAssertEqual(WindowsEdition.imageName(for: "Windows 11 Pro", among: french), "Windows 11 Professionnel")
+        XCTAssertEqual(WindowsEdition.imageName(for: "Windows 11 Home", among: french), "Windows 11 Famille")
+        XCTAssertEqual(WindowsEdition.imageName(for: "Windows 11 Home Single Language", among: french), "Windows 11 Famille Unilingue")
+        let english: [(name: String, editionID: String?)] = [("Windows 11 Home", "Core"), ("Windows 11 Pro", "Professional")]
+        XCTAssertEqual(WindowsEdition.imageName(for: "Windows 11 Pro", among: english), "Windows 11 Pro")
+        XCTAssertNil(WindowsEdition.imageName(for: "Windows 11 Home Single Language", among: english))
+        XCTAssertNil(WindowsEdition.imageName(for: "Windows 11 Pro", among: [("Windows 11 IoT Enterprise LTSC", "IoTEnterpriseS")]))
+        XCTAssertEqual(WindowsEdition.imageName(for: "Windows 11 Pro", among: [("Windows 11 Pro", nil)]), "Windows 11 Pro", "a disc with no ids still matches by name")
     }
 }

@@ -200,6 +200,12 @@ struct ContentView: View {
                 )
                 return
             }
+            // Not behind another sheet (audit of 2026-11-10 #38): its own
+            // waited there, unsaid, until the first was closed.
+            if MainWindowCloseGuard.hasOpenSheet {
+                Announcer.shared.announce("AVM found leftover files, but a window is open in AVM's list. Close it, then choose Reclaim Disk Space again.", tone: .info)
+                return
+            }
             AVMLog.write("AVM: Reclaim-from-menu — scan found \(orphans.count) orphan(s); opening sheet.")
             showingReclaim = true
         }
@@ -800,6 +806,16 @@ private struct DashboardContent: View {
             return
         }
 
+        // Nor one still running from before AVM last closed (2026-11-10,
+        // audit of that day #18): its folder went to the Trash with QEMU
+        // still writing in it, and with the entry gone nothing could ever
+        // end that QEMU. Export refuses the same.
+        if config.guestOS != .macOS, VMManager.hasOrphanedQEMU(config.id) {
+            AVMLog.write("AVM: Delete refused for '\(config.name)' — a QEMU from before AVM last closed still runs it.")
+            Announcer.shared.announce("\(config.name) is still running from before AVM last closed, so it was not deleted. Next: start it, shut it down, then delete it.", tone: .failure)
+            return
+        }
+
         // A drive that isn't connected (2026-10-25): with no folder to see,
         // the dialog would say there are no files and the entry would go,
         // leaving the files on the drive. Refuse, and say what to do.
@@ -1299,8 +1315,17 @@ struct MachineTableView: NSViewRepresentable {
         coordinator.parent = self
         guard let table = scroll.documentView as? NSTableView else { return }
         if coordinator.rows != rows {
+            // Only the rows that changed, when the list is the same
+            // machines (2026-11-10, audit of that day #40): a whole reload
+            // at every status or disk figure can drop VoiceOver's place.
+            let old = coordinator.rows
             coordinator.rows = rows
-            table.reloadData()
+            if old.map(\.id) == rows.map(\.id) {
+                let changed = IndexSet(rows.indices.filter { old[$0] != rows[$0] })
+                table.reloadData(forRowIndexes: changed, columnIndexes: IndexSet(integersIn: 0..<table.numberOfColumns))
+            } else {
+                table.reloadData()
+            }
         }
         if let index = rows.firstIndex(where: { $0.id == selection }), table.selectedRow != index {
             table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
@@ -1563,11 +1588,15 @@ enum DashboardStatus {
         // A macOS machine runs beside any QEMU session (2026-10-26).
         let mac = MacGuestRunner.shared
         let macPart = mac.runningID.flatMap { id in vmStore.configurations.first { $0.id == id } }.map { config in
-            "\(config.name), a macOS machine, is running. The keyboard is \(mac.keyboardInGuest ? "in macOS" : "on your Mac")."
+            "\(config.name), a macOS machine, is running."
         }
+        // One keyboard sentence (2026-11-10, audit of that day #33): with a
+        // macOS machine beside another, it was said twice, and the two
+        // could disagree.
+        let macKeyboard = "The keyboard is \(mac.keyboardInGuest ? "in macOS" : "on your Mac")."
         let running = machines.sessions.values.sorted { $0.configuration.name < $1.configuration.name }
         guard !running.isEmpty else {
-            if let macPart { return macPart }
+            if let macPart { return "\(macPart) \(macKeyboard)" }
             switch vmStore.configurations.count {
             case 0:
                 return "No virtual machine is set up yet. Use the Setup Wizard first."
@@ -1605,7 +1634,9 @@ enum DashboardStatus {
         if running.contains(where: { $0.vmState == .running || $0.vmState == .paused }) {
             // The machine holding it, not the current one (fourth audit of
             // 2026-11-09 #3).
-            if focusLock.isLocked, let holder = running.first(where: { focusLock.holdsKeyboard(for: $0.configuration.id) }) ?? machines.current {
+            if macPart != nil, mac.keyboardInGuest {
+                parts.append(macKeyboard)
+            } else if focusLock.isLocked, let holder = running.first(where: { focusLock.holdsKeyboard(for: $0.configuration.id) }) ?? machines.current {
                 parts.append("The keyboard is in \(holder.configuration.name).")
             } else {
                 parts.append("The keyboard is on the Mac.")
@@ -1616,6 +1647,9 @@ enum DashboardStatus {
             case 1:  parts.append("One USB device is attached: \(devices[0]).")
             default: parts.append("\(devices.count) USB devices are attached: \(devices.joined(separator: ", ")).")
             }
+        } else if macPart != nil {
+            // Still said with the others only starting or stopping (review of #33).
+            parts.append(macKeyboard)
         }
         return parts.joined(separator: " ")
     }

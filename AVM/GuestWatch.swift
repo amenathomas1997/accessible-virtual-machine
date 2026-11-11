@@ -43,8 +43,11 @@ extension VMManager {
         guestWatchTask?.cancel()
         guard configuration.guestOS == .windows || configuration.guestOS.isLinux else { return }
         let windows = configuration.guestOS == .windows
-        let machine = configuration.name
-        let chosenReaders = windows ? configuration.windowsScreenReaders.map(\.displayName) : []
+        let nameAtStart = configuration.name
+        let machineKey = configuration.id.uuidString
+        // Linux has one, Orca (2026-11-10, audit of that day #6): with none,
+        // the "never started" check below ran for no Linux machine.
+        let chosenReaders = windows ? configuration.windowsScreenReaders.map(\.displayName) : ["Orca"]
         let picture = runtimeDir.appendingPathComponent("watch-screen.ppm")
         // The 3D driver, the first time Windows runs with 3D on (2026-11-01).
         if installed, configuration.usesWindows3D, Self.supportsWindows3D {
@@ -85,11 +88,15 @@ extension VMManager {
             // NVDA, and a machine restarting stayed marked as having one.
             var readerRunning = false
             var failedListings = 0
-            defer { Announcer.readerRunningIn.remove(machine) }
+            defer { Announcer.readerRunningIn.remove(machineKey) }
+            // The name as it is now (audit of 2026-11-10 #8): a machine
+            // renamed while running kept its old name in every line here.
+            var machine = nameAtStart
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(4))
                 guard let self, !Task.isCancelled else { return }
                 guard self.state == .running else { continue }
+                machine = self.machineName
                 tick += 1
 
                 // Every 16 seconds: what runs in the machine, through its
@@ -107,7 +114,7 @@ extension VMManager {
                         failedListings += 1
                         if failedListings >= 2 { readerRunning = false }
                     }
-                    if readerRunning { Announcer.readerRunningIn.insert(machine) } else { Announcer.readerRunningIn.remove(machine) }
+                    if readerRunning { Announcer.readerRunningIn.insert(machineKey) } else { Announcer.readerRunningIn.remove(machineKey) }
                     // Restarted between two listings (2026-10-31): with the
                     // restore point fixed, Windows was back in under 16
                     // seconds, every listing answered, and "back" was never said.
@@ -199,7 +206,17 @@ extension VMManager {
                     // audit); turned off on purpose, as a rule. Orca is
                     // started on every desktop since 2026-11-09 (third audit
                     // of the day #3 and #5).
-                    if let reader = readersSeen.sorted().first, missingChecks == 2, Self.canStart(reader) {
+                    // Not an Orca the user turned off (2026-11-10, audit of
+                    // that day #6): on GNOME the start sets its setting off
+                    // and on, so Super-Alt-S brought Orca back in half a
+                    // minute, and an account with Orca off had it turned on
+                    // after the greeter's was seen.
+                    var leftOff = false
+                    if missingChecks == 2, now.gnome, readersSeen.sorted().first == "Orca" {
+                        leftOff = await self.orcaSettingIsOn() == false
+                        if leftOff { AVMLog.write("AVM: GuestWatch — Orca stopped in \(machine) and is turned off in its settings; left so") }
+                    }
+                    if !leftOff, let reader = readersSeen.sorted().first, missingChecks == 2, Self.canStart(reader) {
                         if !restartedReader, await self.startScreenReader(reader, gnome: now.gnome) {
                             restartedReader = true
                             AVMLog.write("AVM: GuestWatch — \(reader) stopped in \(machine); its shortcut key sent")
@@ -210,7 +227,16 @@ extension VMManager {
                         }
                     }
                     // The chosen one never started: a minute after sign-in.
-                    if readersSeen.isEmpty, !toldNoReader, signedInChecks == 4, let reader = chosenReaders.first {
+                    // Not at a login screen (review of the audit of 2026-11-10
+                    // #6): GNOME's greeter runs gnome-shell too, so a machine
+                    // waiting there a minute spent this once-only check
+                    // before anyone had signed in.
+                    var atLoginScreen = false
+                    if !windows, readersSeen.isEmpty, !toldNoReader, signedInChecks == 4 {
+                        atLoginScreen = await self.linuxUserSessionIsUp() == false
+                        if atLoginScreen { signedInChecks = 3 }
+                    }
+                    if !atLoginScreen, readersSeen.isEmpty, !toldNoReader, signedInChecks == 4, let reader = chosenReaders.first {
                         toldNoReader = true
                         // Not an Orca the user turned off (2026-11-10, fourth
                         // audit of 2026-11-09 #16): from 0.4.42 this set GNOME's
@@ -221,7 +247,11 @@ extension VMManager {
                         if reader == "Orca", now.gnome { orcaOff = await self.orcaSettingIsOn() == false }
                         if reader == "Orca", !now.gnome || orcaOff {
                             AVMLog.write("AVM: GuestWatch — Orca isn't running in \(machine) a minute after sign-in\(now.gnome ? ", and it's turned off; left so" : ""); not started")
-                            if !now.gnome {
+                            // Once per machine (its review): a machine run
+                            // without Orca on purpose heard it at every Start.
+                            let saidKey = "AVMNoOrcaAdviceSaid-\(machineKey)"
+                            if !now.gnome, !UserDefaults.standard.bool(forKey: saidKey) {
+                                UserDefaults.standard.set(true, forKey: saidKey)
                                 Announcer.shared.announce("No screen reader is running in \(machine). \(Self.readerHelp(reader, gnome: false))", tone: .info)
                             }
                         } else {
@@ -292,6 +322,15 @@ extension VMManager {
             ? #"K=org.gnome.desktop.a11y.applications; runuser -u "$U" -- env DBUS_SESSION_BUS_ADDRESS=$B sh -c "gsettings set $K screen-reader-enabled false; sleep 1; gsettings set $K screen-reader-enabled true" && echo AVM-OK"#
             : #"P=$(pgrep -u "$U" -n -x 'plasmashell|ksmserver|kwin_x11|kwin_wayland|xfce4-session|xfwm4|mate-session|marco|cinnamon-sessio|cinnamon|lxqt-session|budgie-wm' 2>/dev/null); [ -n "$P" ] || P=$(pgrep -u "$U" -n); E=$(tr '\0' '\n' </proc/$P/environ 2>/dev/null | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XAUTHORITY|XDG_RUNTIME_DIR|XDG_SESSION_TYPE)=' | tr '\n' ' '); runuser -u "$U" -- env DBUS_SESSION_BUS_ADDRESS=$B $E setsid -f orca --replace >/dev/null 2>&1 </dev/null && echo AVM-OK"#
         return Self.linuxSignedInUser + "\n" + #"[ -n "$U" ] || { echo AVM-NOUSER; exit 0; }; I=$(id -u "$U"); B=unix:path=/run/user/$I/bus"# + "\n" + start + "\n"
+    }
+
+    /// Whether a person's own session is the one on screen in a Linux
+    /// machine, not the login screen's: true, false, or nil when it
+    /// couldn't be told (no loginctl).
+    func linuxUserSessionIsUp() async -> Bool? {
+        let script = #"command -v loginctl >/dev/null || exit 0; for s in $(loginctl list-sessions --no-legend | awk '$2>=1000{print $1}'); do [ "$(loginctl show-session "$s" -p Class --value)" = user ] && [ "$(loginctl show-session "$s" -p Active --value)" = yes ] && [ "$(loginctl show-session "$s" -p Type --value)" != tty ] && echo AVM-UP; done; echo AVM-RAN"#
+        guard let out = try? await agentRun("/bin/sh", ["-c", script], limit: .seconds(20)), out.contains("AVM-RAN") else { return nil }
+        return out.contains("AVM-UP")
     }
 
     /// GNOME's Orca setting for the signed-in user: true on, false off, nil

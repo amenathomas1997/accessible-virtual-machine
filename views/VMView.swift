@@ -986,6 +986,69 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
     /// Sharing is on and what's on the Mac's clipboard may go to a guest.
     private var mayOffer: Bool { isEnabled && !Self.isPrivate(NSPasteboard.general) }
 
+    /// The change count of the copy AVM last offered to guests, if any.
+    private var offeredChangeCount: Int?
+    /// The machines someone is at: the one with the keyboard, and the one
+    /// the keyboard for Windows types into.
+    private var inUse: Set<UUID> = []
+    /// A machine just left may still finish a copy made in it: the data
+    /// follows the guest's announcement by a moment.
+    private var writeGrace: [UUID: Date] = [:]
+    /// An agent connected with nobody at its machine: the offer is made at
+    /// the next entry even if the Mac's clipboard hasn't changed since.
+    private var offerOwed = false
+    /// While the keyboard for Windows is held the user can paste there
+    /// without coming to AVM, so the Mac's clipboard is looked at each second.
+    @MainActor private var heldKeyboardTimer: Timer?
+
+    /// A guest may read the Mac's clipboard only as AVM offered it
+    /// (2026-11-10, audit of that day #2). CocoaSpice answers any request a
+    /// guest's agent makes, at any time, so a guest that kept asking got
+    /// everything copied in any Mac app while it ran, entered or not.
+    /// What's offered is what was there when the user last entered a
+    /// machine or came back to AVM; a later copy waits for the next time.
+    private var mayRead: Bool {
+        guard mayOffer else { return false }
+        lock.lock(); defer { lock.unlock() }
+        return offeredChangeCount == NSPasteboard.general.changeCount
+    }
+
+    /// A guest may write the Mac's clipboard only while someone is at that
+    /// machine (same finding, and its review): a guest in the background
+    /// could replace what the user had just copied on the Mac, also while
+    /// the user was in another machine. `machine` nil: a screen made
+    /// without one, which counts as any machine in use.
+    private func mayWrite(from machine: UUID?) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard enabled else { return false }
+        guard let machine else { return !inUse.isEmpty }
+        if inUse.contains(machine) { return true }
+        if let until = writeGrace[machine], until > Date() { return true }
+        return false
+    }
+
+    /// Called when the keyboard enters or leaves a machine, and when the
+    /// keyboard for Windows is taken or given back.
+    @MainActor
+    func noteGuestInUse() {
+        var now: Set<UUID> = []
+        if let focus = FocusLockManager.shared, focus.isLocked, let id = focus.lockedMachineID { now.insert(id) }
+        let keyboardHeld = WindowsKeyboard.shared.isHeld
+        if keyboardHeld, let id = WindowsKeyboard.shared.target?.machineID { now.insert(id) }
+        lock.lock()
+        for left in inUse.subtracting(now) { writeGrace[left] = Date().addingTimeInterval(2) }
+        inUse = now
+        lock.unlock()
+        if keyboardHeld, heldKeyboardTimer == nil {
+            heldKeyboardTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+                MainActor.assumeIsolated { AVMPasteboard.shared.macPasteboardMayHaveChanged() }
+            }
+        } else if !keyboardHeld {
+            heldKeyboardTimer?.invalidate()
+            heldKeyboardTimer = nil
+        }
+    }
+
     /// Reads the running VM's saved setting. Main actor: called on connect,
     /// when Settings are saved, and before each change check.
     @MainActor
@@ -1009,11 +1072,14 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
         refreshEnabled()
         guard isEnabled else { return }
         let count = NSPasteboard.general.changeCount
+        let isPrivate = Self.isPrivate(NSPasteboard.general)
         lock.lock()
-        let changed = count != seenChangeCount
+        let changed = count != seenChangeCount || offerOwed
         seenChangeCount = count
+        offerOwed = false
+        if changed, !isPrivate { offeredChangeCount = count }
         lock.unlock()
-        if changed, !Self.isPrivate(NSPasteboard.general) {
+        if changed, !isPrivate {
             AVMLog.write("AVM: Clipboard — the Mac's clipboard changed; offering it to the guest.")
             NotificationCenter.default.post(name: .csPasteboardChanged, object: nil)
         }
@@ -1038,17 +1104,21 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
     }
 
     func canReadItem(for type: CSPasteboardType) -> Bool {
-        guard mayOffer, let macType = Self.macType(type) else { return false }
+        guard mayRead, let macType = Self.macType(type) else { return false }
         return NSPasteboard.general.availableType(from: [macType]) != nil
     }
 
     func data(for type: CSPasteboardType) -> Data? {
-        guard mayOffer, let macType = Self.macType(type) else { return nil }
+        guard mayRead, let macType = Self.macType(type) else { return nil }
         return NSPasteboard.general.data(forType: macType)
     }
 
-    func setData(_ data: Data, for type: CSPasteboardType) {
-        guard isEnabled, let macType = Self.macType(type) else { return }
+    func setData(_ data: Data, for type: CSPasteboardType) { setData(data, for: type, from: nil) }
+    func setString(_ string: String) { setString(string, from: nil) }
+    func clearContents() { clearContents(from: nil) }
+
+    func setData(_ data: Data, for type: CSPasteboardType, from machine: UUID?) {
+        guard mayWrite(from: machine), let macType = Self.macType(type) else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setData(data, forType: macType)
@@ -1056,20 +1126,20 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
     }
 
     func string() -> String? {
-        guard mayOffer else { return nil }
+        guard mayRead else { return nil }
         return NSPasteboard.general.string(forType: .string)
     }
 
-    func setString(_ string: String) {
-        guard isEnabled else { return }
+    func setString(_ string: String, from machine: UUID?) {
+        guard mayWrite(from: machine) else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(string, forType: .string)
         noteOwnWrite()
     }
 
-    func clearContents() {
-        guard isEnabled else { return }
+    func clearContents(from machine: UUID?) {
+        guard mayWrite(from: machine) else { return }
         // Only while the Mac's clipboard still holds the guest's own copy
         // (2026-10-26, code audit): a Windows password manager clearing its
         // clipboard after 30 seconds otherwise erased whatever the user had
@@ -1088,10 +1158,19 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
     /// session or the guest's agent existed, so the change was marked seen
     /// and never offered. Called when the agent connects, the first moment
     /// a guest can take it.
-    @MainActor func offerToNewGuest() {
+    /// Only with someone at that machine (review of the audit of
+    /// 2026-11-10 #2): a guest's agent can announce itself as often as it
+    /// likes, and each announcement marked whatever was on the Mac's
+    /// clipboard as offered, which opened it to that guest's next request.
+    /// Otherwise the offer is owed to the next entry.
+    @MainActor func offerToNewGuest(machine: UUID?) {
         refreshEnabled()
-        guard mayOffer, NSPasteboard.general.string(forType: .string) != nil else { return }
-        lock.lock(); seenChangeCount = NSPasteboard.general.changeCount; lock.unlock()
+        lock.lock()
+        let atIt = machine.map { inUse.contains($0) } ?? !inUse.isEmpty
+        if !atIt { offerOwed = true }
+        lock.unlock()
+        guard atIt, mayOffer, NSPasteboard.general.string(forType: .string) != nil else { return }
+        lock.lock(); seenChangeCount = NSPasteboard.general.changeCount; offeredChangeCount = seenChangeCount; lock.unlock()
         NotificationCenter.default.post(name: .csPasteboardChanged, object: nil)
     }
 
@@ -1102,7 +1181,23 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
     }
 }
 
+/// One machine's side of the clipboard: CocoaSpice's delegate calls don't
+/// say which connection they come from, so each connection gets its own
+/// (review of the audit of 2026-11-10 #2).
+nonisolated final class MachinePasteboard: NSObject, CSPasteboardDelegate, @unchecked Sendable {
+    let machine: UUID?
+    init(machine: UUID?) { self.machine = machine }
+    func canReadItem(for type: CSPasteboardType) -> Bool { AVMPasteboard.shared.canReadItem(for: type) }
+    func data(for type: CSPasteboardType) -> Data? { AVMPasteboard.shared.data(for: type) }
+    func setData(_ data: Data, for type: CSPasteboardType) { AVMPasteboard.shared.setData(data, for: type, from: machine) }
+    func string() -> String? { AVMPasteboard.shared.string() }
+    func setString(_ string: String) { AVMPasteboard.shared.setString(string, from: machine) }
+    func clearContents() { AVMPasteboard.shared.clearContents(from: machine) }
+}
+
 final class SPICECoordinator: NSObject, CSConnectionDelegate {
+    /// Kept here: CocoaSpice holds its pasteboard delegate weakly.
+    private let pasteboard: MachinePasteboard
     private var connection: CSConnection?
     private var renderer: CSMetalRenderer?
     private var primaryDisplay: CSDisplay?
@@ -1188,6 +1283,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
     init(focusLock: FocusLockManager, machineID: UUID? = nil, manager: VMManager? = nil) {
         self.focusLock = focusLock
         self.machineID = machineID
+        self.pasteboard = MachinePasteboard(machine: machineID)
         self.manager = manager
         super.init()
         if let machineID, let store = VMStore.shared {
@@ -2192,8 +2288,8 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
     func spiceConnected(_ connection: CSConnection) {
         avmPublicLog("SPICE connected.")
         // Clipboard sharing (2026-10-25): the delegate is weak in CocoaSpice,
-        // so the shared instance keeps it alive.
-        connection.session.pasteboardDelegate = AVMPasteboard.shared
+        // so this coordinator keeps it alive.
+        connection.session.pasteboardDelegate = pasteboard
         // Shared folder (2026-10-26). Always set: CocoaSpice's own default
         // is ~/Documents/Public, read and write.
         // Read on the main thread before connecting (2026-11-09, fourth audit
@@ -2376,8 +2472,8 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
 
     func spiceAgentConnected(_ connection: CSConnection, supportingFeatures features: CSConnectionAgentFeature) {
         NSLog("AVM: SPICE agent connected, features: \(features.rawValue)")
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated { AVMPasteboard.shared.offerToNewGuest() }
+        DispatchQueue.main.async { [machineID] in
+            MainActor.assumeIsolated { AVMPasteboard.shared.offerToNewGuest(machine: machineID) }
         }
         // In AVM's own log for USB 2c timing (2026-10-18). NSLog lines
         // never showed up in the unified log.

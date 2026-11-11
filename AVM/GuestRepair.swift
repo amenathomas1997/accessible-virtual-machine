@@ -75,6 +75,12 @@ extension VMManager {
 
         isRepairing = true
         defer { isRepairing = false }
+        // Before any key (audit of 2026-11-10 #10, and its review).
+        if let layout = await keyboardLayoutIfNotUS() {
+            AVMLog.write("AVM: Repair — not typed: the machine's keyboard layout is \(layout)")
+            Announcer.shared.announce("\(machine)'s keyboard isn't a US one, and AVM can only type the repair on a US keyboard. Next: report the problem from the Help menu.", tone: .failure)
+            return
+        }
         Announcer.shared.announce("Typing the repair in \(machine).", tone: .info)
         // Escape first: a password box still open from an earlier try would
         // otherwise take the command as its password (2026-11-01 audit).

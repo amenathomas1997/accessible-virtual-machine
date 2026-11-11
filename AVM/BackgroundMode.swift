@@ -99,7 +99,9 @@ final class BackgroundMode: ObservableObject {
     /// A running machine has a Keyboard for Windows, so Windows still
     /// types with AVM out of the way.
     var aMachineHasItsKeyboard: Bool {
-        MachineSessions.shared.sessions.values.contains {
+        // Or one taken during the run (audit of 2026-11-10 #37): the
+        // session keeps the settings it started with.
+        WindowsKeyboard.shared.isHeld || MachineSessions.shared.sessions.values.contains {
             $0.vmState == .running && $0.configuration.windowsKeyboardID != nil
         }
     }

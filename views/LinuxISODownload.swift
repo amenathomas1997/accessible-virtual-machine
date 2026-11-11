@@ -119,7 +119,15 @@ final class LinuxISODownloader: NSObject, ObservableObject {
         case failed(String)
     }
 
-    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var phase: Phase = .idle {
+        // Awake while it works (2026-11-10, audit of that day #11).
+        didSet {
+            switch phase {
+            case .idle, .finished, .failed: KeepAwake.end("linux-download")
+            default: KeepAwake.begin("linux-download", reason: "a download for a new machine")
+            }
+        }
+    }
     @Published private(set) var distribution: Distribution = .ubuntu
     @Published private(set) var received: Int64 = 0
     @Published private(set) var expected: Int64 = 0
@@ -249,6 +257,7 @@ final class LinuxISODownloader: NSObject, ObservableObject {
         let task = session.downloadTask(with: folder.appendingPathComponent(name))
         self.task = task
         phase = .downloading
+        resumes = 0
         Announcer.shared.announce("Downloading \(name) from \(folder.host ?? "its maker"). AVM says how far along it is every 10 percent.", tone: .info)
         task.resume()
     }
@@ -303,6 +312,25 @@ final class LinuxISODownloader: NSObject, ObservableObject {
             lastTenth = tenth
             Announcer.shared.announce(spokenProgress, tone: .info)
         }
+    }
+
+    /// A download that stopped carries on from where it got to (2026-11-10,
+    /// audit of that day #12): any drop, or a minute's stall, at 3 of 4
+    /// gigabytes ended it, and the next try began at nothing. Up to five
+    /// times, when the server's answer allows it.
+    private var resumes = 0
+    fileprivate func carryOn(_ session: URLSession, from resumeData: Data?) -> Bool {
+        guard phase == .downloading, self.session === session, let resumeData, resumes < 5 else { return false }
+        resumes += 1
+        AVMLog.write("Linux download: stopped; carrying on from where it got to (time \(resumes) of 5)")
+        Announcer.shared.announce("The download stopped. AVM is carrying on from where it got to.", tone: .info)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(5 * resumes)) { [weak self] in
+            guard let self, self.phase == .downloading, self.session === session else { return }
+            let task = session.downloadTask(withResumeData: resumeData)
+            self.task = task
+            task.resume()
+        }
+        return true
     }
 
     fileprivate func downloaded(to temporary: URL?, error: String?) {
@@ -402,7 +430,11 @@ extension LinuxISODownloader: URLSessionDownloadDelegate {
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error, (error as NSError).code != NSURLErrorCancelled else { return }
         let message = error.localizedDescription
-        Task { @MainActor in self.downloaded(to: nil, error: message) }
+        let resumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data
+        Task { @MainActor in
+            if self.carryOn(session, from: resumeData) { return }
+            self.downloaded(to: nil, error: message)
+        }
     }
 }
 

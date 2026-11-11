@@ -582,6 +582,28 @@ enum WindowsEdition: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The edition's id inside install.wim, the same on every language's
+    /// disc, where the name isn't (2026-11-10, audit of that day #3).
+    var editionID: String {
+        switch self {
+        case .pro: return "Professional"
+        case .home: return "Core"
+        case .homeSingleLanguage: return "CoreSingleLanguage"
+        }
+    }
+
+    /// The disc's own name for the edition wanted, which is what the answer
+    /// file's /IMAGE/NAME must say: the wanted name if the disc has it, or
+    /// else the image with that edition's id. A French disc calls Windows 11
+    /// Home "Windows 11 Famille", and matching by the English name alone
+    /// refused every such disc, the one AVM downloads in the Mac's language
+    /// among them. Nil when the disc has no such edition.
+    nonisolated static func imageName(for wanted: String, among images: [(name: String, editionID: String?)]) -> String? {
+        if images.contains(where: { $0.name == wanted }) { return wanted }
+        guard let id = allCases.first(where: { $0.imageName == wanted })?.editionID else { return nil }
+        return images.first { $0.editionID?.caseInsensitiveCompare(id) == .orderedSame }?.name
+    }
+
     /// Microsoft's public generic install key for the edition. It tells
     /// Setup which edition to install and activates nothing; Windows asks
     /// for the user's own key or digital license later.
@@ -790,5 +812,26 @@ enum SoundSmoothness: String, CaseIterable, Identifiable {
         case .balanced: return (5000, 3)
         case .smoothest: return (10000, 4)
         }
+    }
+}
+
+/// What a machine says its keyboard layout is, for Type Clipboard
+/// (TypeText.swift): nil for the plain US layout, or when it can't be told.
+extension VMConfiguration {
+    nonisolated static func layoutIfNotUS(windowsPreload: String) -> String? {
+        let code = windowsPreload.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard code.count == 8, code.allSatisfy(\.isHexDigit) else { return nil }
+        return code == "00000409" ? nil : code
+    }
+
+    nonisolated static func layoutIfNotUS(x11Layout: String) -> String? {
+        // The layout's line, then "variant …" when there is one (its
+        // review): Dvorak and Colemak are variants of "us".
+        let lines = x11Layout.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+        let first = lines.first { !$0.hasPrefix("variant") }?.split(separator: ",").first.map(String.init) ?? ""
+        guard !first.isEmpty, first.allSatisfy({ $0.isLetter || $0 == "_" || $0 == "-" }), first.count <= 12 else { return nil }
+        let variant = lines.first { $0.hasPrefix("variant") }?.dropFirst("variant".count).split(separator: ",").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        if !variant.isEmpty { return "\(first) \(variant.prefix(20).filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })" }
+        return first == "us" ? nil : first
     }
 }

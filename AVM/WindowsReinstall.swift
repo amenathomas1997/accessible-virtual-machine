@@ -64,6 +64,11 @@ enum WindowsReinstall {
             throw WindowsReinstallError.installerMissing(configuration.installISOPath ?? "")
         }
         let dir = try configuration.directoryURL()
+        // Not under a QEMU left from before AVM last closed (2026-11-10,
+        // audit of that day #18): it still holds the disk being replaced.
+        if VMManager.hasOrphanedQEMU(configuration.id) {
+            throw WindowsReinstallError.failed("\(configuration.name) is still running from before AVM last closed, so nothing was changed. Next: start it, shut it down, then reinstall.")
+        }
 
         // The answers, with the password again for a local account.
         var answers = WindowsSetupAnswers.load(fromVMDirectory: dir)

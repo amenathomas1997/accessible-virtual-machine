@@ -352,8 +352,22 @@ class FocusLockManager: ObservableObject {
         // automatic lock when a VM reaches running could fire while the user
         // was in Mail, sending nothing to the guest while Caps Lock became
         // F19 across the Mac. Say where things stand instead.
+        // The machine being entered, by its own name (2026-11-10, audit of
+        // that day #7): with two starting, the current one was the other,
+        // and "Entering B" was said while the keys went into A. One that
+        // ended while this call waited isn't locked for.
+        let entering = machine ?? MachineSessions.shared.currentID
+        if let machine {
+            // Paused may be entered too (its review): enter() says so.
+            let state = MachineSessions.shared.session(for: machine)?.manager.state
+            guard state == .running || state == .paused else {
+                AVMLog.write("AVM: FocusLock.lock() — the machine to enter isn't running; not locking.")
+                return
+            }
+        }
+        let enteringName = entering.flatMap { MachineSessions.shared.session(for: $0)?.configuration.name } ?? VMManager.currentGuestName
         guard NSApp.isActive else {
-            let guest = VMManager.currentGuestName
+            let guest = enteringName
             AVMLog.write("AVM: FocusLock.lock() — AVM is not the active app; not locking.")
             Announcer.shared.announce("\(guest) is running. To use it, switch to AVM and press Command Shift E.", tone: .info)
             return
@@ -368,19 +382,25 @@ class FocusLockManager: ObservableObject {
             .disableSessionTermination
         ]
         registerHotKey()
-        lockedMachineID = machine ?? MachineSessions.shared.currentID
+        lockedMachineID = entering
         isLocked = true
-        Announcer.keyboardIn = VMManager.currentGuestName
+        Announcer.keyboardIn = enteringName
+        Announcer.keyboardInID = entering?.uuidString
+        AVMPasteboard.shared.noteGuestInUse()
         startEnforcement()
         // Caps Lock remap BEFORE the transition announcement — a .failure
         // from here interrupts and flushes the queue, so speaking it after
         // "Windows keyboard on" would clip that announcement mid-word. The
         // remapper is silent on success and handles its own failure speech.
         CapsLockRemapper.shared.applyForLock()
-        guestName = VMManager.currentGuestName
+        guestName = enteringName
         // A note owed from before is spent once the user is back in (sixth
         // audit): it came out at a later wake, about a stale machine.
         droppedBySystem = nil
+        // Nor are held lines kept past this (audit of 2026-11-10 #35): set
+        // at a sleep or screen lock and cleared only when they were said,
+        // the flag could outlive it and skip them at every later return.
+        Announcer.keepHeldLines = false
         // Copied on the Mac before entering? Offer it to the guest now.
         AVMPasteboard.shared.macPasteboardMayHaveChanged()
         // The way out, the first time in a run (2026-10-29, sixth audit), as
@@ -416,6 +436,8 @@ class FocusLockManager: ObservableObject {
         // current, the menu named one machine and acted on the other.
         guestName = VMManager.currentGuestName
         Announcer.keyboardIn = nil
+        Announcer.keyboardInID = nil
+        AVMPasteboard.shared.noteGuestInUse()
         // Caps Lock back to normal Mac behavior BEFORE the transition
         // announcement, for the same queue-flush reason as lock().
         CapsLockRemapper.shared.restoreForUnlock()

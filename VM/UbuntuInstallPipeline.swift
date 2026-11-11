@@ -652,6 +652,24 @@ nonisolated final class UbuntuInstallPipeline {
     /// (2026-11-10, fourth audit of 2026-11-09 #31): the first number
     /// anywhere was the alpha's "1", and the disc was refused as older than
     /// Debian 12.
+    /// The Mac's time zone under the name Linux has it (2026-11-10, audit
+    /// of that day #42). macOS still reports some zones by names tzdata
+    /// retired, Asia/Calcutta for all of India among them, and Debian 13
+    /// and Ubuntu 24.04 moved those out of the base system: Ubuntu's
+    /// installer refused the zone, and Debian's asked a question nobody
+    /// could hear. The names here are the retired ones macOS knows.
+    static func linuxTimeZone(_ name: String) -> String {
+        let renamed = [
+            "Asia/Calcutta": "Asia/Kolkata", "Asia/Katmandu": "Asia/Kathmandu", "Asia/Rangoon": "Asia/Yangon",
+            "Europe/Kiev": "Europe/Kyiv", "Europe/Uzhgorod": "Europe/Kyiv", "Europe/Zaporozhye": "Europe/Kyiv",
+            "Pacific/Ponape": "Pacific/Pohnpei", "Pacific/Truk": "Pacific/Chuuk", "America/Godthab": "America/Nuuk",
+            "Pacific/Enderbury": "Pacific/Kanton", "America/Montreal": "America/Toronto",
+            "Asia/Chongqing": "Asia/Shanghai", "Asia/Harbin": "Asia/Shanghai", "Asia/Kashgar": "Asia/Urumqi",
+            "America/Shiprock": "America/Denver", "Antarctica/South_Pole": "Antarctica/McMurdo",
+        ]
+        return renamed[name] ?? name
+    }
+
     static func debianVersion(discInfo: String) -> String {
         guard let match = discInfo.range(of: "(?<=GNU/Linux )[0-9]+(\\.[0-9]+)*", options: .regularExpression) else { return "" }
         return String(discInfo[match])
@@ -773,7 +791,7 @@ nonisolated final class UbuntuInstallPipeline {
             if distro.usesPreseed {
                 let kali = distro == .kali
                 let hostName = Self.hostName(fromVMName: input.vmName)
-                let timeZone = TimeZone.current.identifier
+                let timeZone = Self.linuxTimeZone(TimeZone.current.identifier)
                 try (kali ? Self.kaliPreseed(account: account, hostName: hostName, timeZone: timeZone, disk: input.diskName)
                           : Self.debianPreseed(account: account, hostName: hostName, timeZone: timeZone, disk: input.diskName))
                     .write(to: nocloud.appendingPathComponent("preseed.cfg"), atomically: true, encoding: .utf8)
@@ -787,7 +805,7 @@ nonisolated final class UbuntuInstallPipeline {
                 // One file: the setup and failure scripts ride inside the
                 // kickstart, as its %post and %onerror sections.
                 let hostName = Self.hostName(fromVMName: input.vmName)
-                let timeZone = TimeZone.current.identifier
+                let timeZone = Self.linuxTimeZone(TimeZone.current.identifier)
                 try (distro == .fedora
                      ? Self.fedoraKickstart(account: account, hostName: hostName, timeZone: timeZone, version: version, disk: input.diskName)
                      : Self.enterpriseKickstart(account: account, hostName: hostName, timeZone: timeZone, distro: distro,
@@ -798,12 +816,12 @@ nonisolated final class UbuntuInstallPipeline {
             if distro == .opensuse {
                 // One file, as for Fedora: the scripts ride inside it.
                 try Self.autoYaSTProfile(account: account, hostName: Self.hostName(fromVMName: input.vmName),
-                                         timeZone: TimeZone.current.identifier, disk: input.diskName)
+                                         timeZone: Self.linuxTimeZone(TimeZone.current.identifier), disk: input.diskName)
                     .write(to: nocloud.appendingPathComponent("autoinst.xml"), atomically: true, encoding: .utf8)
                 return
             }
             try Self.userData(account: account, hostName: Self.hostName(fromVMName: input.vmName),
-                              timeZone: TimeZone.current.identifier)
+                              timeZone: Self.linuxTimeZone(TimeZone.current.identifier))
                 .write(to: nocloud.appendingPathComponent("user-data"), atomically: true, encoding: .utf8)
             try "".write(to: nocloud.appendingPathComponent("meta-data"), atomically: true, encoding: .utf8)
             try Self.setupScript(account: account)

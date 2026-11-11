@@ -75,7 +75,7 @@ final class WindowsKeyboard {
     private var announcedHeld = false
     /// The helper holds it for Windows now (2026-10-30): what "types into
     /// Windows" may be said on, not just that one is chosen.
-    private(set) var isHeld = false
+    private(set) var isHeld = false { didSet { AVMPasteboard.shared.noteGuestInUse() } }
 
     private init() {}
 

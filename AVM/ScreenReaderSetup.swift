@@ -84,7 +84,10 @@ extension VMManager {
         }
         function AvmRemoveTree($path) {
           AvmNoLink $path
-          if (Test-Path -LiteralPath $path) { cmd /c rmdir /s /q "$path" | Out-Null }
+          # Quoted for cmd itself (audit of 2026-11-10 #26): PowerShell quotes an
+          # argument only when it has a space, and an account named R&D
+          # had cmd run a second command.
+          if (Test-Path -LiteralPath $path) { cmd /c "rmdir /s /q `"$path`"" | Out-Null }
           if (Test-Path -LiteralPath $path) { throw "$path couldn't be removed" }
         }
         """#
@@ -103,6 +106,12 @@ extension VMManager {
         """#
     }
 
+    /// Where the setup travels in a Linux guest: root's own folder, not a
+    /// fixed name in /tmp (audit of 2026-11-10 #21), which another account
+    /// could make first, as a file of its own or a link.
+    nonisolated static let linuxSetupFile = "/var/lib/avm/sr-setup.tgz"
+    nonisolated static let linuxSetupFolderScript = "mkdir -p /var/lib/avm && chown root:root /var/lib/avm && chmod 700 /var/lib/avm"
+
     /// Virtual Machine > Save Screen Reader Setup.
     func saveScreenReaderSetup() async {
         let machine = machineName
@@ -113,13 +122,15 @@ extension VMManager {
         // nothing of where.
         var step = "locking AVM's folder"
         do {
-            let inGuest = windows ? #"C:\ProgramData\AVM\sr-setup.zip"# : "/tmp/avm-sr-setup.tgz"
+            let inGuest = windows ? #"C:\ProgramData\AVM\sr-setup.zip"# : Self.linuxSetupFile
             // As Apply does, before SYSTEM works there (2026-11-09, fifth
             // audit #36): on a machine that never had the Windows Apps helper
             // a standard user could have made the folder, or a link there,
             // first. The working copy's name can't be guessed either.
             if windows {
                 _ = try await agentRun("powershell.exe", ["-NoProfile", "-Command", WindowsApps.lockDownScript], limit: .seconds(60))
+            } else {
+                _ = try await agentRun("/bin/sh", ["-c", Self.linuxSetupFolderScript], limit: .seconds(30))
             }
             step = "copying the settings in the machine"
             // The earlier zip goes first and errors stop the script
@@ -212,9 +223,11 @@ extension VMManager {
                 Announcer.shared.announce("No \(name) setup is saved yet. Next: in a machine set up as you like it, choose Virtual Machine, Save Screen Reader Setup.", tone: .failure)
                 return false
             }
-            let inGuest = windows ? #"C:\ProgramData\AVM\sr-setup.zip"# : "/tmp/avm-sr-setup.tgz"
+            let inGuest = windows ? #"C:\ProgramData\AVM\sr-setup.zip"# : Self.linuxSetupFile
             if windows {
                 _ = try await agentRun("powershell.exe", ["-NoProfile", "-Command", WindowsApps.lockDownScript], limit: .seconds(60))
+            } else {
+                _ = try await agentRun("/bin/sh", ["-c", Self.linuxSetupFolderScript], limit: .seconds(30))
             }
             try await copyToGuest(file, to: inGuest)
             let out = windows
@@ -231,10 +244,15 @@ extension VMManager {
                       try {
                         foreach ($e in $z.Entries) {
                           if ($e.FullName -match '^[\\\\/]|\\.\\.[\\\\/]|^[A-Za-z]:|\\.\\.$') { throw "unsafe entry $($e.FullName)" }
-                          # Add-ons are programs; a setup saved before 0.4.44 may have them (review).
-                          if ($e.FullName -match '^(addons|scratchpad)[\\\\/]') { continue }
-                          $t = Join-Path $n $e.FullName
-                          if ($e.FullName -match '[\\\\/]$') { New-Item -ItemType Directory -Force $t | Out-Null; continue }
+                          # Only settings, by the name each entry really lands
+                          # under (audit of 2026-11-10 #13). The archive is the
+                          # guest's own work, and leaving out "addons" let
+                          # "./addons" and "addons." through; NVDA also loads
+                          # updateCheckState.pickle, which can run code.
+                          $t = [IO.Path]::GetFullPath((Join-Path $n ($e.FullName -replace '/', '\\')))
+                          if (-not $t.StartsWith($n + '\\', [StringComparison]::OrdinalIgnoreCase)) { throw "unsafe entry $($e.FullName)" }
+                          if ($e.FullName -match '[\\\\/]$') { continue }
+                          if ($t.Substring($n.Length + 1) -notmatch '^(nvda\\.ini|gestures\\.ini|profileTriggers\\.ini|profiles\\\\[^\\\\]+\\.ini|speechDicts\\\\([^\\\\]+\\\\)*[^\\\\]+\\.dic|symbols-[^\\\\]+\\.dic)$') { continue }
                           New-Item -ItemType Directory -Force (Split-Path $t) | Out-Null
                           [IO.Compression.ZipFileExtensions]::ExtractToFile($e, $t, $true)
                         }
@@ -245,7 +263,10 @@ extension VMManager {
                       # fourth audit #10): an icacls /t on the user's folder
                       # could be pointed through a link swapped in meanwhile.
                       $sid = (New-Object Security.Principal.NTAccount($u)).Translate([Security.Principal.SecurityIdentifier]).Value
-                      icacls $n /grant "*$($sid):(OI)(CI)F" /t /c /q | Out-Null
+                      # Only SYSTEM, administrators and that user (audit of
+                      # 2026-11-10 #22): made here, the folder took Users'
+                      # right to read from AVM's folder and kept it when moved.
+                      icacls $n /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*$($sid):(OI)(CI)F" /q | Out-Null
                       if ($LASTEXITCODE -ne 0) { throw "icacls stopped with $LASTEXITCODE" }
                       if (Get-Process nvda -ErrorAction SilentlyContinue) { Stop-Process -Name nvda -Force -ErrorAction SilentlyContinue; 'AVM-STOPPED'; Start-Sleep 2 }
                       $moved = $null
@@ -264,14 +285,26 @@ extension VMManager {
                       'AVM-OK'
                     } finally {
                       Remove-Item -Force '\(inGuest)' -ErrorAction SilentlyContinue
-                      if ($n -and (Test-Path $n)) { Remove-Item -Recurse -Force $n -ErrorAction SilentlyContinue }
+                      # Without following a link (audit of 2026-11-10 #14): the
+                      # user has full control of this folder by now, and
+                      # Remove-Item -Recurse went through a junction put there.
+                      $i = if ($n) { Get-Item -LiteralPath $n -Force -ErrorAction SilentlyContinue }
+                      if ($i -and ($i.Attributes -band [IO.FileAttributes]::ReparsePoint)) { [IO.Directory]::Delete($n) }
+                      elseif ($i) { cmd /c "rmdir /s /q `"$n`"" | Out-Null }
                     }
                     """], limit: .seconds(180))
                 : try await agentRun("/bin/sh", ["-c", """
                     \(Self.linuxSignedInUser)
                     N="$D/.avm-orca-new"
-                    chown "$U" \(inGuest); chmod 600 \(inGuest)
-                    runuser -u "$U" -- sh -c "mkdir -p '$D' && rm -rf '$N' && mkdir '$N' && tar xzf \(inGuest) -C '$N' --no-same-owner --exclude='*.py' --exclude='orca/orca-scripts' && [ -d '$N/orca' ] && { if pkill -x orca; then echo AVM-STOPPED; sleep 2; fi; M=; if [ -d '$D/orca' ]; then M='$D/orca-before-avm'; if [ -d \\"\\$M\\" ]; then M='$D/orca-before-avm-last'; rm -rf \\"\\$M\\"; fi; mv '$D/orca' \\"\\$M\\" || exit 1; fi; if mv '$N/orca' '$D/orca'; then echo AVM-OK; elif [ -n \\"\\$M\\" ]; then mv \\"\\$M\\" '$D/orca'; fi; }; rm -rf '$N'"
+                    # Only settings files, by name (audit of 2026-11-10 #13):
+                    # leaving out *.py let a compiled .pyc through. The user's
+                    # tar reads the archive from root's hand, since it lies
+                    # in root's folder (#21). Nothing is unpacked from an empty
+                    # list (tar takes that as everything), and afterwards all
+                    # that isn't a plain .conf or .json file goes, by what is
+                    # on disk (its review): a link in the archive led a later
+                    # member past the list.
+                    runuser -u "$U" -- sh -c "mkdir -p '$D' && rm -rf '$N' '$N.tgz' '$N.list' && mkdir '$N' && cat > '$N.tgz' && tar tzf '$N.tgz' | grep -E '^orca/([^/]+|app-settings/[^/]+)\\.(conf|json)\\$' > '$N.list'; [ -s '$N.list' ] && tar xzf '$N.tgz' -C '$N' --no-same-owner -T '$N.list'; rm -f '$N.tgz' '$N.list'; find '$N' -mindepth 1 ! -type d ! \\( -type f \\( -name '*.conf' -o -name '*.json' \\) \\) -delete; [ -d '$N/orca' ] && { if pkill -x orca; then echo AVM-STOPPED; sleep 2; fi; M=; if [ -d '$D/orca' ]; then M='$D/orca-before-avm'; if [ -d \\"\\$M\\" ]; then M='$D/orca-before-avm-last'; rm -rf \\"\\$M\\"; fi; mv '$D/orca' \\"\\$M\\" || exit 1; fi; if mv '$N/orca' '$D/orca'; then echo AVM-OK; elif [ -n \\"\\$M\\" ]; then mv \\"\\$M\\" '$D/orca'; fi; }; rm -rf '$N'" < \(inGuest)
                     rm -f \(inGuest)
                     """], limit: .seconds(120))
             stopped = out.contains("AVM-STOPPED")

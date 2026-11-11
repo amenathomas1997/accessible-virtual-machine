@@ -1151,6 +1151,8 @@ struct SettingsView: View {
         alert.addButton(withTitle: "Restore")
         guard alert.runModal() == .alertSecondButtonReturn,
               let dir = try? vmStore.vmDirectoryURL(for: saved) else { return }
+        // A copy begun under the question (review of the audit of 2026-11-10 #17).
+        if MachineArchiveController.shared.refusesWhileBusy(saved) { return }
         if session == nil, startedMeanwhile {
             Announcer.shared.announce("\(saved.name) started while you were asked, so it wasn't restored. Shut it down first.", tone: .failure)
             return
@@ -1164,10 +1166,10 @@ struct SettingsView: View {
         // the dashboard's Save, or the point AVM takes before updates. Waited
         // out, up to two minutes, rather than force-stopped half way.
         restorePointsBusy = true
-        RestorePoints.restoring = saved.name
+        RestorePoints.restoringNames[saved.id] = saved.name
         RestorePoints.restoringIDs.insert(saved.id)
         Task { @MainActor in
-            defer { RestorePoints.restoring = nil; RestorePoints.restoringIDs.remove(saved.id); restorePointsBusy = false }
+            defer { RestorePoints.restoringNames[saved.id] = nil; RestorePoints.restoringIDs.remove(saved.id); restorePointsBusy = false }
             var turnedOff = false
             var undo = ""
             var keptLabel: String?
@@ -1248,7 +1250,10 @@ struct SettingsView: View {
                 }
                 await RestorePoints.pruneBeforeRestore(vmDirectory: dir, keeping: point)
                 await loadRestorePoints()
-                if session != nil {
+                // Not under a copy of it (2026-11-10, audit of that day #17).
+                if session != nil, let busy = MachineArchiveController.shared.busyMessage(for: saved) {
+                    Announcer.shared.announce("\(saved.name) is back to \(point.label).\(sizeNote)\(busNote)\(undo) \(busy)", tone: .success)
+                } else if session != nil {
                     Announcer.shared.announce("\(saved.name) is back to \(point.label).\(sizeNote)\(busNote)\(undo) Starting it again.", tone: .success)
                     RestorePoints.restoringIDs.remove(saved.id)
                     // Not taking the keyboard (2026-11-05 audit): the user is in
@@ -2002,7 +2007,10 @@ struct SettingsView: View {
             } else if running {
                 // Not "restart" (sixth audit): a restart inside the machine
                 // keeps the same virtual hardware.
-                message = "Settings saved. USB changes apply right away; the others take effect when \(guest) next starts after shutting down."
+                // What really waits (audit of 2026-11-10 #36): sound, the
+                // clipboard, the display, the trackpad, the name and Remote
+                // Desktop apply at once, and this said only USB did.
+                message = "Settings saved. Changes to USB, sound, the clipboard, the display, the trackpad, the name and Remote Desktop apply right away; the others take effect when \(guest) next starts after shutting down."
             } else {
                 message = "Settings saved. Changes take effect the next time you start \(guest)."
             }
@@ -2201,7 +2209,11 @@ extension RestorePoints {
     /// The machine being put back, for the quit question (2026-11-05 audit):
     /// quitting part way left the disk back but the firmware settings and TPM
     /// not, as after a failed restore.
-    @MainActor static var restoring: String?
+    /// By machine (2026-11-10, audit of that day #31): one name for all,
+    /// the first of two restores to finish cleared it, and quitting during
+    /// the second wasn't asked about.
+    @MainActor static var restoringNames: [UUID: String] = [:]
+    @MainActor static var restoring: String? { restoringNames.values.sorted().first }
     /// The machines Start must refuse meanwhile.
     @MainActor static var restoringIDs = Set<UUID>()
 

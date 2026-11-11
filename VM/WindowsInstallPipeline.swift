@@ -269,6 +269,8 @@ nonisolated struct PipelineProgress: Sendable {
 nonisolated struct WIMImageInfo {
     let index: Int
     let name: String
+    /// "Professional", "Core": the same on every language's disc.
+    var editionID: String?
 }
 
 /// The subset of `wimlib-imagex info` we act on: the install.wim architecture and
@@ -435,6 +437,9 @@ nonisolated final class WindowsInstallPipeline {
     /// assert against a list that doesn't exist. Touched only from run()'s
     /// serial flow.
     private var discEditionNames: [String]?
+    /// The disc's own name for the edition to install, when it differs from
+    /// the English one (audit of 2026-11-10 #3); what /IMAGE/NAME is given.
+    private var discImageName: String?
 
     /// boot.wim image index that is "Microsoft Windows Setup (arm64)" — the image
     /// whose winpeshl.ini controls what runs at boot. VERIFIED on the real 25H2
@@ -719,6 +724,8 @@ nonisolated final class WindowsInstallPipeline {
                     images.append(WIMImageInfo(index: idx, name: v))
                     pendingIndex = nil
                 }
+            } else if line.hasPrefix("Edition ID:"), !images.isEmpty, images[images.count - 1].editionID == nil {
+                images[images.count - 1].editionID = line.dropFirst("Edition ID:".count).trimmingCharacters(in: .whitespaces)
             } else if line.hasPrefix("Architecture:") && architecture.isEmpty {
                 architecture = line.dropFirst("Architecture:".count).trimmingCharacters(in: .whitespaces)
             } else if line.hasPrefix("Default Language:") && language == nil {
@@ -789,6 +796,7 @@ nonisolated final class WindowsInstallPipeline {
         )
         resolvedEdition = resolved
         discEditionNames = nil   // fresh per run; the gate fills it when readable
+        discImageName = nil
         pipelineLog("run: resolved edition \"\(resolved.name)\" (\(resolved.wasDefaulted ? "default" : "user-selected"))")
 
         // Cheap, fail-fast validation BEFORE the expensive extract.
@@ -960,7 +968,14 @@ nonisolated final class WindowsInstallPipeline {
         // EDITION CHECK, two tiers by provenance (issue #6). The EFFECTIVE
         // edition is checked — the resolved value, never raw input — so the
         // defaulted case can no longer slip through unexamined.
-        if !names.contains(resolved.name) {
+        // By the edition's id where the name is translated (2026-11-10, audit
+        // of that day #3): "Windows 11 Famille" is Windows 11 Home.
+        let onDisc = WindowsEdition.imageName(for: resolved.name, among: info.images.map { ($0.name, $0.editionID) })
+        if let onDisc, onDisc != resolved.name {
+            discImageName = onDisc
+            pipelineLog("validateISO: \"\(resolved.name)\" is \"\(onDisc)\" on this disc, matched by its edition id")
+        }
+        if onDisc == nil {
             let available = names.isEmpty ? "none found" : names.joined(separator: ", ")
             if resolved.wasDefaulted {
                 // CERTAIN: the default isn't on this disc. Proceeding writes an
@@ -1379,7 +1394,7 @@ nonisolated final class WindowsInstallPipeline {
         // list. The validation gate hard-stops this case, so firing here means
         // a code path skipped the gate. See the doc comment for why user-chosen
         // and unreadable-wim runs are exempt. ---
-        if let names = discEditionNames, !names.isEmpty, !names.contains(resolved.name) {
+        if let names = discEditionNames, !names.isEmpty, !names.contains(discImageName ?? resolved.name) {
             throw PipelineError.stageFailed(
                 stage: .buildAnswerImage,
                 reason: "The edition \(resolved.name) is not on this ISO, and the earlier check that should have caught this didn't run. This is a build problem, not something you did."
@@ -1417,7 +1432,8 @@ nonisolated final class WindowsInstallPipeline {
         // resolution point at the top of run() is the only place defaults can
         // engage; issue #6). ---
         var filled = template
-            .replacingOccurrences(of: editionToken, with: resolved.name)
+            .replacingOccurrences(of: editionToken, with: (discImageName ?? resolved.name)
+                .replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;"))
             .replacingOccurrences(of: productKeyToken, with: resolved.key)
             .replacingOccurrences(of: "AVM_SETUP_LANGUAGE", with: setupLanguage)
             .replacingOccurrences(of: "AVM_DISK_ID", with: "\(input.setupDiskID)")

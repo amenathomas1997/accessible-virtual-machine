@@ -49,6 +49,15 @@ nonisolated enum QEMUSavedState {
 
     static func hint(in dir: URL) -> URL { dir.appendingPathComponent(hintFile) }
 
+    /// The hint's second line: the QEMU that saved the session.
+    static func madeByLine(qemu: String) -> String { "QEMU \(qemu)" }
+    /// The hint names a QEMU, and not this one. A hint from before the line
+    /// says nothing either way.
+    static func madeByAnother(hint: String, qemu: String) -> Bool {
+        guard !qemu.isEmpty, let line = hint.split(whereSeparator: \.isNewline).first(where: { $0.hasPrefix("QEMU ") }) else { return false }
+        return line != madeByLine(qemu: qemu)
+    }
+
     static func unattendWasOut(tag: String, in dir: URL) -> Bool {
         tagsWithUnattendOut(in: dir).contains(tag)
     }

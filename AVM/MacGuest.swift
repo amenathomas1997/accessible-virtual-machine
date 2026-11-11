@@ -162,6 +162,7 @@ final class MacInstaller: NSObject, URLSessionDownloadDelegate {
     private var downloadContinuation: CheckedContinuation<URL, Error>?
     private var downloadDestination: URL?
     private var lastSpokenGB = 0
+    private var downloadResumes = 0
     private var installObservation: NSKeyValueObservation?
 
     /// Where downloaded macOS restore images are kept, so a second machine
@@ -179,6 +180,9 @@ final class MacInstaller: NSObject, URLSessionDownloadDelegate {
     @MainActor static var running = 0
 
     func install(_ config: VMConfiguration, ipsw: URL?) async throws {
+        // Awake through the download and the install (audit of 2026-11-10 #11).
+        KeepAwake.begin("mac-install-\(config.id.uuidString)", reason: "\(config.name) is installing macOS")
+        defer { KeepAwake.end("mac-install-\(config.id.uuidString)") }
         await MainActor.run { Self.running += 1 }
         defer { Task { @MainActor in Self.running -= 1 } }
         let folder = try config.directoryURL()
@@ -272,6 +276,7 @@ final class MacInstaller: NSObject, URLSessionDownloadDelegate {
         // 2026-10-26), in the first progress line.
         say("Downloading macOS \(latest.operatingSystemVersion.description) from Apple. It's large, usually over 15 gigabytes; AVM says how far it has got every gigabyte.")
         lastSpokenGB = 0
+        downloadResumes = 0
         downloadDestination = cached
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
         let got: URL = try await withCheckedThrowingContinuation { cont in
@@ -328,6 +333,20 @@ final class MacInstaller: NSObject, URLSessionDownloadDelegate {
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         MainActor.assumeIsolated {
+            // Carried on from where it got to, up to five times (2026-11-10,
+            // audit of that day #12): a minute's stall at 25 of 26 gigabytes
+            // ended it, removed the machine, and the next try began at nothing.
+            if let error, downloadContinuation != nil, downloadResumes < 5,
+               let resumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
+                downloadResumes += 1
+                AVMLog.write("AVM: MacGuest — the macOS download stopped (\(error.localizedDescription)); carrying on from where it got to (time \(downloadResumes) of 5)")
+                say("The macOS download stopped. AVM is carrying on from where it got to.")
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(5 * downloadResumes)) { [weak self] in
+                    guard let self, self.downloadContinuation != nil else { session.invalidateAndCancel(); return }
+                    session.downloadTask(withResumeData: resumeData).resume()
+                }
+                return
+            }
             if let error {
                 downloadContinuation?.resume(throwing: MacGuestError("The macOS download stopped. Reason: \(error.localizedDescription)"))
                 downloadContinuation = nil
@@ -563,8 +582,17 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                             alert.informativeText = "Reason: \(error.localizedDescription) Try Again keeps the saved session. Start Fresh discards it, and anything open in \(config.name) when it was saved is lost."
                             alert.addButton(withTitle: "Try Again")
                             alert.addButton(withTitle: "Start Fresh")
-                            if QuitCoordinator.ask(alert) == .alertFirstButtonReturn {
+                            // Start Fresh only when it's chosen (2026-11-10,
+                            // audit of that day #5): a USB question closing
+                            // under this one ends it with neither button, and
+                            // that discarded the session, as Keep It's did.
+                            let answer = QuitCoordinator.ask(alert)
+                            if answer == .alertFirstButtonReturn {
                                 self.resume(machine, config: config, files: files)
+                                return
+                            }
+                            if answer != .alertSecondButtonReturn {
+                                self.ended(spoken: "\(config.name) didn't start. Its saved session is kept. Next: start it again to try once more.", tone: .info)
                                 return
                             }
                         }

@@ -506,6 +506,9 @@ final class BluetoothDevices: ObservableObject {
             let entryName = entry["name"] as? String ?? ""
             let lower = entryName.lowercased()
             if ["yubikey", "karabiner", "virtual"].contains(where: lower.contains) { continue }
+            // The helper's own word, when it gives one (audit of 2026-11-10
+            // #15; a helper from before doesn't, and counts as it did).
+            if let typing = entry["typing"] as? Bool, !typing { continue }
             listed[entryName, default: 0] += 1
         }
         return listed.contains { $0.value > ours[$0.key, default: 0] }

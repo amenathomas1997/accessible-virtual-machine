@@ -88,8 +88,14 @@ final class MachineSessions: ObservableObject {
     func start(_ config: VMConfiguration, vmStore: VMStore?, focusLock: FocusLockManager?, windowless: Bool = false, takesKeyboard: Bool = true) -> VMSession {
         if let vmStore { self.vmStore = vmStore }
         if let focusLock { self.focusLock = focusLock }
-        if sessions[config.id] != nil {
-            Announcer.shared.announce("\(config.name) is already running.", tone: .info)
+        if let existing = sessions[config.id] {
+            // By its state (audit of 2026-11-10 #34): a second Start during
+            // a slow one said "already running" of a machine still starting.
+            switch existing.vmState {
+            case .starting: Announcer.shared.announce("\(config.name) is starting.", tone: .info)
+            case .stopping: Announcer.shared.announce("\(config.name) is shutting down.", tone: .info)
+            default: Announcer.shared.announce("\(config.name) is already running.", tone: .info)
+            }
             enter(config.id)
             return sessions[config.id]!
         }
@@ -417,11 +423,24 @@ final class MachineWindow: NSObject, NSWindowDelegate {
         // (MachineDisplays).
         MachineDisplays.placeOpening(window, for: latestConfiguration)
         let elsewhere = focusLock.isLocked && !focusLock.holdsKeyboard(for: session.configuration.id)
+        // Nor from under a question or an open sheet (2026-11-10, audit of
+        // that day #9): a start takes seconds to minutes, and a machine
+        // that finished it took the keyboard from whatever the user had
+        // begun meanwhile; the rest of a password being typed into
+        // Settings or the wizard went into the machine.
+        // Nor over another app (its review): show() brought AVM forward
+        // over it, and the lock then refused.
+        let away = !NSApp.isActive
+        let busy = away || NSApp.modalWindow != nil || NSApp.windows.contains { $0.attachedSheet != nil }
         if entering {
             show()
         } else if elsewhere {
             window.orderBack(nil)
             Announcer.shared.announce("\(session.configuration.name) is running. Enter it from AVM's list when you're ready.", tone: .info)
+        } else if busy, session.entersOnFirstShow {
+            session.entersOnFirstShow = false
+            window.orderBack(nil)
+            Announcer.shared.announce("\(session.configuration.name) is running. Your keyboard stays where it is. \(away ? "Switch to AVM and press" : "Press") Command Shift E to enter \(session.configuration.name) when you're ready.", tone: .info)
         } else if !session.entersOnFirstShow {
             // Started when AVM opened, with a keyboard of its own
             // (2026-10-28): its window opens, and the Mac's keyboard stays

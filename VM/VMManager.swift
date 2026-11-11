@@ -985,6 +985,7 @@ final class VMManager: ObservableObject {
                     : report.contains("jaws-installed")
                         ? " JAWS is talking in it."
                         : " Enter Windows and press Control Command Return to turn on Narrator."
+                KeepAwake.end("install-\(configuration.id.uuidString)")
                 Announcer.shared.announce("Windows is installed and signed in.\(talking)", tone: .success)
                 // Setup's drives come out now (2026-10-29), not at the next Start.
                 removeSetupDrives(runtimeDir: runtimeDir)
@@ -1512,7 +1513,17 @@ final class VMManager: ObservableObject {
         if diskIsOffloaded(runtimeDir: runtimeDir) {
             throw AVMError.refused("\(configuration.name)'s disk has been moved off this Mac by iCloud or another file provider, so AVM won't start it: starting would treat it as a new machine. Next: in Finder, download \(runtimeDir.path), then start it again, and keep machines out of folders iCloud syncs.")
         }
-        let installComplete = checkInstallCompleteMarker(configuration: configuration, runtimeDir: runtimeDir)
+        var installComplete = checkInstallCompleteMarker(configuration: configuration, runtimeDir: runtimeDir)
+        var setupMayNotFinish = false
+        if installComplete {
+            switch startOverInterruptedSetup(configuration: configuration, runtimeDir: runtimeDir) {
+            case .startingOver:
+                installComplete = false
+                configuration.installMarkerSeen = nil
+            case .cannotStartOver: setupMayNotFinish = true
+            case .notInterrupted: break
+            }
+        }
         // USB 2c: start-time devices wait for setup to finish (2026-10-18).
         installCompleteAtStart = installComplete
         startedOnVirtioDisk = configuration.usesVirtioDisk
@@ -1574,11 +1585,15 @@ final class VMManager: ObservableObject {
                 // interrupted install finished in silence. Only the sentence
                 // and the hour's warning are said once.
                 if !resuming, !signedIn, setupStillRunning(runtimeDir: runtimeDir) {
-                    if !saidBefore {
+                    // Not after "may not finish" (review of the audit of
+                    // 2026-11-10 #4): the two said opposite things.
+                    if !saidBefore, !setupMayNotFinish {
                         FileManager.default.createFile(atPath: carryOnSaid.path, contents: nil)
                         Announcer.shared.announce("Windows Setup is carrying on in \(configuration.name) from where it was stopped. AVM says how it's going every 10 minutes, and when Windows is signed in.", tone: .info)
                     }
                     stopInstallWatchdog()
+                    // Awake for the rest of Setup too (review of #11).
+                    KeepAwake.begin("install-\(configuration.id.uuidString)", reason: "\(configuration.name) is finishing Windows Setup")
                     installWatchdogTask = Task { [weak self] in
                         await self?.watchForFirstSignIn(configuration: configuration, runtimeDir: runtimeDir, installStart: Date(), quietAfterAnHour: saidBefore)
                     }
@@ -1600,6 +1615,11 @@ final class VMManager: ObservableObject {
             // and the media doesn't exist yet (six-stage pipeline; reused thereafter).
             // A failure surfaces as .error with the pipeline's actionable message
             // (and an interrupting announcement from ensureInstallMedia).
+            // Awake until the install ends or the machine stops (audit of
+            // 2026-11-10 #11), the building of its media included.
+            if let iso = configuration.installISOPath, !iso.isEmpty {
+                KeepAwake.begin("install-\(configuration.id.uuidString)", reason: "\(configuration.name) is installing")
+            }
             // A failure marker left by an earlier run (Force Stop, or the
             // stall watch stopping a failed install) must not count against
             // this one. Removed here, before QEMU opens the volume.
@@ -2281,7 +2301,8 @@ final class VMManager: ObservableObject {
 
                 // Sample the frame, the CPU, and the disk.
                 let frame = await self.captureWatchdogFrame(runtimeDir: runtimeDir)
-                let cpu = await MainActor.run { self.sampleQEMUCPUPercent() }
+                let pid = await MainActor.run { self.runningQEMUPID }
+                let cpu = await Task.detached { pid.flatMap { Self.sampleCPUPercent(pid: $0) } }.value
                 let disk = await MainActor.run { self.sampleDiskActivity(path: configuration.diskImagePath) }
 
                 guard let frame, let cpu, let disk else {
@@ -2485,11 +2506,14 @@ final class VMManager: ObservableObject {
 
     /// Watchdog CPU sample: QEMU's current CPU%% via ps (same host-tool pattern
     /// as the orphan reapers). Returns nil if the process is gone or ps fails.
-    private func sampleQEMUCPUPercent() -> Double? {
-        guard let proc = qemuProcess, proc.isRunning else { return nil }
+    /// Off the main thread (2026-11-10, audit of that day #29): the watch
+    /// ran ps there every sample.
+    private var runningQEMUPID: Int32? { qemuProcess.flatMap { $0.isRunning ? $0.processIdentifier : nil } }
+
+    nonisolated private static func sampleCPUPercent(pid: Int32) -> Double? {
         let ps = Process()
         ps.executableURL = URL(fileURLWithPath: "/bin/ps")
-        ps.arguments = ["-o", "pcpu=", "-p", "\(proc.processIdentifier)"]
+        ps.arguments = ["-o", "pcpu=", "-p", "\(pid)"]
         let pipe = Pipe()
         ps.standardOutput = pipe
         ps.standardError = FileHandle.nullDevice
@@ -2688,9 +2712,9 @@ final class VMManager: ObservableObject {
         // DirectX's shared memory needs 4 KB pages from HVF, as in UTM
         // (2026-11-01, Windows3D.swift); only QEMU's -accel can say so.
         if configuration.usesWindows3D && Self.supportsWindows3D && !attachInstallMedia {
-            args += ["-machine", "virt", "-accel", "hvf,ipa-granule-size=0x1000"]
+            args += ["-machine", Self.machineType, "-accel", "hvf,ipa-granule-size=0x1000"]
         } else {
-            args += ["-machine", "virt,accel=hvf"]
+            args += ["-machine", "\(Self.machineType),accel=hvf"]
         }
 
         // CPU: `host`, matching UTM's working Windows ARM command line.
@@ -3604,6 +3628,62 @@ final class VMManager: ObservableObject {
         return signedIn
     }
 
+    /// Windows Setup stopped inside its specialize pass (2026-11-10, audit of
+    /// that day #4). The pass's first command writes the install marker, so
+    /// the next Start took Windows as installed, deleted the answer file and
+    /// said Setup was "carrying on"; but Windows doesn't run an interrupted
+    /// specialize pass again: it stops at "The computer restarted
+    /// unexpectedly" for good. Nothing of the user's is on the disk before
+    /// the first sign-in, so the install starts over from the DVD with the
+    /// answers still on the volume: the marker and report go, and with them
+    /// the firmware settings and TPM, which name the half-made Windows.
+    /// Without the answer file or the DVD (a Start by an earlier AVM removed
+    /// them), only Reinstall Windows gets out, and that is said; the watch
+    /// for the first sign-in still runs, in case Windows does finish.
+    enum InterruptedSetup { case notInterrupted, startingOver, cannotStartOver }
+
+    private func startOverInterruptedSetup(configuration: VMConfiguration, runtimeDir: URL) -> InterruptedSetup {
+        guard configuration.guestOS == .windows else { return .notInterrupted }
+        let fm = FileManager.default
+        let report = (mtools(["mtype", "-i", "IMG", "::AVMSTATUS.TXT"], runtimeDir: runtimeDir)?.output ?? "")
+            + (mtools(["mtype", "-i", "IMG", "::AVMSTAT.OLD"], runtimeDir: runtimeDir)?.output ?? "")
+        guard WindowsSetupReport.stoppedInSpecialize(report),
+              !fm.fileExists(atPath: QEMUSavedState.hint(in: runtimeDir).path) else { return .notInterrupted }
+        let name = configuration.name
+        let cannot = {
+            avmLog("startOverInterruptedSetup: specialize was interrupted and the install can't start over here")
+            Announcer.shared.announce("Windows Setup in \(name) was stopped part way through a step Windows usually can't repeat. If Windows doesn't finish setting up, stop \(name), then choose Reinstall Windows in its Settings.", tone: .failure)
+        }
+        guard mtools(["mdir", "-i", "IMG", "::autounattend.xml"], runtimeDir: runtimeDir)?.status == 0,
+              fm.fileExists(atPath: runtimeDir.appendingPathComponent("install-avm.iso").path) else {
+            cannot()
+            return .cannotStartOver
+        }
+        // What AVM remembers first, then the marker, checked, and the
+        // report last (its review): with the report gone and the marker
+        // still there, the next Start took the half-made Windows as
+        // installed without a word.
+        if var saved = VMStore.shared?.configurations.first(where: { $0.id == configuration.id }), saved.installMarkerSeen == true {
+            saved.installMarkerSeen = nil
+            VMStore.shared?.save(saved)
+        }
+        if activeConfiguration?.id == configuration.id { activeConfiguration?.installMarkerSeen = nil }
+        _ = mtools(["mdel", "-i", "IMG", "::AVMDONE.TAG"], runtimeDir: runtimeDir)
+        guard mtools(["mdir", "-i", "IMG", "::AVMDONE.TAG"], runtimeDir: runtimeDir).map({ $0.status != 0 }) == true else {
+            cannot()
+            return .cannotStartOver
+        }
+        for file in ["AVMSTATUS.TXT", "AVMSTAT.OLD", "FROZE.TXT"] {
+            _ = mtools(["mdel", "-i", "IMG", "::\(file)"], runtimeDir: runtimeDir)
+        }
+        for file in ["nvram.fd", Self.wrongSizeNVRAMName, "tpm-state", "setup-carry-on-said"] {
+            try? fm.removeItem(at: runtimeDir.appendingPathComponent(file))
+        }
+        avmLog("startOverInterruptedSetup: specialize was interrupted; marker and report removed, installing again from the DVD")
+        Announcer.shared.announce("Windows Setup in \(name) was stopped part way through a step Windows usually can't repeat, so AVM is installing Windows again from the start. Nothing of yours was in it yet.", tone: .info)
+        return .startingOver
+    }
+
     /// The report says Setup began (specialize) but not that the first
     /// sign-in finished (2026-10-28, fifth audit).
     private func setupStillRunning(runtimeDir: URL) -> Bool {
@@ -3727,6 +3807,8 @@ final class VMManager: ObservableObject {
     var runningMachineID: UUID? { activeConfiguration?.id }
     /// Type Clipboard is at work (TypeText.swift); asking again stops it.
     var isTypingText = false
+    /// Asking the machine for its keyboard layout before typing.
+    var isCheckingKeyboard = false
     var typingStopAsked = false
     /// Repair for AVM is waiting for a password (GuestRepair.swift).
     var isRepairing = false
@@ -3753,6 +3835,13 @@ final class VMManager: ObservableObject {
     }
     /// The running machine's id, for code outside that follows it.
     var machineID: UUID? { activeConfiguration?.id }
+
+    /// The machine by its version, not "virt" (2026-11-10, audit of that day
+    /// #30). "virt" is whatever the bundled QEMU's newest is, 10.0 today, so
+    /// a saved session or a restore point with memory would stop loading
+    /// the day an update brings a newer QEMU; the versioned name stays the
+    /// same machine. The same machine as before: virt is its alias.
+    nonisolated static let machineType = "virt-10.0"
 
     /// See VMSession.noteRenamed.
     func noteRenamed(_ name: String) { activeConfiguration?.name = name }
@@ -3819,14 +3908,19 @@ final class VMManager: ObservableObject {
     // MARK: - QMP Handshake
 
     private func performQMPHandshake() async throws {
-        let greetingData = try await readQMPLine()
+        // A minute, not 5 seconds (2026-11-10, audit of that day #16): QEMU
+        // listens early and answers only once the machine is built, and a
+        // first launch after an update, or a busy Mac, ran past 5 seconds
+        // and failed the Start, as AVM's own live tests did three times.
+        // The read ends at once if QEMU exits or closes the socket.
+        let greetingData = try await readQMPLine(timeout: 60)
         if let json = try? JSONDecoder().decode(QMPGreeting.self, from: greetingData) {
             let v = json.QMP.version.qemu
             qemuVersion = "\(v.major).\(v.minor).\(v.micro)"
             appendConsole("AVM: Connected to QEMU \(qemuVersion) via QMP.\n")
         }
         try await sendRawQMPCommand(#"{"execute":"qmp_capabilities"}"#)
-        _ = try await readQMPLine()
+        _ = try await readQMPLine(timeout: 60)
     }
 
     // MARK: - QMP Command Sending (serialized)
@@ -4428,6 +4522,7 @@ final class VMManager: ObservableObject {
     }
 
     private func cleanUp() {
+        if let id = activeConfiguration?.id { KeepAwake.end("install-\(id.uuidString)") }
         diskWatchTask?.cancel()
         diskWatchTask = nil
         guestWatchTask?.cancel()
@@ -4838,7 +4933,9 @@ extension VMManager {
         await WindowsKeyboard.shared.releaseHeldKeys(before: self)
         await detachDevicesSentMeanwhile()
         let tag = RestorePoints.newTag()
-        try RestorePoints.writeFolder(vmDirectory: runtimeDir, tag: tag, label: label, secureBoot: configuration.usesSecureBoot, diskBus: configuration.diskBus ?? "nvme")
+        // The firmware and TPM copies off the main thread (audit of 2026-11-10 #29).
+        let (secureBoot, bus) = (configuration.usesSecureBoot, configuration.diskBus ?? "nvme")
+        try await Task.detached { try RestorePoints.writeFolder(vmDirectory: runtimeDir, tag: tag, label: label, secureBoot: secureBoot, diskBus: bus) }.value
         // Marked pending until the snapshot lands, as a stopped machine's is
         // (2026-11-09, third audit of the day #21): a Force Stop or Quit
         // during the save left a folder with firmware and TPM copies that
@@ -4856,6 +4953,18 @@ extension VMManager {
             // force-stopped just after writing the snapshot left one with no
             // label, firmware or TPM copy, which a restore then half-applied.
             let disk = URL(fileURLWithPath: configuration.diskImagePath)
+            // Once QEMU has ended (2026-11-10, audit of that day #28), as
+            // Save does: a Force Stop waits for the snapshot, so one that
+            // lands in those two seconds was looked for too soon, its
+            // folder removed, and an "Incomplete restore point" left.
+            let ended: Bool = { if case .error = state { return true }; return state == .stopped }()
+            if ended { await waitForQEMUToEnd(of: configuration) }
+            // Started again meanwhile (its review), as for Save (#25): the
+            // new QEMU holds the disk, and the folder stays as pending.
+            if ended, let newer = MachineSessions.shared.session(for: configuration.id), newer.manager !== self {
+                avmLog("createRunningRestorePoint: the machine was started again before \(tag) could be looked for; its folder stays as pending")
+                throw error
+            }
             if await QEMUSavedState.snapshotTags(disk: disk)?.contains(tag) == true {
                 avmLog("createRunningRestorePoint: \(tag) landed although the job failed (\(error.localizedDescription)); its folder stays")
                 try? FileManager.default.removeItem(at: pending)
@@ -4984,7 +5093,8 @@ extension VMManager {
         // crash between the two left a state plan() loads while
         // removeFinishedWindowsMedia, seeing no hint, took its install media,
         // and the load failed. A hint with no snapshot is dropped by plan().
-        try? "Saved \(Date())\n".write(to: QEMUSavedState.hint(in: runtimeDir), atomically: true, encoding: .utf8)
+        // With what made it (audit of 2026-11-10 #30), for the day it won't load.
+        try? "Saved \(Date())\n\(QEMUSavedState.madeByLine(qemu: qemuVersion))\n".write(to: QEMUSavedState.hint(in: runtimeDir), atomically: true, encoding: .utf8)
         let started = Date()
         var savedDevices: [String] = []
         do {
@@ -5014,6 +5124,13 @@ extension VMManager {
             let gone: Bool = { if case .error = state { return true }; return state == .stopped }()
             if gone {
                 await waitForQEMUToEnd(of: configuration)
+                // Started again meanwhile (2026-11-10, audit of that day #25):
+                // the new Start has read the disk and may be loading this
+                // very state; its marker and hint are its own now.
+                if let newer = MachineSessions.shared.session(for: configuration.id), newer.manager !== self {
+                    avmLog("saveStateAndStop: the machine was started again before this save's end was looked at; left to the new start")
+                    return false
+                }
                 func thisSave(_ disk: URL) async -> Bool {
                     guard let date = await QEMUSavedState.snapshotDate(disk: disk, tag: QEMUSavedState.tag) else { return false }
                     return date >= started.addingTimeInterval(-2)
@@ -5041,6 +5158,8 @@ extension VMManager {
             // the user has already heard that the save failed.
             try? QEMUSavedState.carriedOnWord.write(to: runtimeDir.appendingPathComponent(QEMUSavedState.loadedMarker), atomically: true, encoding: .utf8)
             try? FileManager.default.removeItem(at: QEMUSavedState.hint(in: runtimeDir))
+            // The row's "Saved" goes with it (audit of 2026-11-10 #27).
+            StorageWatch.shared.refresh()
             if let node = try? await diskNodeName() {
                 await dismissFinishedQMPJobs()
                 try? await runQMPJob("snapshot-delete", id: "avm-unsave",
@@ -5175,7 +5294,12 @@ extension VMManager {
                     try? fm.removeItem(at: marker)
                     let alert = NSAlert()
                     alert.messageText = "\(guest) couldn't carry on from where it was saved"
-                    alert.informativeText = "Reason: \(error.localizedDescription) Keep It turns \(guest) off and keeps the saved session, so Start can try again. Start Fresh discards it, and anything open in \(guest) when it was saved is lost."
+                    // Said when another QEMU saved it (audit of 2026-11-10
+                    // #30): Keep It can then never work.
+                    let hintText = (try? String(contentsOf: QEMUSavedState.hint(in: runtimeDir), encoding: .utf8)) ?? ""
+                    let otherVersion = QEMUSavedState.madeByAnother(hint: hintText, qemu: qemuVersion)
+                        ? " It was saved by another version of AVM, which may be why, and trying again may not help." : ""
+                    alert.informativeText = "Reason: \(error.localizedDescription)\(otherVersion) Keep It turns \(guest) off and keeps the saved session, so Start can try again. Start Fresh discards it, and anything open in \(guest) when it was saved is lost."
                     alert.addButton(withTitle: "Keep It")
                     alert.addButton(withTitle: "Start Fresh")
                     // From the run loop, not this job (review): a modal inside a
@@ -5616,6 +5740,25 @@ extension VMManager {
                 n += 1
             }
 
+            // Not through a link (2026-11-10, audit of that day #20): the
+            // agent writes as root or SYSTEM, and a Downloads the machine's
+            // user had pointed elsewhere took the file there with those
+            // rights. A Linux Downloads linked to a folder that user owns is
+            // fine. A link swapped in between this look and the write is
+            // not ruled out.
+            let linkCheck = windows
+                ? try await agentRun("powershell.exe", ["-NoProfile", "-Command",
+                    "$p = (New-Object IO.StreamReader([Console]::OpenStandardInput(), (New-Object Text.UTF8Encoding $false))).ReadLine(); if (-not (Test-Path -LiteralPath (Split-Path $p))) { 'AVM-MISSING'; exit }; while ($p -and $p.Length -gt 3) { $i = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue; if ($i -and ($i.Attributes -band [IO.FileAttributes]::ReparsePoint)) { 'AVM-LINK'; exit }; $p = Split-Path $p }; 'AVM-PLAIN'"],
+                    limit: .seconds(60), input: target + "\r\n")
+                : try await agentRun("/bin/sh", ["-c",
+                    #"[ -L "$2" ] && { echo AVM-LINK; exit 0; }; r=$(readlink -f "$1"); [ -d "$r" ] || { echo AVM-MISSING; exit 0; }; [ "$(stat -c %U "$r")" = "$3" ] && echo AVM-PLAIN || echo AVM-NOTOWNED"#,
+                    "sh", folder, target, owner ?? ""], limit: .seconds(30))
+            guard linkCheck.contains("AVM-PLAIN") else {
+                let why = linkCheck.contains("AVM-NOTOWNED") ? "doesn't belong to its user"
+                    : linkCheck.contains("AVM-MISSING") ? "couldn't be found" : "is a link to somewhere else"
+                throw AVMError.refused("Downloads in \(machine) \(why), so AVM won't write there. Next: share a folder with \(machine) in its Settings, and put the file there.")
+            }
+
             let handle = try FileHandle(forReadingFrom: file)
             defer { try? handle.close() }
             guard let guestHandle = try await openGuestFile(target, mode: "wb") else {
@@ -5708,15 +5851,22 @@ extension VMManager {
                 tick += 1
                 let wholeMinute = tick % 6 == 0
                 if wholeMinute { minute += 1 }
-                DiskWatch.trimSerialLog(runtimeDir.appendingPathComponent("firmware-serial.log"))
-
+                // Off the main thread (2026-11-10, audit of that day #23):
+                // six times a minute since 0.4.43, and a share that has gone
+                // without unmounting holds each of these calls for its
+                // timeout, which froze speech and Force Stop just when the
+                // drive's loss had to be said.
                 // The plain figure when the other has none (2026-10-29,
                 // sixth audit): exFAT drives give no "important usage"
                 // figure, and the warning never came.
-                let values = try? runtimeDir.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
+                let space: (important: Int64?, plain: Int64?) = await Task.detached {
+                    DiskWatch.trimSerialLog(runtimeDir.appendingPathComponent("firmware-serial.log"))
+                    let values = try? runtimeDir.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
+                    return (values?.volumeAvailableCapacityForImportantUsage, values?.volumeAvailableCapacity.map { Int64($0) })
+                }.value
+                guard !Task.isCancelled, self.state == .running || self.state == .paused else { continue }
                 // A zero "important usage" figure counts as none (seventh audit).
-                let free = values?.volumeAvailableCapacityForImportantUsage.flatMap { $0 > 0 ? $0 : nil }
-                    ?? values?.volumeAvailableCapacity.map { Int64($0) } ?? Int64.max
+                let free = space.important.flatMap { $0 > 0 ? $0 : nil } ?? space.plain ?? Int64.max
                 let host = wholeMinute ? DiskWatch.hostWarning(free: free, lastSpoken: hostSpoken) : (speak: nil, lastSpoken: hostSpoken)
                 hostSpoken = host.lastSpoken
                 if host.speak != nil {
@@ -5738,7 +5888,7 @@ extension VMManager {
                     // The plain figure (2026-11-09, fifth audit #27): "important
                     // usage" counts purgeable space a write can't use yet, so a
                     // full disk was described as having room.
-                    let full = (values?.volumeAvailableCapacity.map { Int64($0) } ?? free) < DiskWatch.gigabyte || free == Int64.max
+                    let full = (space.plain ?? free) < DiskWatch.gigabyte || free == Int64.max
                     avmLog("diskWatch: QEMU paused the machine with an I/O error (\(gone ? "its drive is disconnected" : full ? "its disk's volume is full" : "a disk error with \(free / DiskWatch.gigabyte) GB free"))")
                     if gone, let drive {
                         // Resume can't work (fourth audit #9): QEMU's open file is on
@@ -5817,14 +5967,20 @@ extension VMManager {
                                              input: "\(oneLine(shown))\r\n\(oneLine(url))\r\n")
                 } else {
                     let queue = "AVM-" + printer.queue.filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
+                    // The values as arguments, not in the script (2026-11-10,
+                    // audit of that day #19): quotes were taken out with
+                    // replacingOccurrences, which compares whole characters,
+                    // so an apostrophe with a combining mark after it stayed
+                    // and ended the quoting: a printer's network name ran
+                    // commands as root in the machine.
                     let script = """
-                    q='\(queue)'; u='\(printer.uri.replacingOccurrences(of: "'", with: ""))'
+                    q=$1; u=$2; d=$3
                     if lpstat -v "$q" 2>/dev/null | grep -qF "$u"; then echo same; exit 0; fi
-                    lpadmin -p "$q" -D '\(shown.replacingOccurrences(of: "'", with: ""))' -E -v "$u" -m everywhere && echo added
+                    lpadmin -p "$q" -D "$d" -E -v "$u" -m everywhere && echo added
                     lpstat -d 2>&1 | grep -q 'no system default' && lpadmin -d "$q"
                     true
                     """
-                    out = try await agentRun("/bin/sh", ["-c", script], limit: .seconds(180))
+                    out = try await agentRun("/bin/sh", ["-c", script, "sh", queue, printer.uri, shown], limit: .seconds(180))
                 }
                 avmLog("printers: a printer: \(out.trimmingCharacters(in: .whitespacesAndNewlines).suffix(200))")
                 if out.contains("added") { added.append(printer.name) }

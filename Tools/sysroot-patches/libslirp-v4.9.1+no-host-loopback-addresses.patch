@@ -1,0 +1,79 @@
+AVM: with host loopback disabled, a guest can't name the host's loopback itself
+
+disable_host_loopback (which AVM's QEMU patch no-host-loopback turns on)
+refuses only a destination that is the gateway alias, 10.0.2.2, or the
+guest's IPv6 prefix. A destination the guest writes as 127.0.0.1, any
+other 127/8 address, 0.0.0.0 or ::1 is outside the virtual network, so it
+was passed on as it was, and libslirp connected to it on the host: the
+host's loopback after all. A guest with root needs only to put such a
+packet on its network card (2026-11-10, AVM's audit of that day #1).
+With the switch on, these are refused too, with IPv4-mapped and
+IPv4-compatible IPv6 addresses, which reach the host's IPv4 stack from an
+IPv6 socket, and a ping of any of them is dropped, not passed on.
+Applies to libslirp 4.9.1 after UTM's patch.
+
+--- a/src/socket.c
++++ b/src/socket.c
+@@ -980,6 +980,15 @@
+         sin->sin_addr = loopback_addr;
+     }
+ 
++    /* AVM: the host's own loopback and unspecified addresses, named by
++     * the guest itself, are the host's loopback too. */
++    if (s->disable_host_loopback) {
++        uint32_t dst = ntohl(so->so_faddr.s_addr);
++        if ((dst >> 24) == 127 || (dst >> 24) == 0) {
++            return false;
++        }
++    }
++
+     return true;
+ }
+ 
+@@ -1003,6 +1012,16 @@
+         sin->sin6_addr = in6addr_loopback;
+     }
+ 
++    /* AVM: as for IPv4. An IPv4-mapped address reaches the host's IPv4
++     * stack from an IPv6 socket, 127.0.0.1 included. */
++    if (s->disable_host_loopback &&
++        (IN6_IS_ADDR_LOOPBACK(&so->so_faddr6) ||
++         IN6_IS_ADDR_UNSPECIFIED(&so->so_faddr6) ||
++         IN6_IS_ADDR_V4MAPPED(&so->so_faddr6) ||
++         IN6_IS_ADDR_V4COMPAT(&so->so_faddr6))) {
++        return false;
++    }
++
+     return true;
+ }
+ 
+--- a/src/ip_icmp.c
++++ b/src/ip_icmp.c
+@@ -208,6 +208,11 @@
+             icmp_reflect(m);
+         } else if (slirp->restricted) {
+             goto freeit;
++        } else if (slirp->disable_host_loopback &&
++                   ((ntohl(ip->ip_dst.s_addr) >> 24) == 127 ||
++                    (ntohl(ip->ip_dst.s_addr) >> 24) == 0)) {
++            /* AVM: no ping of the host's loopback either. */
++            goto freeit;
+         } else {
+             struct socket *so;
+             struct sockaddr_storage addr;
+--- a/src/ip6_icmp.c
++++ b/src/ip6_icmp.c
+@@ -567,6 +567,13 @@
+             icmp6_send_echoreply(m, slirp, ip, icmp);
+         } else if (slirp->restricted) {
+             goto freeit;
++        } else if (slirp->disable_host_loopback &&
++                   (IN6_IS_ADDR_LOOPBACK(&ip->ip_dst) ||
++                    IN6_IS_ADDR_UNSPECIFIED(&ip->ip_dst) ||
++                    IN6_IS_ADDR_V4MAPPED(&ip->ip_dst) ||
++                    IN6_IS_ADDR_V4COMPAT(&ip->ip_dst))) {
++            /* AVM: no ping of the host's loopback either. */
++            goto freeit;
+         } else {
+             struct socket *so;
+             struct sockaddr_storage addr;

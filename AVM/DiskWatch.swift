@@ -206,7 +206,10 @@ nonisolated enum DiskWatch {
         [ -n "$uuid" ] && [ -n "$type" ] || { sed -i '\\|^UUID= \(linuxSecondDrive) |d' /etc/fstab; echo partitioned; exit 0; }
         mkdir -p \(linuxSecondDrive)
         # AVM's line names this file system: one made again has a new UUID.
-        grep -q "^UUID=$uuid \(linuxSecondDrive) " /etc/fstab || { sed -i '\\| \(linuxSecondDrive) |d' /etc/fstab; echo "UUID=$uuid \(linuxSecondDrive) $type defaults,nofail 0 2" >> /etc/fstab; }
+        # Only AVM's own form goes (audit of 2026-11-10 #24): any line naming
+        # the folder was deleted, a user's LABEL= line or one commented out
+        # among them, at every Start. A line of the user's is left to rule.
+        grep -q "^UUID=$uuid \(linuxSecondDrive) " /etc/fstab || { sed -i '\\|^UUID=[^ ]* \(linuxSecondDrive) |d' /etc/fstab; grep -qE '^[^#]*[[:space:]]\(linuxSecondDrive)[[:space:]]' /etc/fstab || echo "UUID=$uuid \(linuxSecondDrive) $type defaults,nofail 0 2" >> /etc/fstab; }
         grep -q ' \(linuxSecondDrive) ' /proc/mounts || mount \(linuxSecondDrive) || { echo failed; exit 0; }
         chmod 1777 \(linuxSecondDrive)
         command -v restorecon >/dev/null && restorecon -R \(linuxSecondDrive)

@@ -1325,18 +1325,22 @@ enum SaveResumeTestJob {
         AVMPaths.supportDirectoryOverride = support
         defer { AVMPaths.supportDirectoryOverride = nil }
         print("== Saving, with a marker in its settings")
-        _ = await inGuest("Set-Content \"$d\\avm-marker.txt\" saved", "runuser -u \"$U\" -- sh -c \"mkdir -p $D && echo saved > $D/avm-marker.txt\"")
+        // The marker is a settings file, and a file that isn't one sits
+        // beside it (2026-11-11, audit of 2026-11-10 #13): Apply keeps
+        // only settings, so a marker named .txt rightly stayed out.
+        _ = await inGuest("New-Item -ItemType Directory -Force \"$d\\profiles\" | Out-Null; Set-Content \"$d\\profiles\\avm-marker.ini\" saved; Set-Content \"$d\\avm-program.txt\" program", "runuser -u \"$U\" -- sh -c \"mkdir -p $D && echo saved > $D/avm-marker.conf && echo program > $D/avm-program.py\"")
         await manager.saveScreenReaderSetup()
         let file = try? VMManager.screenReaderSetupFile(windows: guest == .windows)
         let size = file.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int } ?? 0
         check("the setup is on the Mac (\(size) bytes)", size > 0)
         print("== Changed in the machine, then applied")
-        _ = await inGuest("Remove-Item \"$d\\avm-marker.txt\"; Set-Content \"$d\\avm-other.txt\" other", "rm -f $D/avm-marker.txt; runuser -u \"$U\" -- sh -c \"echo other > $D/avm-other.txt\"")
+        _ = await inGuest("Remove-Item \"$d\\profiles\\avm-marker.ini\", \"$d\\avm-program.txt\"; Set-Content \"$d\\avm-other.txt\" other", "rm -f $D/avm-marker.conf $D/avm-program.py; runuser -u \"$U\" -- sh -c \"echo other > $D/avm-other.txt\"")
         check("it applied", await manager.applyScreenReaderSetup())
-        let after = await inGuest("if (Test-Path \"$d\\avm-marker.txt\") { 'marker-back' }; if ((Test-Path \"$d-before-avm\\avm-other.txt\") -or (Test-Path \"$d-before-avm-last\\avm-other.txt\")) { 'other-kept' }; if (Test-Path \"$d\\nvda.ini\") { 'ini' }",
-                                  "[ -f $D/avm-marker.txt ] && echo marker-back; { [ -f $D-before-avm/avm-other.txt ] || [ -f $D-before-avm-last/avm-other.txt ]; } && echo other-kept; [ \"$(stat -c %U $D/avm-marker.txt)\" = \"$U\" ] && echo owned")
+        let after = await inGuest("if (Test-Path \"$d\\profiles\\avm-marker.ini\") { 'marker-back' }; if (Test-Path \"$d\\avm-program.txt\") { 'program-back' }; if ((Test-Path \"$d-before-avm\\avm-other.txt\") -or (Test-Path \"$d-before-avm-last\\avm-other.txt\")) { 'other-kept' }; if (Test-Path \"$d\\nvda.ini\") { 'ini' }",
+                                  "[ -f $D/avm-marker.conf ] && echo marker-back; [ -f $D/avm-program.py ] && echo program-back; { [ -f $D-before-avm/avm-other.txt ] || [ -f $D-before-avm-last/avm-other.txt ]; } && echo other-kept; [ \"$(stat -c %U $D/avm-marker.conf)\" = \"$U\" ] && echo owned")
         print("   \(after.split(whereSeparator: \.isNewline).joined(separator: ", "))")
         check("the saved settings are back", after.contains("marker-back"))
+        check("a file that isn't a setting stays out", !after.contains("program-back"))
         check("what was there is kept beside them", after.contains("other-kept"))
         check(guest == .windows ? "its settings file is there" : "they're the user's own", after.contains(guest == .windows ? "ini" : "owned"))
         await shutDown(manager)

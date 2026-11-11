@@ -521,6 +521,15 @@ struct AVMApp: App {
                             Announcer.shared.announce("Stopping the typing.", tone: .info)
                             return
                         }
+                        // One at a time, and not in silence (its review): the
+                        // look takes seconds, and a second press began a second run.
+                        guard !manager.isCheckingKeyboard else { return }
+                        Announcer.shared.announce("Checking \(manager.machineName)'s keyboard.", tone: .info)
+                        if let layout = await manager.keyboardLayoutIfNotUS() {
+                            AVMLog.write("AVM: Type Clipboard — not typed: the machine's keyboard layout is \(layout)")
+                            Announcer.shared.announce("\(manager.machineName)'s keyboard isn't a US one, and AVM can only type on a US keyboard, so nothing was typed. Next: enter \(manager.machineName) and type it yourself, or paste it once you're signed in.", tone: .failure)
+                            return
+                        }
                         Announcer.shared.announce("Typing \(text.count) characters into \(manager.machineName). Press Command-Shift-V again to stop.", tone: .info)
                         guard let result = await manager.typeText(text) else {
                             Announcer.shared.announce("The clipboard couldn't be typed into \(manager.machineName). Next: make sure it's running, then try again.", tone: .failure)
@@ -768,6 +777,10 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSLog("AVM: AppDelegate — applicationDidFinishLaunching; running Caps Lock recovery check.")
+        // No window tabs (2026-11-10, audit of that day #41): a tab bar's
+        // "+" would make a second list window, with every command answered
+        // twice, and "Prefer tabs: Always" tabbed machines' windows together.
+        NSWindow.allowsAutomaticWindowTabbing = false
         // One AVM at a time (2026-11-08, fourth audit #10): each process
         // reads configurations.json once and writes the whole list back, so
         // a second copy (one left in Downloads, a relaunch overlapping a slow

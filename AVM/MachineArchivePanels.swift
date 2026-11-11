@@ -534,6 +534,9 @@ nonisolated private final class ProgressTicker: @unchecked Sendable {
         lastTenth = tenth
         let words = "\(verb) \(name), \(tenth * 10) percent."
         Task { @MainActor in
+            // Not over a machine's screen reader (audit of 2026-11-10 #39),
+            // as other progress lines; the start and end are still said.
+            guard !Announcer.isHoldingRoutineLines else { return }
             Announcer.shared.announce(words, tone: .info)
         }
     }
@@ -542,7 +545,16 @@ nonisolated private final class ProgressTicker: @unchecked Sendable {
 extension MachineArchive {
     /// With what the logic alone can't see: one running from before AVM
     /// closed has a disk that's changing (2026-11-01 audit).
-    static func exportProblemNow(for configuration: VMConfiguration, vmDirectory dir: URL) -> String? {
+    @MainActor static func exportProblemNow(for configuration: VMConfiguration, vmDirectory dir: URL) -> String? {
+        // Nor one being put back or reinstalled (2026-11-10, audit of that
+        // day #17): the hourly backup could copy a disk as it was rolled
+        // back, call the copy whole, and tidy older good backups away.
+        if RestorePoints.restoringIDs.contains(configuration.id) {
+            return "\(configuration.name) is being put back to a restore point. Next: try again when that's done."
+        }
+        if WindowsReinstall.preparing.contains(configuration.id) {
+            return "\(configuration.name) is being made ready to reinstall. Next: try again when that's done."
+        }
         if VMManager.hasOrphanedQEMU(configuration.id) {
             return "\(configuration.name) is still running from before AVM last closed. Next: start it, then shut it down."
         }
