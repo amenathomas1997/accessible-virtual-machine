@@ -2824,6 +2824,17 @@ final class HelperVersionTests: XCTestCase {
         }
     }
 
+    /// Audit of 2026-11-10 #43: work that never comes back is given up on
+    /// in time, and work that does is waited for.
+    func testStallsFinishes() async {
+        let quick = await Stalls.finishes(within: 2) { Thread.sleep(forTimeInterval: 0.05) }
+        XCTAssertTrue(quick)
+        let started = Date()
+        let stuck = await Stalls.finishes(within: 0.3) { Thread.sleep(forTimeInterval: 3) }
+        XCTAssertFalse(stuck)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.5, "the wait ends at the limit, not with the work")
+    }
+
     /// Audit of 2026-11-10 #10: only a plain US keyboard is typed into.
     func testKeyboardLayoutIfNotUS() {
         XCTAssertNil(VMConfiguration.layoutIfNotUS(windowsPreload: "00000409\r\n"))

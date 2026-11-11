@@ -498,3 +498,34 @@ enum KeepAwake {
         AVMLog.write("AVM: KeepAwake — released (\(key))")
     }
 }
+
+// MARK: - Work that may never come back
+
+/// Whether a call that can block for good ends in time (2026-11-11, audit
+/// of 2026-11-10 #43). The work runs on a thread of its own, not one of
+/// Swift's, so a call that never returns costs that thread and nothing
+/// else; it is left to finish by itself.
+nonisolated enum Stalls {
+    private final class Answer: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Bool, Never>?
+        init(_ continuation: CheckedContinuation<Bool, Never>) { self.continuation = continuation }
+        func give(_ value: Bool) {
+            lock.lock(); let waiting = continuation; continuation = nil; lock.unlock()
+            waiting?.resume(returning: value)
+        }
+    }
+
+    /// True when `work` ended within `seconds`.
+    static func finishes(within seconds: Double, _ work: @escaping @Sendable () -> Void) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let answer = Answer(continuation)
+            Thread.detachNewThread {
+                work()
+                answer.give(true)
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { answer.give(false) }
+        }
+    }
+}
+

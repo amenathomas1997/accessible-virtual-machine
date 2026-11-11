@@ -1656,6 +1656,20 @@ final class VMManager: ObservableObject {
             try? FileManager.default.removeItem(atPath: path)
         }
 
+        // The Mac's sound first (2026-11-11, audit of 2026-11-10 #43): QEMU
+        // opens it before it answers anything, and when Core Audio doesn't
+        // come back the Start hung for minutes and ended with a timeout
+        // that named nothing. Eight seconds; it takes a tenth of one.
+        if !(await SoundOutputDevices.answers(within: 8, uid: configuration.soundOutputUID)) {
+            // By name when Core Audio gives one: a wireless headset that
+            // is off, its receiver still plugged in, is the case seen.
+            let output = await SoundOutputDevices.outputName(uid: configuration.soundOutputUID)
+            avmLog("startVM: the Mac's sound output\(output.map { " (\($0))" } ?? "") didn't open within 8 s; not launching QEMU, which would hang on it")
+            let what = output.map { "the sound output \($0)" } ?? "your Mac's sound output"
+            throw AVMError.refused("\(configuration.name) didn't start: \(what) isn't answering, and \(configuration.name) would wait on it without end. Next: turn \(output == nil ? "your headphones or speakers" : "it") on, or choose another output in the Mac's Sound settings, then start \(configuration.name) again.")
+        }
+        try ensureStillStarting()
+
         var tpmArgs: [String] = []
         if let swtpmURL = swtpmBinaryURL {
             try ensureStillStarting()
