@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.45</title>
+            <sparkle:version>65</sparkle:version>
+            <sparkle:shortVersionString>0.4.45</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>Privacy: 0.4.43 stopped machines reaching services that run only on your Mac, but a machine could still get to them by another address; that way is closed now. A machine can read the Mac&#x27;s clipboard only as it was when you last entered a machine or came back to AVM, and can change it only while you&#x27;re using that machine.</li><li>Installing Windows: discs in French and other languages that translate Windows&#x27; edition names now install; before, AVM refused them. If Windows Setup is stopped part way through its longest step, AVM starts the install again and says so, instead of saying Setup was carrying on.</li><li>Saved sessions: if a macOS machine can&#x27;t resume and its question is closed by something else, the saved session is kept; only Start Fresh discards it.</li><li>Screen readers: on GNOME, AVM no longer restarts an Orca you turned off. AVM says the right machine&#x27;s name when two start together, and renaming a running machine no longer lets AVM&#x27;s updates talk over its screen reader. A saved NVDA or Orca setup now carries settings only.</li><li>Downloads of Windows, Linux and macOS carry on from where they stopped when the connection drops, and the Mac stays awake through installs and downloads.</li><li>Smaller fixes from a code review: Type Clipboard won&#x27;t type into a machine whose keyboard isn&#x27;t a US one, since the characters would come out wrong; a machine that finishes starting no longer takes the keyboard from a window you&#x27;re typing in; Linux installs get the right time zone on Macs in India and some other regions; Speak Status says where the keyboard is once.</li></ul>]]></description>
+            <pubDate>Wed, 11 Nov 2026 20:06:04 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.45/AVM-0.4.45.zip" sparkle:edSignature="jUcJQ0NOmwyZXczHZ+NMz8shHjPIULc3uoGKge+dmRkngBJ+UY7zjVvEHtMXXcE/eDAVf7Xm+8TQvKhqr2tQDw==" length="106680130" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.44</title>
             <sparkle:version>64</sparkle:version>
             <sparkle:shortVersionString>0.4.44</sparkle:shortVersionString>
