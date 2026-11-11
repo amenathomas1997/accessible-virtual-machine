@@ -260,6 +260,14 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.45", changes: [
+            "Privacy: 0.4.43 stopped machines reaching services that run only on your Mac, but a machine could still get to them by another address; that way is closed now. A machine can read the Mac's clipboard only as it was when you last entered a machine or came back to AVM, and can change it only while you're using that machine.",
+            "Installing Windows: discs in French and other languages that translate Windows' edition names now install; before, AVM refused them. If Windows Setup is stopped part way through its longest step, AVM starts the install again and says so, instead of saying Setup was carrying on.",
+            "Saved sessions: if a macOS machine can't resume and its question is closed by something else, the saved session is kept; only Start Fresh discards it.",
+            "Screen readers: on GNOME, AVM no longer restarts an Orca you turned off. AVM says the right machine's name when two start together, and renaming a running machine no longer lets AVM's updates talk over its screen reader. A saved NVDA or Orca setup now carries settings only.",
+            "Downloads of Windows, Linux and macOS carry on from where they stopped when the connection drops, and the Mac stays awake through installs and downloads.",
+            "Smaller fixes from a code review: Type Clipboard won't type into a machine whose keyboard isn't a US one, since the characters would come out wrong; a machine that finishes starting no longer takes the keyboard from a window you're typing in; Linux installs get the right time zone on Macs in India and some other regions; Speak Status says where the keyboard is once.",
+        ]),
         ReleaseNote(version: "0.4.44", changes: [
             "Saving: if a machine is turned off just as its save ends, AVM now checks whether the save landed and keeps it when it did, instead of guessing. Restore points are taken only once a machine has really started, and a session that loads late is carried on rather than thrown away.",
             "Renaming a machine now updates its window title and what VoiceOver says when you enter it, straight away.",
