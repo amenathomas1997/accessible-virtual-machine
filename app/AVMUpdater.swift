@@ -260,6 +260,9 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.46", changes: [
+            "Starting a machine no longer hangs when the Mac's sound output isn't answering, for example wireless headphones that are turned off while their USB receiver is still plugged in. Before, the machine took minutes to fail with \"Timed out waiting for a QMP response\". Now AVM checks the sound output first and, within a few seconds, tells you which device isn't answering and what to do: turn it on, or choose another output in the Mac's Sound settings.",
+        ]),
         ReleaseNote(version: "0.4.45", changes: [
             "Privacy: 0.4.43 stopped machines reaching services that run only on your Mac, but a machine could still get to them by another address; that way is closed now. A machine can read the Mac's clipboard only as it was when you last entered a machine or came back to AVM, and can change it only while you're using that machine.",
             "Installing Windows: discs in French and other languages that translate Windows' edition names now install; before, AVM refused them. If Windows Setup is stopped part way through its longest step, AVM starts the install again and says so, instead of saying Setup was carrying on.",
