@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.47</title>
+            <sparkle:version>67</sparkle:version>
+            <sparkle:shortVersionString>0.4.47</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>This app has a new name: Guest House. Until now it was released as AVM, which is the name of Allison Meloy&#x27;s original app, and people were taking one for the other. Guest House is this fork&#x27;s own name; it is still built on Allison&#x27;s work, under the same license. Nothing else about how it works has changed.</li><li>Your machines, their saved sessions and restore points, your settings and the Windows apps you kept in the Dock all came across by themselves. In Finder, the Dock and Command-Tab the app is now Guest House, and the Windows apps folder in Applications is now Guest House Windows Apps.</li><li>macOS treats Guest House as a new app, so it asks again for what AVM was allowed: Input Monitoring, the microphone, the camera, the local network, and the USB helper under Login Items in System Settings. Guest House asks for each the first time it needs it, and says what to do. If you had Open at Login turned on, turn it on again in Guest House&#x27;s Settings. The first time Guest House needs a Remote Desktop password or your Describe Screen key, macOS asks for your Mac&#x27;s password, because AVM stored them: choose Always Allow.</li><li>System Settings may still list AVM under Privacy and Security and under Login Items. Those entries do nothing now and can be turned off or removed.</li></ul>]]></description>
+            <pubDate>Thu, 12 Nov 2026 18:12:06 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.47/GuestHouse-0.4.47.zip" sparkle:edSignature="yt7uGOzTDa/iiKNz/J3/1domS9Sz1KUnDlPIdznxbUq3clXfDKsLBrpJkvOmysDcnBGnTzC9WfghvKydUDaWBg==" length="106697890" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.46</title>
             <sparkle:version>66</sparkle:version>
             <sparkle:shortVersionString>0.4.46</sparkle:shortVersionString>
