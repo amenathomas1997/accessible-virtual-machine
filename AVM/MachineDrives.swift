@@ -1,5 +1,5 @@
 // MachineDrives.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // More disk (2026-11-03, the user's request, "sorta like upgrading your pc").
 //   - How full: the dashboard shows what the disk watch last heard from the guest
@@ -28,7 +28,7 @@ nonisolated struct StorageStatus: Equatable, Sendable {
     var hasQEMUSavedHint = false
 }
 
-/// Checks on machines kept outside AVM's own folder, off the main thread
+/// Checks on machines kept outside Guest House's own folder, off the main thread
 /// (2026-11-09, fifth audit #17). SwiftUI bodies asked the file system on every
 /// redraw, and on a share gone away without unmounting, or a drive spinning up,
 /// that held the main thread for the mount's timeout: the dashboard stopped
@@ -60,7 +60,7 @@ final class StorageWatch: ObservableObject {
         }
     }
 
-    /// The last answer; nil for a machine in AVM's own folder or not yet checked.
+    /// The last answer; nil for a machine in Guest House's own folder or not yet checked.
     /// Safe in a body: the check starts on a later turn and publishes when done.
     func status(of configuration: VMConfiguration) -> StorageStatus? {
         guard let folder = configuration.storageFolderPath else { return nil }
@@ -78,7 +78,7 @@ final class StorageWatch: ObservableObject {
     /// For the dashboard (2026-11-10, fourth audit of 2026-11-09 #12): a
     /// machine in a folder of the user's choosing is answered from the last
     /// check, so a sleeping or gone drive doesn't stall every redraw. One in
-    /// AVM's own folder is read at once, as before.
+    /// Guest House's own folder is read at once, as before.
     func looksSaved(_ configuration: VMConfiguration) -> Bool {
         guard configuration.storageFolderPath != nil else { return QEMUSavedState.looksSaved(configuration) }
         return status(of: configuration)?.hasQEMUSavedHint ?? false
@@ -193,7 +193,7 @@ final class DiskUsage: ObservableObject {
     func onMacBytes(of configuration: VMConfiguration) -> Int64? {
         // Off the main thread for a chosen folder (2026-11-09, fifth audit
         // #17), and on the disk's current path (#12): the dashboard's body
-        // calls this. AVM's own folder is on the Mac's disk and answers at once.
+        // calls this. Guest House's own folder is on the Mac's disk and answers at once.
         if configuration.isStoredElsewhere { return StorageWatch.shared.status(of: configuration)?.onMacBytes }
         func allocated(_ url: URL) -> Int64? {
             (try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey]))?.totalFileAllocatedSize.map(Int64.init)
@@ -238,7 +238,7 @@ extension VMManager {
     /// it went, so one that couldn't be asked is tried again at the next Start.
     func finishDiskChanges(configuration: VMConfiguration) async {
         guard await waitForGuestAgent(limit: .seconds(600)) else {
-            AVMLog.write("AVM: finishDiskChanges - the guest agent didn't answer; trying again at the next Start")
+            AVMLog.write("Guest House: finishDiskChanges - the guest agent didn't answer; trying again at the next Start")
             return
         }
         let machine = configuration.name
@@ -246,7 +246,7 @@ extension VMManager {
            let output = try? await agentRun("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "-"],
                                             limit: .seconds(180), input: DiskWatch.extendDriveCScript + "\n") {
             let answer = DiskWatch.answer(output)
-            AVMLog.write("AVM: finishDiskChanges - drive C: \(answer?.word ?? "no answer")")
+            AVMLog.write("Guest House: finishDiskChanges - drive C: \(answer?.word ?? "no answer")")
             switch answer?.word {
             case "extended":
                 Announcer.shared.announce("\(machine)'s drive C is now \(answer?.detail ?? "") gigabytes.", tone: .success)
@@ -271,7 +271,7 @@ extension VMManager {
                 : try? await agentRun("/bin/sh", ["-c", DiskWatch.linuxDriveScript(format: needsFormat)], limit: .seconds(180))
             guard let output else { return }
             let answer = DiskWatch.answer(output)
-            AVMLog.write("AVM: finishDiskChanges - second drive: \(answer?.word ?? "no answer")")
+            AVMLog.write("Guest House: finishDiskChanges - second drive: \(answer?.word ?? "no answer")")
             switch answer?.word {
             case "ready":
                 let place = configuration.guestOS == .windows ? "drive \(answer?.detail ?? "")" : "the folder \(answer?.detail ?? "")"
@@ -280,7 +280,7 @@ extension VMManager {
             case "already":
                 if needsFormat { storeDiskChange(configuration) { $0.secondDriveNeedsFormat = nil } }
             // No file system any more (2026-11-09, third audit of the day
-            // #22): "AVM tries again at its next Start" was a promise it
+            // #22): "Guest House tries again at its next Start" was a promise it
             // couldn't keep, since it never formats a drive that had data.
             // Partitioned in the machine (fourth audit of 2026-11-09 #27).
             case "partitioned":
@@ -289,11 +289,11 @@ extension VMManager {
                 if needsFormat { storeDiskChange(configuration) { $0.secondDriveNeedsFormat = nil } }
                 guard !UserDefaults.standard.bool(forKey: saidKey) else { break }
                 UserDefaults.standard.set(true, forKey: saidKey)
-                Announcer.shared.announce("\(machine)'s second drive has partitions of its own, so AVM leaves it as it is and doesn't mount it. Next: mount it in \(machine) yourself.", tone: .info)
+                Announcer.shared.announce("\(machine)'s second drive has partitions of its own, so Guest House leaves it as it is and doesn't mount it. Next: mount it in \(machine) yourself.", tone: .info)
             case "lostfs":
-                Announcer.shared.announce("\(machine)'s second drive has no file system any more, so it can't be mounted. AVM doesn't format a drive that had one. Next: go back to a restore point from before, or format it in \(machine) yourself.", tone: .failure)
+                Announcer.shared.announce("\(machine)'s second drive has no file system any more, so it can't be mounted. Guest House doesn't format a drive that had one. Next: go back to a restore point from before, or format it in \(machine) yourself.", tone: .failure)
             default:
-                Announcer.shared.announce("\(machine)'s second drive couldn't be made ready. AVM tries again at its next Start.", tone: .failure)
+                Announcer.shared.announce("\(machine)'s second drive couldn't be made ready. Guest House tries again at its next Start.", tone: .failure)
             }
         }
     }

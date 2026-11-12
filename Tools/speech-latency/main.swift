@@ -1,5 +1,5 @@
 // main.swift — speech-latency
-// AVM — Accessible Virtual Machine (roadmap item 5, measurement half)
+// Guest House — accessible virtual machines (roadmap item 5, measurement half)
 //
 // Measures keystroke-to-speech latency: how long after a key is pressed a
 // screen reader inside a virtual machine starts speaking on the Mac's
@@ -13,11 +13,11 @@
 //   own audio path, and CoreAudio. It listens to everything the Mac plays
 //   through a CoreAudio process tap, and the latency is the time from the
 //   key press to the first sample louder than the threshold. Because it
-//   needs nothing from the VM app, the same run works for AVM, Parallels
+//   needs nothing from the VM app, the same run works for Guest House, Parallels
 //   or UTM on the same Mac: the comparison the roadmap asks for.
 //
 // BEFORE A RUN
-//   - Put the VM window in front, with the keyboard in the guest (in AVM,
+//   - Put the VM window in front, with the keyboard in the guest (in Guest House,
 //     Enter Windows) and the guest's screen reader on, somewhere a key
 //     makes it speak at once: a long list, or a document, for Down Arrow.
 //   - Turn VoiceOver off on the Mac, and keep the Mac otherwise quiet:
@@ -109,7 +109,7 @@ func usage() {
       --quiet-ms MS      Silence needed before each press (default 400)
       --timeout S        Give up on a press after S seconds (default 3)
       --start-delay S    Seconds to bring the VM window forward (default 5)
-      --label TEXT       Name for the report, e.g. "AVM 0.1.3" or "Parallels"
+      --label TEXT       Name for the report, e.g. "Guest House 0.1.3" or "Parallels"
       --csv PATH         Also write one line per press to a CSV file
       --no-speech        Don't speak the summary at the end
     """)

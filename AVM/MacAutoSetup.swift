@@ -1,9 +1,9 @@
 // MacAutoSetup.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Setup Assistant done for the user (2026-10-30, the user's request): a
 // new macOS machine was the one install a blind user met without help,
-// since AVM's answer files cover Windows and Linux and macOS has none. With
+// since Guest House's answer files cover Windows and Linux and macOS has none. With
 // "Set up macOS for me" in New macOS Virtual Machine, the first start goes
 // through Setup Assistant by itself and leaves a signed-in Mac, with
 // VoiceOver on when chosen.
@@ -11,7 +11,7 @@
 // How: macOS machines ignore keys a program sends to their window (tried
 // 2026-10-26), but Virtualization has a screen-sharing (VNC) server of its
 // own for a machine (_VZVNCServer, not public, as other VM tools use it).
-// AVM turns it on for setup only, with a random password, signs in with
+// Guest House turns it on for setup only, with a random password, signs in with
 // RFBClient, and then, screen by screen, reads the screen (ScreenText, as
 // Read Screen does) and acts on what it says rather than on a fixed list
 // of keys, so a new macOS that adds or moves a screen still gets through:
@@ -95,13 +95,13 @@ enum MacAutoSetup {
     static func run(machine: VZVirtualMachine, files: MacGuestFiles, answers: MacSetupAnswers,
                     say: @escaping @MainActor (String) -> Void) async -> Bool {
         defer { try? FileManager.default.removeItem(at: files.setupAnswers) }
-        // Once (2026-11-05, second audit): if AVM died mid-setup the answers
+        // Once (2026-11-05, second audit): if Guest House died mid-setup the answers
         // stayed, and the next start typed them at the login window and read
         // the screen aloud, the account's name with it.
         let begun = files.setupAnswers.deletingLastPathComponent().appendingPathComponent("mac-setup-begun")
         if FileManager.default.fileExists(atPath: begun.path) {
-            AVMLog.write("AVM: MacAutoSetup — an earlier run had begun; not running again.")
-            say("AVM began setting up macOS for you earlier and was interrupted, so it won't try again. If macOS is still asking setup questions, choose Turn On VoiceOver in macOS in its window and finish them yourself. If it's at the sign-in screen, sign in with the password you chose.")
+            AVMLog.write("Guest House: MacAutoSetup — an earlier run had begun; not running again.")
+            say("Guest House began setting up macOS for you earlier and was interrupted, so it won't try again. If macOS is still asking setup questions, choose Turn On VoiceOver in macOS in its window and finish them yourself. If it's at the sign-in screen, sign in with the password you chose.")
             return false
         }
         FileManager.default.createFile(atPath: begun.path, contents: nil)
@@ -127,25 +127,25 @@ enum MacAutoSetup {
             say("Automatic setup couldn't reach the machine's screen. Finish Setup Assistant yourself.")
             return false
         }
-        AVMLog.write("AVM: MacAutoSetup — screen sharing on for setup (port \(port)).")
-        say("Setting up macOS for you. This takes a few minutes; AVM says when it's done.")
+        AVMLog.write("Guest House: MacAutoSetup — screen sharing on for setup (port \(port)).")
+        say("Setting up macOS for you. This takes a few minutes; Guest House says when it's done.")
         let outcome = await Task.detached(priority: .userInitiated) {
             await work(port: port, password: vncPassword, answers: answers, say: say)
         }.value
         switch outcome {
         case .done(let voiceOverKeyPressed):
-            AVMLog.write("AVM: MacAutoSetup — reached the desktop.")
+            AVMLog.write("Guest House: MacAutoSetup — reached the desktop.")
             // Only when the key went in (2026-11-09, audit of 0.4.41 #8).
             say(!answers.voiceOver ? "macOS is set up and signed in as \(answers.fullName)."
                 : voiceOverKeyPressed ? "macOS is set up and signed in as \(answers.fullName), with VoiceOver on."
-                : "macOS is set up and signed in as \(answers.fullName), but AVM couldn't turn on its VoiceOver. Press Command-F5 inside the machine.")
+                : "macOS is set up and signed in as \(answers.fullName), but Guest House couldn't turn on its VoiceOver. Press Command-F5 inside the machine.")
             return true
         case .stuck(let screen):
-            AVMLog.write("AVM: MacAutoSetup — stopped on a screen that didn't change.")
+            AVMLog.write("Guest House: MacAutoSetup — stopped on a screen that didn't change.")
             say("Automatic setup stopped on a screen it couldn't get past. It says: \(screen). Finish Setup Assistant yourself from here.")
             return false
         case .failed(let reason):
-            AVMLog.write("AVM: MacAutoSetup — failed: \(reason)")
+            AVMLog.write("Guest House: MacAutoSetup — failed: \(reason)")
             say("Automatic setup stopped. Reason: \(reason) Finish Setup Assistant yourself from here.")
             return false
         }
@@ -294,7 +294,7 @@ enum MacAutoSetup {
                 // test run): signed in again, up to five times.
                 reconnects += 1
                 guard reconnects <= 5 else { return .failed(error.localizedDescription) }
-                AVMLog.write("AVM: MacAutoSetup — screen sharing went quiet (\(error.localizedDescription)); connecting again.")
+                AVMLog.write("Guest House: MacAutoSetup — screen sharing went quiet (\(error.localizedDescription)); connecting again.")
                 try? await Task.sleep(for: .seconds(5))
                 guard let again = try? RFBClient(port: port, password: password) else { continue }
                 client = again
@@ -315,7 +315,7 @@ enum MacAutoSetup {
             var step = step(for: lines, height: image.height)
             if welcomed, step == .returnKey { step = .desktop }
             if case .click("Get Started", _, _) = step, text.lowercased().contains("welcome") { welcomed = true }
-            AVMLog.write("AVM: MacAutoSetup — screen \"\(lines.first?.text ?? "")\": \(step)")
+            AVMLog.write("Guest House: MacAutoSetup — screen \"\(lines.first?.text ?? "")\": \(step)")
             if let pictures, sameCount == 0 {
                 pictureNumber += 1
                 let base = pictures.appendingPathComponent(String(format: "%03d", pictureNumber))
@@ -336,9 +336,9 @@ enum MacAutoSetup {
                             if let fresh = try? RFBClient(port: port, password: password, wait: 5) {
                                 pressed = (try? fresh.press(RFBClient.f5, with: [command])) != nil
                             }
-                            AVMLog.write("AVM: MacAutoSetup — Command is keysym \(String(command, radix: 16)); Command-F5 \(pressed ? "sent" : "couldn't be sent") for VoiceOver.")
+                            AVMLog.write("Guest House: MacAutoSetup — Command is keysym \(String(command, radix: 16)); Command-F5 \(pressed ? "sent" : "couldn't be sent") for VoiceOver.")
                         } else {
-                            AVMLog.write("AVM: MacAutoSetup — no key came through as Command; VoiceOver not turned on.")
+                            AVMLog.write("Guest House: MacAutoSetup — no key came through as Command; VoiceOver not turned on.")
                         }
                     }
                     return .done(voiceOverKeyPressed: pressed)

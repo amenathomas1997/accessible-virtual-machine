@@ -1,11 +1,11 @@
 // AVMLog.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
-// THE SINGLE FILE LOGGER. Everything AVM writes to disk for diagnostic
+// THE SINGLE FILE LOGGER. Everything Guest House writes to disk for diagnostic
 // purposes goes through this one choke point.
 //
 // WHY THIS FILE EXISTS (2026-07-26):
-//   AVM is heading for external testers, and "please send me the log" has to
+//   Guest House is heading for external testers, and "please send me the log" has to
 //   be a safe thing to ask. Before this file there were TWO independent
 //   loggers (VMManager.avmLog and WindowsInstallPipeline.pipelineLog), each
 //   with its own copy of the same open/seek/write/close code, both writing to
@@ -18,7 +18,7 @@
 //     2. NEVER TRUNCATED. data.write(to:) ran only when the file did not
 //        exist, so every launch since the file was first created appended to
 //        the same one, forever, with no reset. Fixed by one file per launch,
-//        last ten kept (three until 2026-11-02: a few starts of AVM lost a
+//        last ten kept (three until 2026-11-02: a few starts of Guest House lost a
 //        freeze's log).
 //     3. UTC TIMESTAMPS. "\(Date())" renders +0000, so the file read four
 //        hours off the wall clock and four hours off the unified log. A
@@ -35,7 +35,7 @@
 // ============================ THE TWO PROMISES ============================
 //
 // The header written at the top of every log file makes two factual claims to
-// the person reading it. Under this project's standing rule — if AVM says it,
+// the person reading it. Under this project's standing rule — if Guest House says it,
 // it must be true, and that rule reaches all the way down into comments and
 // user-facing strings (see Handoff 18 §1, four false claims; Handoff 17 §2, a
 // fifth) — those claims are load-bearing. Both are structural, not hopeful:
@@ -94,18 +94,18 @@
 // interesting lines are the last ones before the freeze.
 import Foundation
 
-// MARK: - Where AVM keeps its data (2026-10-25)
+// MARK: - Where Guest House keeps its data (2026-10-25)
 
-/// The folder under Application Support that holds everything AVM stores:
+/// The folder under Application Support that holds everything Guest House stores:
 /// configurations.json, the VMs, logs and install scratch. Every file that
 /// needs it reads it here. A build with the original bundle identifier
-/// keeps the original folder, "AVM"; any other build uses its bundle
+/// keeps the original folder, "Guest House"; any other build uses its bundle
 /// identifier, the usual macOS convention, so two differently identified
-/// copies of AVM on one Mac never share or disturb each other's machines.
+/// copies of Guest House on one Mac never share or disturb each other's machines.
 enum AVMPaths {
     nonisolated static let supportFolderName: String = {
         let id = Bundle.main.bundleIdentifier ?? "com.alllisonmeloy.AVM"
-        return id == "com.alllisonmeloy.AVM" ? "AVM" : id
+        return id == "com.alllisonmeloy.AVM" ? "Guest House" : id
     }()
 
     /// A stand-in for Application Support/<supportFolderName> (2026-10-26),
@@ -120,8 +120,8 @@ enum AVMPaths {
     /// Not created here; callers that need it create it, as before.
     nonisolated static func supportDirectory() throws -> URL {
         if let override = supportDirectoryOverride { return override }
-        // The avmctl test's own folder (2026-10-27): its `AVM ctl` children
-        // find the test's control socket, never the user's AVM.
+        // The avmctl test's own folder (2026-10-27): its `Guest House ctl` children
+        // find the test's control socket, never the user's Guest House.
         if let test = ProcessInfo.processInfo.environment["AVM_TEST_SUPPORT_DIR"], !test.isEmpty {
             return URL(fileURLWithPath: test, isDirectory: true)
         }
@@ -137,17 +137,17 @@ nonisolated final class AVMLog: @unchecked Sendable {
 
     // MARK: Tunables
     /// A new file at this size (2026-11-09, fifth audit #33). Writing used to
-    /// stop here, and with AVM open for weeks the log ended before the event
+    /// stop here, and with Guest House open for weeks the log ended before the event
     /// being reported. `prune` bounds how many files stay.
     private let byteCap = 5 * 1024 * 1024
     /// Including the one being created now. The test runs' folder keeps
-    /// more (2026-10-31): the suite starts an AVM for every test, and with
+    /// more (2026-10-31): the suite starts a Guest House for every test, and with
     /// three kept, a longer test running beside it lost the log it was
     /// still writing, and reading, within minutes.
     private var filesKept: Int { Self.logDirectoryOverride == nil ? 10 : 30 }
 
     // MARK: State — touched ONLY on `queue`.
-    private let queue = DispatchQueue(label: "com.fullcircleat.AVM.filelog", qos: .utility)
+    private let queue = DispatchQueue(label: "com.fullcircleat.GuestHouse.filelog", qos: .utility)
     private var handle: FileHandle?
     private var bytesWritten = 0
     private var capNoticeWritten = false
@@ -317,7 +317,7 @@ nonisolated final class AVMLog: @unchecked Sendable {
                 // Problem 4: do not fail silently. NSLog rather than a spoken
                 // announcement — a failing disk could fire this hundreds of
                 // times, and .failure flushes the Announcer queue.
-                NSLog("AVM: diagnostic log write failed: \(error.localizedDescription)")
+                NSLog("Guest House: diagnostic log write failed: \(error.localizedDescription)")
             }
         }
     }
@@ -328,7 +328,7 @@ nonisolated final class AVMLog: @unchecked Sendable {
 
         guard let dir = Self.logDirectory else {
             setUpFailed = true
-            NSLog("AVM: diagnostic log unavailable — could not locate Application Support.")
+            NSLog("Guest House: diagnostic log unavailable — could not locate Application Support.")
             return
         }
 
@@ -336,7 +336,7 @@ nonisolated final class AVMLog: @unchecked Sendable {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
             setUpFailed = true
-            NSLog("AVM: diagnostic log unavailable — could not create \(dir.path): \(error.localizedDescription)")
+            NSLog("Guest House: diagnostic log unavailable — could not create \(dir.path): \(error.localizedDescription)")
             return
         }
 
@@ -346,12 +346,12 @@ nonisolated final class AVMLog: @unchecked Sendable {
 
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
             setUpFailed = true
-            NSLog("AVM: diagnostic log unavailable — could not create \(url.path).")
+            NSLog("Guest House: diagnostic log unavailable — could not create \(url.path).")
             return
         }
         guard let h = try? FileHandle(forWritingTo: url) else {
             setUpFailed = true
-            NSLog("AVM: diagnostic log unavailable — could not open \(url.path) for writing.")
+            NSLog("Guest House: diagnostic log unavailable — could not open \(url.path) for writing.")
             return
         }
 
@@ -363,7 +363,7 @@ nonisolated final class AVMLog: @unchecked Sendable {
             try? h.write(contentsOf: d)
             bytesWritten += d.count
         }
-        NSLog("AVM: diagnostic log started at \(url.path)")
+        NSLog("Guest House: diagnostic log started at \(url.path)")
     }
 
     /// Sortable name; one file per launch, and one more each time a launch
@@ -410,7 +410,7 @@ nonisolated final class AVMLog: @unchecked Sendable {
         if let d = "\(stamp.string(from: now)): [log] SIZE CAP REACHED (\(byteCap) bytes) and \(reason). No further lines will be written.\n".data(using: .utf8) {
             try? handle?.write(contentsOf: d)
         }
-        NSLog("AVM: diagnostic log hit its size cap and \(reason); no further file logging this launch.")
+        NSLog("Guest House: diagnostic log hit its size cap and \(reason); no further file logging this launch.")
         return false
     }
 
@@ -421,7 +421,7 @@ nonisolated final class AVMLog: @unchecked Sendable {
         let fm = FileManager.default
         guard let all = try? fm.contentsOfDirectory(atPath: dir.path) else { return }
         // What a stuck machine was doing (GuestWatch) has its own count, so
-        // several starts of AVM don't lose it (2026-11-02).
+        // several starts of Guest House don't lose it (2026-11-02).
         let stuck = all.filter { $0.hasPrefix("avm-") && $0.hasSuffix("-stuck.log") }.sorted()
         for name in stuck.dropLast(5) {
             try? fm.removeItem(at: dir.appendingPathComponent(name))
@@ -450,13 +450,13 @@ nonisolated final class AVMLog: @unchecked Sendable {
         }()
 
         return """
-        AVM diagnostic log
-        Started \(started) · AVM \(version) (build \(build)) · \(os)
+        Guest House diagnostic log
+        Started \(started) · Guest House \(version) (build \(build)) · \(os)
 
-        This log records what AVM did: virtual machines starting and
+        This log records what Guest House did: virtual machines starting and
         stopping, install steps, errors, and spoken announcements.
 
-        It does NOT record anything you type. AVM has no code that can
+        It does NOT record anything you type. Guest House has no code that can
         write keystrokes to this file.
 
         Your macOS user name has been replaced with ~ throughout.

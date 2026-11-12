@@ -1,16 +1,16 @@
 // RemoveAVM.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
-// AVM > Remove AVM… (2026-10-30, the user's request): taking AVM off a Mac
+// Guest House > Remove Guest House… (2026-10-30, the user's request): taking Guest House off a Mac
 // took a Terminal command with an administrator password, because the USB
-// helper is a system service that only AVM itself, or root, can remove;
+// helper is a system service that only Guest House itself, or root, can remove;
 // dragging the app to the Trash left it registered and failing to start.
-// This does it all from AVM, while AVM can still unregister its own
+// This does it all from Guest House, while Guest House can still unregister its own
 // services:
 //   1. the USB helper (SMAppService daemon) and the open-at-login item;
-//   2. AVM's caches, settings and the AVM Windows Apps folders;
-//   3. the virtual machines and AVM's support folder, only when chosen;
-//   4. the app itself, last, then AVM quits.
+//   2. Guest House's caches, settings and the Guest House Windows Apps folders;
+//   3. the virtual machines and Guest House's support folder, only when chosen;
+//   4. the app itself, last, then Guest House quits.
 // Everything goes to the Trash, so it can be put back until the Trash is
 // emptied. Not with a machine running: its disk would go mid-write.
 
@@ -22,19 +22,19 @@ enum RemoveAVM {
 
     static func ask() {
         if MachineSessions.shared.anyActive || MacGuestRunner.shared.runningID != nil {
-            Announcer.shared.announce("Shut down every virtual machine first, then choose Remove AVM again.", tone: .info)
+            Announcer.shared.announce("Shut down every virtual machine first, then choose Remove Guest House again.", tone: .info)
             return
         }
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Remove AVM from this Mac?"
-        alert.informativeText = "AVM removes its USB helper and its login item, then moves its settings, caches and the AVM Windows Apps folder to the Trash, then the app itself, and quits. Remove AVM and Its Machines also moves every virtual machine on this Mac's disk, and the installers AVM downloaded, to the Trash, and forgets their Remote Desktop passwords. Machines on external drives or in folders you chose stay where they are. Nothing else is gone until you empty the Trash."
+        alert.messageText = "Remove Guest House from this Mac?"
+        alert.informativeText = "Guest House removes its USB helper and its login item, then moves its settings, caches and the Guest House Windows Apps folder to the Trash, then the app itself, and quits. Remove Guest House and Its Machines also moves every virtual machine on this Mac's disk, and the installers Guest House downloaded, to the Trash, and forgets their Remote Desktop passwords. Machines on external drives or in folders you chose stay where they are. Nothing else is gone until you empty the Trash."
         // Cancel first, as every other destructive question has it
         // (2026-11-09, third audit of the day #8): Return on what sounds like
-        // an information dialog removed AVM.
+        // an information dialog removed Guest House.
         alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Remove AVM, Keep Machines")
-        alert.addButton(withTitle: "Remove AVM and Its Machines")
+        alert.addButton(withTitle: "Remove Guest House, Keep Machines")
+        alert.addButton(withTitle: "Remove Guest House and Its Machines")
         switch alert.runModal() {
         case .alertSecondButtonReturn: remove(machinesToo: false)
         case .alertThirdButtonReturn: remove(machinesToo: true)
@@ -43,11 +43,11 @@ enum RemoveAVM {
     }
 
     private static func remove(machinesToo: Bool) {
-        AVMLog.write("AVM: Remove AVM — starting (machines too: \(machinesToo)).")
+        AVMLog.write("Guest House: Remove Guest House — starting (machines too: \(machinesToo)).")
         var problems: [String] = []
         let fm = FileManager.default
 
-        // 1. The services, while AVM can still unregister its own.
+        // 1. The services, while Guest House can still unregister its own.
         USBHelperClient.shared.disconnect()
         do {
             try SMAppService.daemon(plistName: AVMUSBHelperNames.launchdPlistName).unregister()
@@ -60,7 +60,7 @@ enum RemoveAVM {
 
         // 2 and 3. The files.
         let library = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library")
-        let id = Bundle.main.bundleIdentifier ?? "com.fullcircleat.AVM"
+        let id = Bundle.main.bundleIdentifier ?? "com.fullcircleat.GuestHouse"
         // Read before the list goes to the Trash (2026-11-09, fourth audit #24).
         let machineIDs = VMStore.shared?.configurations.map(\.id) ?? []
         var items = [
@@ -95,11 +95,11 @@ enum RemoveAVM {
         }
 
         if problems.isEmpty {
-            AVMLog.write("AVM: Remove AVM — done.")
-            Announcer.shared.announce("AVM is removed and in the Trash. It quits now.", tone: .success)
+            AVMLog.write("Guest House: Remove Guest House — done.")
+            Announcer.shared.announce("Guest House is removed and in the Trash. It quits now.", tone: .success)
         } else {
-            AVMLog.write("AVM: Remove AVM — done, except: \(problems.joined(separator: "; ")).")
-            Announcer.shared.announce("AVM is removed, except: \(problems.joined(separator: "; ")). It quits now.", tone: .info)
+            AVMLog.write("Guest House: Remove Guest House — done, except: \(problems.joined(separator: "; ")).")
+            Announcer.shared.announce("Guest House is removed, except: \(problems.joined(separator: "; ")). It quits now.", tone: .info)
         }
         NSApp.terminate(nil)
     }

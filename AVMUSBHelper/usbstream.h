@@ -7,7 +7,7 @@
  *
  * The helper does four things: claim, stream, release, report. This file
  * is claim, stream and release. Report is the callback. Enumeration is
- * NOT here: AVM lists devices unprivileged and hands the helper a bus
+ * NOT here: Guest House lists devices unprivileged and hands the helper a bus
  * address plus vendor:product to check it against.
  *
  * Threads:

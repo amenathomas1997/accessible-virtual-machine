@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # release-notes.py
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
-# One version's release notes, as written for AVM's What's New window
+# One version's release notes, as written for Guest House's What's New window
 # (ReleaseNotes.all in app/AVMUpdater.swift), for the places a release
 # shows them too (2026-10-30): the GitHub release page (markdown) and
 # Sparkle's update dialog (HTML, the feed item's description). One text,

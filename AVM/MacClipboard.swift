@@ -1,8 +1,8 @@
 // MacClipboard.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Copy and paste between the Mac and a macOS machine (2026-10-26). Apple's
-// Virtualization framework has no clipboard for macOS machines, so AVM
+// Virtualization framework has no clipboard for macOS machines, so Guest House
 // shares one more folder with the machine, "AVM Clipboard", and both sides
 // keep it in step:
 //   - the Mac side (this file) writes what is copied on the Mac to
@@ -10,7 +10,7 @@
 //     Mac's clipboard;
 //   - the macOS side is a small script that runs in the background
 //     (a LaunchAgent), installed once by opening "Install Clipboard
-//     Sharing.command" in the machine's Finder, in My Shared Files, AVM
+//     Sharing.command" in the machine's Finder, in My Shared Files, Guest House
 //     Clipboard. It does the same with pbcopy and pbpaste.
 // Text only. The files are readable by the user alone and are emptied
 // when the machine stops; nothing is logged but that copying happened.
@@ -57,7 +57,7 @@ final class MacClipboard {
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.sync() }
         }
-        AVMLog.write("AVM: MacClipboard — sharing the clipboard with the macOS machine.")
+        AVMLog.write("Guest House: MacClipboard — sharing the clipboard with the macOS machine.")
     }
 
     /// Stops, and empties both files: nothing copied stays on disk.
@@ -71,7 +71,7 @@ final class MacClipboard {
 
     /// Written fresh, never through what's there: macOS in the machine can
     /// change the shared folder, and a link put in a file's place would
-    /// otherwise make AVM write over a file of the Mac's.
+    /// otherwise make Guest House write over a file of the Mac's.
     private func writeFresh(_ text: String, to file: URL) {
         try? FileManager.default.removeItem(at: file)
         FileManager.default.createFile(atPath: file.path, contents: Data(text.utf8), attributes: [.posixPermissions: 0o600])
@@ -83,7 +83,7 @@ final class MacClipboard {
     private func readPlain(_ file: URL) -> String? {
         // From an open file, with a limit (2026-11-01 audit): checked and
         // then read by name, the guest could swap it between, and a huge
-        // file hung AVM. O_NONBLOCK, so a pipe in its place can't block.
+        // file hung Guest House. O_NONBLOCK, so a pipe in its place can't block.
         let fd = open(file.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
         guard fd >= 0 else { return nil }
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
@@ -118,7 +118,7 @@ final class MacClipboard {
     /// at every start, so an installed copy updates itself (seventh audit).
     static let syncScript = #"""
     #!/bin/bash
-    # AVM clipboard sharing: keeps this machine's clipboard and the Mac's in
+    # Guest House clipboard sharing: keeps this machine's clipboard and the Mac's in
     # step through the shared AVM Clipboard folder. Text only.
     # UTF-8, as the Mac side reads and writes it (2026-10-29, sixth audit):
     # launchd gives no locale, and pbcopy and pbpaste then fall back to a
@@ -127,7 +127,7 @@ final class MacClipboard {
     export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
     SHARE="/Volumes/My Shared Files/AVM Clipboard"
     # A newer copy of this script in the shared folder replaces this one
-    # (2026-10-29, seventh audit): AVM writes it there at every start, so a
+    # (2026-10-29, seventh audit): Guest House writes it there at every start, so a
     # fix reaches machines where sharing was installed before the fix.
     if [ -f "$SHARE/sync.sh" ] && [ -n "$0" ] && ! cmp -s "$SHARE/sync.sh" "$0"; then
         cp "$SHARE/sync.sh" "$0.new" && mv "$0.new" "$0" && exec /bin/bash "$0"
@@ -160,7 +160,7 @@ final class MacClipboard {
     /// and a LaunchAgent that keeps it running at every login.
     private static let installerScript = #"""
     #!/bin/bash
-    # Installs AVM's clipboard sharing in this macOS machine. Run it once.
+    # Installs Guest House's clipboard sharing in this macOS machine. Run it once.
     set -e
     SHARE="/Volumes/My Shared Files/AVM Clipboard"
     [ -d "$SHARE" ] || SHARE="$(cd "$(dirname "$0")" && pwd)"

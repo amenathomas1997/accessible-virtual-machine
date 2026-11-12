@@ -1,5 +1,5 @@
 // DescribeScreen.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Describe Screen (2026-10-31, the user's request): Read Screen finds only
 // text, so a firmware page, a picture, or an app a screen reader can't
@@ -11,7 +11,7 @@
 //     2026-10-31, a black Windows screen came back "night sky", which
 //     would mislead someone who can't look.
 //   - By Claude (off until turned on in Settings, with an API key): the
-//     picture goes to Anthropic's API for a written description. AVM asks
+//     picture goes to Anthropic's API for a written description. Guest House asks
 //     before the first one for each machine, and remembers the answer.
 //     If Claude can't answer, the Mac's description is said instead.
 // The picture is QEMU's screendump, as Read Screen's; nothing is kept or
@@ -36,14 +36,14 @@ extension VMManager {
         // On with no key (2026-11-09, third audit of the day #32): the Mac's
         // description came with no word on why Claude's didn't.
         if UserDefaults.standard.bool(forKey: ClaudeDescribe.enabledKey), ClaudeKey.load() == nil {
-            Announcer.shared.announce("Describe screens with Claude is on, but no key is saved, so here is the Mac's description. Next: paste a key under Describe Screen in AVM's Settings.", tone: .info)
+            Announcer.shared.announce("Describe screens with Claude is on, but no key is saved, so here is the Mac's description. Next: paste a key under Describe Screen in Guest House's Settings.", tone: .info)
         }
         if UserDefaults.standard.bool(forKey: ClaudeDescribe.enabledKey), let key = ClaudeKey.load(), await mayUseClaude(for: machine) {
             Announcer.shared.announce("Asking Claude to describe \(machine)'s screen.", tone: .info)
             if let png = Self.png(image, longestSide: 1568) {
                 switch await Self.askClaude(png: png, apiKey: key) {
                 case .description(let text):
-                    AVMLog.write("AVM: Describe Screen — described by Claude")
+                    AVMLog.write("Guest House: Describe Screen — described by Claude")
                     Announcer.shared.announce(text, tone: .info, logAs: "Claude's description of the screen")
                     return
                 case .declined:
@@ -54,7 +54,7 @@ extension VMManager {
             }
         }
         let text = await Task.detached(priority: .userInitiated) { Self.describeOnDevice(image) }.value
-        AVMLog.write("AVM: Describe Screen — described on the Mac")
+        AVMLog.write("Guest House: Describe Screen — described on the Mac")
         Announcer.shared.announce(text, tone: .info, logAs: "the Mac's description of the screen")
     }
 
@@ -68,7 +68,7 @@ extension VMManager {
         // Not asked with the keyboard in the machine (2026-11-05 audit): the
         // question came up unheard there, and Return sent the screen.
         if FocusLockManager.shared?.isLocked == true {
-            Announcer.shared.announce("To let Claude describe \(machine)'s screen, use Describe Screen once with the keyboard on the Mac: AVM asks first. Here is the Mac's description.", tone: .info)
+            Announcer.shared.announce("To let Claude describe \(machine)'s screen, use Describe Screen once with the keyboard on the Mac: Guest House asks first. Here is the Mac's description.", tone: .info)
             return false
         }
         let alert = NSAlert()
@@ -123,7 +123,7 @@ extension VMManager {
 /// The Anthropic API key for Describe Screen, in the keychain.
 enum ClaudeKey {
     private static let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                               kSecAttrService as String: "com.fullcircleat.AVM.anthropic",
+                                               kSecAttrService as String: "com.fullcircleat.GuestHouse.anthropic",
                                                kSecAttrAccount as String: "api-key"]
 
     @discardableResult
@@ -132,7 +132,7 @@ enum ClaudeKey {
         guard !key.isEmpty else { return true }
         var add = query
         add[kSecValueData as String] = Data(key.utf8)
-        add[kSecAttrLabel as String] = "AVM Describe Screen (Anthropic API key)"
+        add[kSecAttrLabel as String] = "Guest House Describe Screen (Anthropic API key)"
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
@@ -141,7 +141,19 @@ enum ClaudeKey {
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
-        guard SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
+        guard SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess, let data = item as? Data else {
+            // fork-only
+            // The key kept when this was AVM (2026-11-12, FromAVM.swift).
+            if let old = KeychainFromAVM.item(service: "com.fullcircleat.GuestHouse.anthropic", account: "api-key") {
+                let key = String(decoding: old, as: UTF8.self)
+                if !key.isEmpty {
+                    save(key)
+                    return key
+                }
+            }
+            // /fork-only
+            return nil
+        }
         let key = String(decoding: data, as: UTF8.self)
         return key.isEmpty ? nil : key
     }

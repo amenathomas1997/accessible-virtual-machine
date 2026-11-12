@@ -1,9 +1,9 @@
 #!/bin/bash
 # build-installer.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
-# Builds AVM for release and makes the installer: a signed, notarized,
-# stapled DMG with AVM and an Applications shortcut, plus the zip Sparkle
+# Builds Guest House for release and makes the installer: a signed, notarized,
+# stapled DMG with Guest House and an Applications shortcut, plus the zip Sparkle
 # updates use.
 #
 #   Tools/build-installer.sh                      build, sign, notarize
@@ -13,7 +13,7 @@
 # WHAT IT DOES, IN ORDER
 #   1. Checks: Apple Silicon, Xcode, the UTM sysroot (and its xorriso
 #      version), a Developer ID Application identity.
-#   2. Archives the AVM scheme (Release), signed with that identity.
+#   2. Archives the Guest House scheme (Release), signed with that identity.
 #   3. Re-signs everything the build phase staged from the sysroot. The
 #      Run Script phase signs QEMU, its libraries and the install tools
 #      ad hoc (or team-signs without a timestamp, for the USB helper's
@@ -118,7 +118,7 @@ fail() {
     echo "FAILED during: $CURRENT_STEP"
     echo "Reason: $1"
     if [ $# -ge 2 ]; then echo "Next: $2"; fi
-    speak "AVM installer build failed during $CURRENT_STEP."
+    speak "Guest House installer build failed during $CURRENT_STEP."
     trap - EXIT
     exit 1
 }
@@ -130,13 +130,13 @@ speak() {
 # A command that fails without going through fail() still gets named.
 # 64 is a usage error, which usage() has already explained. Every other
 # failure, exit 2 included, is named and spoken.
-trap 'rc=$?; if [ $rc -ne 0 ] && [ $rc -ne 64 ]; then echo; echo "FAILED during: $CURRENT_STEP (exit $rc). The output above shows why."; speak "AVM installer build failed during $CURRENT_STEP."; fi' EXIT
+trap 'rc=$?; if [ $rc -ne 0 ] && [ $rc -ne 64 ]; then echo; echo "FAILED during: $CURRENT_STEP (exit $rc). The output above shows why."; speak "Guest House installer build failed during $CURRENT_STEP."; fi' EXIT
 
 # MARK: - 1. Checks
 
 step "Checking the build machine"
 
-[ "$(uname -m)" = "arm64" ] || fail "AVM builds only on Apple Silicon; this Mac is $(uname -m)."
+[ "$(uname -m)" = "arm64" ] || fail "Guest House builds only on Apple Silicon; this Mac is $(uname -m)."
 command -v xcodebuild >/dev/null || fail "xcodebuild was not found." "Install Xcode, then run: sudo xcode-select -s /Applications/Xcode.app"
 info "$(xcodebuild -version | sed -n 1p)"
 
@@ -192,7 +192,7 @@ xorriso_key() {
     echo $(( 10#$a * 1000000 + 10#$b * 10000 + 10#$c * 100 + 10#$pl ))
 }
 [ "$(xorriso_key "$XORRISO_VERSION")" -ge "$(xorriso_key 1.5.8.pl02)" ] || \
-    fail "The sysroot's xorriso is $XORRISO_VERSION; AVM needs 1.5.8.pl02 or later." \
+    fail "The sysroot's xorriso is $XORRISO_VERSION; Guest House needs 1.5.8.pl02 or later." \
          "Earlier versions make install ISOs the Windows boot loader cannot read. Update xorriso in the sysroot."
 info "xorriso $XORRISO_VERSION"
 
@@ -228,14 +228,14 @@ VERSION="$(echo "$SETTINGS" | sed -nE 's/^ *MARKETING_VERSION = (.*)$/\1/p' | se
 BUILD_NUMBER="$(echo "$SETTINGS" | sed -nE 's/^ *CURRENT_PROJECT_VERSION = (.*)$/\1/p' | sed -n 1p)"
 [ -n "$VERSION" ] || fail "Could not read MARKETING_VERSION from the project."
 # What's New (2026-10-30): every release says what changed, in the window
-# AVM shows after the update (ReleaseNotes in app/AVMUpdater.swift).
+# Guest House shows after the update (ReleaseNotes in app/AVMUpdater.swift).
 "$REPO_ROOT/Tools/release-notes.py" "$VERSION" >/dev/null \
     || fail "No release notes for $VERSION." "Add an entry for $VERSION at the top of ReleaseNotes.all in app/AVMUpdater.swift, a few plain lines, then build again."
 info "Version $VERSION, build $BUILD_NUMBER"
 
 # MARK: - 2. Archive
 
-step "Archiving AVM $VERSION (this takes several minutes)"
+step "Archiving Guest House $VERSION (this takes several minutes)"
 
 # Built from a commit, and that commit recorded now (2026-10-28, fourth
 # audit): the archive compiles the working tree, so uncommitted or untracked
@@ -249,10 +249,10 @@ BUILT_COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 ARCHIVE="$BUILD_DIR/AVM.xcarchive"
 ARCHIVE_LOG="$BUILD_DIR/archive.log"
 mkdir -p "$BUILD_DIR"
-rm -rf "$ARCHIVE" "$BUILD_DIR/AVM.app" "$OUT_DIR"
+rm -rf "$ARCHIVE" "$BUILD_DIR/Guest House.app" "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
-# ARCHS=arm64: AVM runs only on Apple Silicon and the sysroot is arm64
+# ARCHS=arm64: Guest House runs only on Apple Silicon and the sysroot is arm64
 # only, so a universal build fails to link its x86_64 half.
 # Settings given on the command line outrank the project's, including its
 # [sdk=macosx*] variant of CODE_SIGN_IDENTITY. (That variant can't be
@@ -285,9 +285,9 @@ if [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=normal 2>/de
     fail "The working tree changed during the archive." "Leave it alone while it builds, and build again."
 fi
 
-APP_IN_ARCHIVE="$ARCHIVE/Products/Applications/AVM.app"
-[ -d "$APP_IN_ARCHIVE" ] || fail "The archive has no AVM.app at $APP_IN_ARCHIVE."
-APP="$BUILD_DIR/AVM.app"
+APP_IN_ARCHIVE="$ARCHIVE/Products/Applications/Guest House.app"
+[ -d "$APP_IN_ARCHIVE" ] || fail "The archive has no Guest House.app at $APP_IN_ARCHIVE."
+APP="$BUILD_DIR/Guest House.app"
 ditto "$APP_IN_ARCHIVE" "$APP"
 # codesign refuses files carrying extended attributes ("detritus"), and
 # everything here is re-signed below, so nothing of value is lost.
@@ -372,7 +372,7 @@ if [ -d "$APP/Contents/Frameworks" ]; then
 fi
 
 for exe in "$APP/Contents/MacOS"/*; do
-    [ "$(basename "$exe")" = "AVM" ] && continue
+    [ "$(basename "$exe")" = "Guest House" ] && continue
     if is_macho "$exe"; then
         sign "$exe"
         info "Signed $(basename "$exe")"
@@ -380,7 +380,7 @@ for exe in "$APP/Contents/MacOS"/*; do
 done
 
 sign "$APP"
-info "Sealed AVM.app"
+info "Sealed Guest House.app"
 
 # MARK: - 4. Verify
 
@@ -403,11 +403,11 @@ done < <(find "$APP" -type f)
 info "Every binary is signed by team $TEAM_ID."
 
 # What the root helper's trust rests on (2026-11-09, fifth audit #41): the
-# helper trusts AVM by its signature, so anything that lets other code into
-# AVM or the helper reopens it. `sign` keeps whatever entitlements the archive
+# helper trusts Guest House by its signature, so anything that lets other code into
+# Guest House or the helper reopens it. `sign` keeps whatever entitlements the archive
 # produced, and a Release config pointed back at AVM.entitlements would pass
 # every check above.
-for f in "$APP/Contents/MacOS/AVM" "$APP/Contents/MacOS/AVMUSBHelper"; do
+for f in "$APP/Contents/MacOS/Guest House" "$APP/Contents/MacOS/AVMUSBHelper"; do
     [ -f "$f" ] || fail "$(basename "$f") is missing from the app."
     entitlements="$(codesign -d --entitlements - "$f" 2>/dev/null)" || fail "codesign could not read the entitlements of $(basename "$f")."
     for forbidden in com.apple.security.cs.disable-library-validation \
@@ -424,7 +424,7 @@ for f in "$APP/Contents/MacOS/AVM" "$APP/Contents/MacOS/AVMUSBHelper"; do
         *) fail "$(basename "$f") is not signed with the hardened runtime (flags: ${flags:-none})." ;;
     esac
 done
-info "AVM and its helper have the hardened runtime and no entitlement that lets other code in."
+info "Guest House and its helper have the hardened runtime and no entitlement that lets other code in."
 
 # Nothing may still point at the build Mac: every library reference must
 # be inside the app (@rpath, @loader_path, @executable_path) or macOS's own
@@ -474,7 +474,7 @@ notarize() {
 # Sparkle zip are both made from the stapled app.
 if [ "$SKIP_NOTARIZE" = "0" ]; then
     step "Notarizing the app (Apple usually answers in a few minutes)"
-    NOTARIZE_ZIP="$BUILD_DIR/AVM-$VERSION-notarize.zip"
+    NOTARIZE_ZIP="$BUILD_DIR/GuestHouse-$VERSION-notarize.zip"
     rm -f "$NOTARIZE_ZIP"
     ditto -c -k --sequesterRsrc --keepParent "$APP" "$NOTARIZE_ZIP"
     notarize "$NOTARIZE_ZIP" "app" "notarize-app.log"
@@ -488,20 +488,20 @@ fi
 
 step "Making the disk image"
 
-DMG="$BUILD_DIR/AVM-$VERSION.dmg"
+DMG="$BUILD_DIR/GuestHouse-$VERSION.dmg"
 STAGE="$BUILD_DIR/dmg-stage"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
-ditto "$APP" "$STAGE/AVM.app"
+ditto "$APP" "$STAGE/Guest House.app"
 ln -s /Applications "$STAGE/Applications"
 # macOS 27 calls hdiutil create deprecated but it still works; only that
 # notice is hidden, real errors still show.
-hdiutil create -volname "AVM $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMG" \
+hdiutil create -volname "Guest House $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMG" \
         >/dev/null 2> >(grep -v "is deprecated" >&2) || \
     fail "hdiutil could not make the disk image."
 rm -rf "$STAGE"
 codesign --force --timestamp --sign "$IDENTITY" "$DMG" >/dev/null 2>&1 || fail "codesign refused the disk image."
-info "Made AVM-$VERSION.dmg"
+info "Made GuestHouse-$VERSION.dmg"
 
 # MARK: - 7. Notarize the DMG
 
@@ -520,8 +520,28 @@ fi
 # MARK: - 8. Sparkle zip
 
 step "Making the Sparkle update zip"
-ZIP="$OUT_DIR/AVM-$VERSION.zip"
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+ZIP="$OUT_DIR/GuestHouse-$VERSION.zip"
+ZIP_APP="$APP"
+# fork-only
+# In the zip the app's file is still named as it was before the rename
+# (2026-11-12, found by updating a 0.4.46 copy): Sparkle looks in an update
+# for an app with the installed copy's file name or its identifier, and
+# Guest House has neither of a copy from before, so that copy refused the
+# update as "improperly signed". A copy that is already Guest House finds it
+# by identifier, whatever the file is called. Once installed, Guest House
+# renames its own file (FromAVM.swift). Every later zip keeps this name, for
+# copies that update late. The DMG holds Guest House.app.
+ZIP_STAGE="$BUILD_DIR/zip-stage"
+rm -rf "$ZIP_STAGE"
+mkdir -p "$ZIP_STAGE"
+ditto "$APP" "$ZIP_STAGE/AVM.app"
+codesign --verify --deep --strict "$ZIP_STAGE/AVM.app" || fail "The copy for the update zip lost its signature."
+ZIP_APP="$ZIP_STAGE/AVM.app"
+# /fork-only
+ditto -c -k --sequesterRsrc --keepParent "$ZIP_APP" "$ZIP"
+# fork-only
+rm -rf "$ZIP_STAGE"
+# /fork-only
 info "$ZIP"
 # Signed with the update key (2026-10-26): Sparkle's EdDSA key in
 # the login keychain, account fullcircleat-avm, whose public half is
@@ -542,7 +562,7 @@ SIGNATURE="$("$SIGN_UPDATE" --account "$SPARKLE_ACCOUNT" "$ZIP")" || \
     fail "sign_update could not sign the zip." "Allow keychain access. If this Mac has no update key, import the existing one with generate_keys -f <exported key file> --account $SPARKLE_ACCOUNT. Never make a new one: installed copies trust only the key in SUPublicEDKey."
 # The key that signed is the one installed copies trust (2026-10-29, sixth
 # audit): a new key, made on a Mac without the old one, signed releases that
-# every installed AVM refused, with nothing here to say so.
+# every installed Guest House refused, with nothing here to say so.
 GENERATE_KEYS="$(dirname "$SIGN_UPDATE")/generate_keys"
 TRUSTED_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist" 2>/dev/null | tr -d '[:space:]' || true)"
 [ -n "$TRUSTED_KEY" ] || fail "The app's Info.plist has no SUPublicEDKey." "Check AVM/Info.plist."
@@ -551,7 +571,7 @@ TRUSTED_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/
 SIGNING_KEY="$("$GENERATE_KEYS" -p --account "$SPARKLE_ACCOUNT" | tr -d '[:space:]')" \
     || fail "Could not read the update key from the keychain." "Allow access when macOS asks, then build again. The keychain can't ask while the screen is locked or over ssh."
 if [ "$SIGNING_KEY" != "$TRUSTED_KEY" ]; then
-    fail "The update key in this Mac's keychain isn't the one installed copies of AVM trust." "Import the existing key with generate_keys -f <exported key file> --account $SPARKLE_ACCOUNT, then build again. Never make a new one."
+    fail "The update key in this Mac's keychain isn't the one installed copies of Guest House trust." "Import the existing key with generate_keys -f <exported key file> --account $SPARKLE_ACCOUNT, then build again. Never make a new one."
 fi
 # And the key the last release was built with (seventh audit): the failure
 # this guards against comes with a new key pasted into Info.plist, which the
@@ -573,7 +593,7 @@ cat > "$ITEM" <<ITEMXML
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
             <description><![CDATA[$("$REPO_ROOT/Tools/release-notes.py" "$VERSION" --html)]]></description>
             <pubDate>$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")</pubDate>
-            <enclosure url="https://github.com/$REPO_SLUG/releases/download/v$VERSION/AVM-$VERSION.zip" $SIGNATURE type="application/octet-stream" />
+            <enclosure url="https://github.com/$REPO_SLUG/releases/download/v$VERSION/GuestHouse-$VERSION.zip" $SIGNATURE type="application/octet-stream" />
         </item>
 ITEMXML
 info "Update feed entry: $ITEM"
@@ -592,7 +612,7 @@ DMG="$OUT_DIR/$(basename "$DMG")"
 trap - EXIT
 CURRENT_STEP="done"
 echo
-echo "== Done. AVM $VERSION installer:"
+echo "== Done. Guest House $VERSION installer:"
 echo "   $DMG"
 echo "   To publish it as an update: Tools/publish-release.sh"
-speak "AVM $VERSION installer is ready."
+speak "Guest House $VERSION installer is ready."

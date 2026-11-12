@@ -1,8 +1,8 @@
 // Tour.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
-// Take the AVM Tour (2026-10-31, the user's request): Help > Take the AVM
-// Tour opens a small window that walks a new user through AVM one step at
+// Take the Guest House Tour (2026-10-31, the user's request): Help > Take the Guest House
+// Tour opens a small window that walks a new user through Guest House one step at
 // a time, each step read out as it comes, with something to try before
 // going on. The demo script and the skit testers heard showed the shape:
 // short steps, the keys said in words, a pause to try each one. Next and
@@ -22,13 +22,13 @@ struct TourStep {
 enum Tour {
     static let steps: [TourStep] = [
         TourStep(title: "Welcome",
-                 text: "AVM runs Windows, Linux and macOS on your Mac, and everything it does talks through VoiceOver. This tour takes about ten minutes. Press Next to go on, Back to hear a step again, or close the window to stop; the tour is in the Help menu whenever you want it.",
+                 text: "Guest House runs Windows, Linux and macOS on your Mac, and everything it does talks through VoiceOver. This tour takes about ten minutes. Press Next to go on, Back to hear a step again, or close the window to stop; the tour is in the Help menu whenever you want it.",
                  tryIt: nil),
         TourStep(title: "Your machines",
                  text: "Command-Shift-L opens the Virtual Machines list. Each machine's name is a heading, so VO-Command-H moves from one to the next.",
                  tryIt: "Press Command-Shift-L, then come back to this window with Command-Grave, the key above Tab."),
         TourStep(title: "Making a machine",
-                 text: "In the list, Command-S opens the Setup Wizard. Download Windows 11 gets Windows from Microsoft; Download Linux offers Ubuntu, Debian, Fedora, Kali Linux, AlmaLinux, Rocky Linux and openSUSE. AVM installs it and answers every question, and the screen reader is on when it's done.",
+                 text: "In the list, Command-S opens the Setup Wizard. Download Windows 11 gets Windows from Microsoft; Download Linux offers Ubuntu, Debian, Fedora, Kali Linux, AlmaLinux, Rocky Linux and openSUSE. Guest House installs it and answers every question, and the screen reader is on when it's done.",
                  tryIt: nil),
         TourStep(title: "Starting, and the keyboard",
                  text: "Select a machine and press Command-Shift-S to start it. Command-Shift-E sends your keyboard into it. Control-Command-Escape brings it back to the Mac, from anywhere. A rising sound means the keyboard went in, a falling one that it came back.",
@@ -46,10 +46,10 @@ enum Tour {
                  text: "Command-Shift-U sends a USB device to the machine, such as a braille display, and Command-Shift-M gives devices back to the Mac. Command-Shift-B does the same for Bluetooth. The machine can also use your Mac's printers, camera and microphone, set in its Settings.",
                  tryIt: nil),
         TourStep(title: "When things go wrong",
-                 text: "Restore points, in a machine's Settings under Startup and Recovery, take it back to an earlier moment. If a machine stops answering, Command-Shift-R resets it after asking. Report a Problem, in the Help menu, sends AVM's log to the AVM team.",
+                 text: "Restore points, in a machine's Settings under Startup and Recovery, take it back to an earlier moment. If a machine stops answering, Command-Shift-R resets it after asking. Report a Problem, in the Help menu, sends Guest House's log to the Guest House team.",
                  tryIt: nil),
         TourStep(title: "Ready when you are",
-                 text: "Turn on Open AVM When You Log In, in AVM's Settings, and Start When AVM Opens on a machine's row, and that machine is up and talking when your Mac starts. That's the tour. Enjoy AVM.",
+                 text: "Turn on Open Guest House When You Log In, in Guest House's Settings, and Start When Guest House Opens on a machine's row, and that machine is up and talking when your Mac starts. That's the tour. Enjoy Guest House.",
                  tryIt: nil),
     ]
 
@@ -60,7 +60,7 @@ enum Tour {
         window?.close()
         let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 360),
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        panel.title = "AVM Tour"
+        panel.title = "Guest House Tour"
         panel.isReleasedWhenClosed = false
         // Closing it stops the system voice too; with VoiceOver off there
         // was no stopping a long step (2026-11-01 audit).
@@ -89,7 +89,7 @@ enum Tour {
         }
     }
 
-    /// Each step read out as it comes, through VoiceOver as AVM's other lines are.
+    /// Each step read out as it comes, through VoiceOver as Guest House's other lines are.
     static func say(_ index: Int, withTitle: Bool = true) {
         let step = steps[index]
         Announcer.shared.announce((withTitle ? "Step \(index + 1) of \(steps.count): \(step.title). " : "") + step.text + (step.tryIt.map { " Try it: \($0)" } ?? ""), tone: .info)

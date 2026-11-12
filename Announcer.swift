@@ -1,13 +1,13 @@
 //
 //  Announcer.swift
-//  AVM
+//  Guest House
 //
 //  Created by Allison Meloy on 7/12/26.
 //
 
 
 // Announcer.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Interrupting, non-visual announcements for events the user must not miss
 // (pipeline failure/completion, unexpected VM death). Motivated by the
@@ -42,7 +42,7 @@
 //       immediately for every tone — the audible verdict stays real-time
 //       even when its speech is waiting in line.
 //
-// REVISED 2026-10-18 (Allison): AVM speech should never interrupt other
+// REVISED 2026-10-18 (Allison): Guest House speech should never interrupt other
 //   speech if it can be helped. Failures now ENQUEUE too, and nothing is
 //   flushed. The failure sound still plays the instant it happens, so the
 //   verdict stays real-time. Lines are spoken in the order they happened,
@@ -53,7 +53,7 @@
 // Considered and REJECTED: UNUserNotificationCenter banners (requires a
 // one-time permission grant, adds a notarization/entitlement variable) and
 // NSAccessibility announcements (VoiceOver only speaks them from the FOCUSED
-// app, so they cannot interrupt when AVM is in the background — the exact
+// app, so they cannot interrupt when Guest House is in the background — the exact
 // case that motivated this file).
 //
 // KNOWN TRADEOFFS (accepted): the system voice does not coordinate with
@@ -62,14 +62,14 @@
 //
 // VOICEOVER FIRST (2026-10-28, the user's request: "as much as possible
 // voiced by VoiceOver rather than the system voice"). With VoiceOver on:
-//   - AVM in front: an accessibility announcement, which VoiceOver reads in
+//   - Guest House in front: an accessibility announcement, which VoiceOver reads in
 //     the user's own voice and rate, after what it's saying (medium
 //     priority, keeping Allison's never-interrupt rule).
-//   - AVM not in front, where VoiceOver doesn't read another app's
+//   - Guest House not in front, where VoiceOver doesn't read another app's
 //     announcements: VoiceOver's own "output" command through AppleScript,
 //     which it reads whatever app is in front. That needs VoiceOver
 //     Utility's "Allow VoiceOver to be controlled with AppleScript"; until
-//     it's on, those lines use the system voice, and AVM says once how to
+//     it's on, those lines use the system voice, and Guest House says once how to
 //     turn it on.
 // The system voice stays for VoiceOver off (a macOS machine has it, say)
 // and for any line VoiceOver couldn't be given. The sounds are unchanged.
@@ -91,7 +91,7 @@ final class Announcer {
         /// audible, but must not sound like an outcome.
         case info
         /// The keyboard going to a machine, and back to the Mac
-        /// (2026-10-26): a rising and a falling pair of notes of AVM's own,
+        /// (2026-10-26): a rising and a falling pair of notes of Guest House's own,
         /// so where the keyboard is can be told apart from every other
         /// sound even while a screen reader talks over the words.
         case enterGuest
@@ -148,16 +148,16 @@ final class Announcer {
     nonisolated(unsafe) static var isMuted = false
 
     /// True while the system voice is speaking or has lines waiting, or
-    /// while VoiceOver is likely still reading AVM's last line (its own
+    /// while VoiceOver is likely still reading Guest House's last line (its own
     /// queue can't be asked, so it's estimated from the line's length).
     /// USBPlugPrompt waits on this so a plug-in alert doesn't appear
     /// while "Mac keyboard on" is still being spoken.
     var isSpeaking: Bool { synthesizer.isSpeaking || Date() < voiceOverBusyUntil }
 
-    /// The system voice, when VoiceOver isn't speaking for AVM.
+    /// The system voice, when VoiceOver isn't speaking for Guest House.
     func stopSystemVoice() { synthesizer.stopSpeaking(at: .immediate) }
 
-    /// Lets what's being said finish, up to `seconds`, before AVM exits
+    /// Lets what's being said finish, up to `seconds`, before Guest House exits
     /// (2026-10-26, code audit): the last outcomes of a quit ("…is saved",
     /// a USB device given back) were cut off as the process ended.
     func waitUntilQuiet(seconds: TimeInterval) {
@@ -169,7 +169,7 @@ final class Announcer {
             RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         }
         // VoiceOver's reading of the last line too (2026-10-28): a line
-        // handed to it as AVM quits was otherwise cut off with the window.
+        // handed to it as Guest House quits was otherwise cut off with the window.
         while (synthesizer.isSpeaking || Date() < voiceOverBusyUntil) && Date() < deadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         }
@@ -179,10 +179,10 @@ final class Announcer {
 
     private var voiceOverBusyUntil = Date.distantPast
     /// VoiceOver's AppleScript refused (not allowed in VoiceOver Utility, or
-    /// AVM not allowed to control it): background lines use the system
+    /// Guest House not allowed to control it): background lines use the system
     /// voice for a minute, then VoiceOver is tried again (2026-10-30: a
     /// refusal held for the rest of the run, so a user who turned both
-    /// switches on heard the system voice until AVM quit).
+    /// switches on heard the system voice until Guest House quit).
     private var voiceOverScriptRefused: Bool { refusedLatch.withLock { Date() < $0 } }
     private var toldHowToAllowScripting = false
     private let scriptQueue = DispatchQueue(label: "avm.announcer.voiceover")
@@ -219,14 +219,14 @@ final class Announcer {
             }
             // After a scripted line still waiting its turn (2026-10-29, sixth
             // audit): VoiceOver speaks a scripted line at once, so it cut off
-            // a newer line said with AVM in front, and the older line was
+            // a newer line said with Guest House in front, and the older line was
             // heard after it.
             // And after the system voice (seventh audit): with scripting
             // refused, a background line's system voice was talked over.
             let wait = max(scriptBusyUntil, systemVoiceBusyUntil).timeIntervalSinceNow
             if wait > 0 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + min(wait, 20)) {
-                    // AVM left the front meanwhile (seventh audit): VoiceOver
+                    // Guest House left the front meanwhile (seventh audit): VoiceOver
                     // reads these only from the focused app, so the line was
                     // never heard.
                     if NSApp.isActive { post() } else { self.systemVoiceInstead(message) }
@@ -294,7 +294,7 @@ final class Announcer {
                 return
             }
             let error = String(decoding: said, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-            // A refusal, for a minute: AVM isn't allowed to control
+            // A refusal, for a minute: Guest House isn't allowed to control
             // VoiceOver (-1743), or VoiceOver's scripting is off (-10000,
             // "AppleEvent handler failed", in a tester's log with the
             // switch off; -10004). Not -1708 (2026-10-30): that was this
@@ -327,11 +327,11 @@ final class Announcer {
     private nonisolated func scriptFailed(_ message: String, error: String, refused: Bool) {
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                AVMLog.write("AVM: Announcer — VoiceOver's AppleScript failed (\(error)); \(refused ? "lines said while AVM isn't in front use the system voice" : "this line uses the system voice").")
+                AVMLog.write("Guest House: Announcer — VoiceOver's AppleScript failed (\(error)); \(refused ? "lines said while Guest House isn't in front use the system voice" : "this line uses the system voice").")
                 self.synthesizer.speak(AVSpeechUtterance(string: message))
                 if refused, !self.toldHowToAllowScripting {
                     self.toldHowToAllowScripting = true
-                    self.synthesizer.speak(AVSpeechUtterance(string: "To hear AVM in VoiceOver while you're in other apps, open VoiceOver Utility, and in General, turn on Allow VoiceOver to be controlled with AppleScript; and in System Settings, Privacy and Security, Automation, allow AVM to control VoiceOver."))
+                    self.synthesizer.speak(AVSpeechUtterance(string: "To hear Guest House in VoiceOver while you're in other apps, open VoiceOver Utility, and in General, turn on Allow VoiceOver to be controlled with AppleScript; and in System Settings, Privacy and Security, Automation, allow Guest House to control VoiceOver."))
                 }
             }
         }
@@ -349,10 +349,10 @@ final class Announcer {
     // MARK: Not over the machine's screen reader (2026-10-31)
     //
     // With the keyboard in a machine whose own screen reader is talking,
-    // VoiceOver reading AVM's updates talks over it, both in one pair of
+    // VoiceOver reading Guest House's updates talks over it, both in one pair of
     // headphones or one hearing aid. So lines marked routine wait, and are
     // said when the keyboard comes back to the Mac. While no screen reader
-    // runs in the machine (Setup, a restart), nothing waits: AVM is the only
+    // runs in the machine (Setup, a restart), nothing waits: Guest House is the only
     // voice then.
     //
     // Opt-in (2026-11-01, audit): this first held every .info line, about 200
@@ -364,7 +364,7 @@ final class Announcer {
     nonisolated(unsafe) static var keyboardIn: String?
     /// That machine's id (2026-11-10, audit of that day #8): the hold went
     /// by name, GuestWatch kept the name from Start, and a rename while
-    /// running left AVM talking over the machine's screen reader.
+    /// running left Guest House talking over the machine's screen reader.
     nonisolated(unsafe) static var keyboardInID: String?
     /// The machines whose screen reader is running now (GuestWatch), by id.
     nonisolated(unsafe) static var readerRunningIn: Set<String> = []
@@ -396,7 +396,7 @@ final class Announcer {
         Self.keepHeldLines = false
         guard let machine = heldIn, let summary = Self.heldSummary(held, machine: machine) else { return }
         held = []; heldIn = nil
-        AVMLog.write("AVM: said the \(summary.count) characters that waited")
+        AVMLog.write("Guest House: said the \(summary.count) characters that waited")
         speak(summary)
     }
 
@@ -419,19 +419,19 @@ final class Announcer {
     /// there reached the log that Report a Problem sends).
     func announce(_ message: String, tone: Tone, routine: Bool = false, logAs: String? = nil) {
         // The accessibility audit (AccessibilityAudit.swift, 2026-10-26)
-        // opens AVM's screens with no one at them; their announcements are
+        // opens Guest House's screens with no one at them; their announcements are
         // kept quiet so it never talks over the user's own VoiceOver.
         guard !Self.isMuted else { return }
         // In the log as well (2026-10-26, code audit): the log's header
         // promises spoken announcements, and a failure said without its own
         // log line was missing from every diagnostic report.
         if routine, Self.isHoldingRoutineLines {
-            AVMLog.write("AVM: held while in \(Self.keyboardIn ?? "?") (\(tone)) — \(logAs ?? message)")
+            AVMLog.write("Guest House: held while in \(Self.keyboardIn ?? "?") (\(tone)) — \(logAs ?? message)")
             held.append(message)
             heldIn = Self.keyboardIn
             return
         }
-        AVMLog.write("AVM: said (\(tone)) — \(logAs ?? message)")
+        AVMLog.write("Guest House: said (\(tone)) — \(logAs ?? message)")
         switch tone {
         case .enterGuest: Self.enterSound?.play()
         case .leaveGuest: Self.leaveSound?.play()

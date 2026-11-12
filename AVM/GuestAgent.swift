@@ -1,19 +1,19 @@
 // GuestAgent.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
-// The QEMU guest agent (2026-10-26): a small Windows service AVM installs
+// The QEMU guest agent (2026-10-26): a small Windows service Guest House installs
 // during setup (qemu-ga, from the install DVD), reached through its own
 // virtio-serial port, org.qemu.guest_agent.0, on qga.sock in the VM's
 // private socket folder.
 //
-// What AVM uses it for: setting Windows' clock to the Mac's when the Mac
+// What Guest House uses it for: setting Windows' clock to the Mac's when the Mac
 // wakes. A VM paused for sleep (SleepCoordinator.swift) wakes with its
 // clock where it stopped, and Windows only corrects it at its next time
 // sync, which can be hours; until then, times in mail, files and the
 // taskbar are wrong. guest-set-time with the Mac's time fixes it at once.
 //
 // Windows installed before the agent existed, or with it not yet running,
-// simply doesn't answer; AVM waits a few seconds and says nothing more
+// simply doesn't answer; Guest House waits a few seconds and says nothing more
 // than the log line. The protocol is QEMU's: one JSON object per line;
 // guest-sync first, so a reply left over from an earlier, timed-out
 // request can't be mistaken for this one.
@@ -24,7 +24,7 @@ nonisolated enum GuestAgent {
 
     /// One lock per machine's agent: its channel takes one client at a
     /// time, and a second connection is refused (2026-10-27, MEASURED:
-    /// printers and a status check at once got "Connection refused"). AVM's
+    /// printers and a status check at once got "Connection refused"). Guest House's
     /// own calls take turns here; a refusal from anyone else is retried.
     private static let locksLock = NSLock()
     nonisolated(unsafe) private static var locks: [String: NSLock] = [:]

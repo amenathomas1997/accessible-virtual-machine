@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # test-sound-ear.py
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
 # One ear (2026-11-01, qemu-10.0.12-utm+hda-per-ear-levels.patch): a Linux test
 # machine, with QEMU alone and changes thrown away (-snapshot), plays a tone with
 # its sound going to a file: in both ears, then only the left, then only the
 # right, changed by qom-set while it runs, as Settings does. The file then shows
-# which ear each tone reached. QEMU alone because within AVM the file stayed
+# which ear each tone reached. QEMU alone because within Guest House the file stayed
 # silent for reasons not found (2026-11-01), though the machine played.
 #
-#   test-sound-ear.py --app AVM.app --vm FOLDER
+#   test-sound-ear.py --app Guest House.app --vm FOLDER
 import argparse, base64, json, os, shutil, socket, struct, subprocess, sys, tempfile, time
 
 ap = argparse.ArgumentParser()

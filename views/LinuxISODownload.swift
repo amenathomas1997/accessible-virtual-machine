@@ -1,10 +1,10 @@
 // LinuxISODownload.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // The setup wizard's "Download Linux…" (2026-10-30, the user's request: to
 // get Windows and Linux from the wizard; Windows already has its sheet,
 // ISODownloadView). Ubuntu, Debian and Fedora publish their installers
-// openly, so AVM downloads the one chosen itself, from the distribution's
+// openly, so Guest House downloads the one chosen itself, from the distribution's
 // own server:
 //   - It finds the current file in the release's folder (the newest point
 //     release, 26.04.1 rather than 26.04), so nothing here goes stale with
@@ -15,7 +15,7 @@
 //   - It saves into Downloads, and a copy already there that checks out is
 //     used as it is.
 //   - It picks the file as the new machine's installer.
-// The releases are the ones AVM's unattended installs are proven on:
+// The releases are the ones Guest House's unattended installs are proven on:
 // Ubuntu 26.04, Debian's current stable and Fedora 44, and since
 // 2026-10-30 Kali Linux's current release (2026.3 when added),
 // AlmaLinux and Rocky Linux 10 (10.2), and openSUSE Tumbleweed's current
@@ -181,7 +181,7 @@ final class LinuxISODownloader: NSObject, ObservableObject {
                 try await find()
             } catch {
                 guard !Task.isCancelled else { return }
-                fail("AVM couldn't find \(chosen.title)'s installer. Reason: \(error.localizedDescription) Check the Mac's internet connection, then try again.")
+                fail("Guest House couldn't find \(chosen.title)'s installer. Reason: \(error.localizedDescription) Check the Mac's internet connection, then try again.")
             }
         }
     }
@@ -258,7 +258,7 @@ final class LinuxISODownloader: NSObject, ObservableObject {
         self.task = task
         phase = .downloading
         resumes = 0
-        Announcer.shared.announce("Downloading \(name) from \(folder.host ?? "its maker"). AVM says how far along it is every 10 percent.", tone: .info)
+        Announcer.shared.announce("Downloading \(name) from \(folder.host ?? "its maker"). Guest House says how far along it is every 10 percent.", tone: .info)
         task.resume()
     }
 
@@ -323,7 +323,7 @@ final class LinuxISODownloader: NSObject, ObservableObject {
         guard phase == .downloading, self.session === session, let resumeData, resumes < 5 else { return false }
         resumes += 1
         AVMLog.write("Linux download: stopped; carrying on from where it got to (time \(resumes) of 5)")
-        Announcer.shared.announce("The download stopped. AVM is carrying on from where it got to.", tone: .info)
+        Announcer.shared.announce("The download stopped. Guest House is carrying on from where it got to.", tone: .info)
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(5 * resumes)) { [weak self] in
             guard let self, self.phase == .downloading, self.session === session else { return }
             let task = session.downloadTask(withResumeData: resumeData)
@@ -356,7 +356,7 @@ final class LinuxISODownloader: NSObject, ObservableObject {
             try FileManager.default.moveItem(at: temporary, to: destination)
         } catch {
             try? FileManager.default.removeItem(at: temporary)
-            fail("AVM couldn't put the download in Downloads. Reason: \(error.localizedDescription)")
+            fail("Guest House couldn't put the download in Downloads. Reason: \(error.localizedDescription)")
             return
         }
         job = Task { await verify(destination, alreadyThere: false) }
@@ -384,18 +384,18 @@ final class LinuxISODownloader: NSObject, ObservableObject {
                 AVMLog.write("Linux download: the copy in Downloads didn't match; downloading it again")
                 do {
                     try FileManager.default.trashItem(at: file, resultingItemURL: nil)
-                    Announcer.shared.announce("\(file.lastPathComponent) in Downloads didn't match the checksum, so AVM moved it to the Trash and is downloading it again.", tone: .info)
+                    Announcer.shared.announce("\(file.lastPathComponent) in Downloads didn't match the checksum, so Guest House moved it to the Trash and is downloading it again.", tone: .info)
                 } catch {
-                    fail("\(file.lastPathComponent) in Downloads didn't match the checksum \(distribution.title) publishes, and AVM couldn't move it to the Trash. Reason: \(error.localizedDescription) Next: move or rename it, then try again.")
+                    fail("\(file.lastPathComponent) in Downloads didn't match the checksum \(distribution.title) publishes, and Guest House couldn't move it to the Trash. Reason: \(error.localizedDescription) Next: move or rename it, then try again.")
                     return
                 }
                 phase = .finding
                 job = Task {
-                    do { try await find() } catch { guard !Task.isCancelled else { return }; fail("AVM couldn't download \(distribution.title). Reason: \(error.localizedDescription)") }
+                    do { try await find() } catch { guard !Task.isCancelled else { return }; fail("Guest House couldn't download \(distribution.title). Reason: \(error.localizedDescription)") }
                 }
             } else {
                 try? FileManager.default.removeItem(at: file)
-                fail("\(file.lastPathComponent) didn't match the checksum \(distribution.title) publishes, so AVM deleted it. Try the download again.")
+                fail("\(file.lastPathComponent) didn't match the checksum \(distribution.title) publishes, so Guest House deleted it. Try the download again.")
             }
             return
         }
@@ -453,7 +453,7 @@ struct LinuxDownloadView: View {
             Text("Download Linux")
                 .font(.title)
                 .accessibilityAddTraits(.isHeader)
-            Text("AVM downloads the installer from the distribution's own server, says how far along it is every 10 percent, checks it against the checksum the distribution publishes, and chooses it as the installer. It's saved in Downloads.")
+            Text("Guest House downloads the installer from the distribution's own server, says how far along it is every 10 percent, checks it against the checksum the distribution publishes, and chooses it as the installer. It's saved in Downloads.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -527,7 +527,7 @@ struct LinuxDownloadView: View {
             Button("Cancel Download") { downloader.cancel() }
                 .accessibilityHint("Stops the download. Nothing is kept.")
             Button("Keep Downloading in Background") {
-                Announcer.shared.announce("AVM keeps downloading \(downloader.distribution.title), says how far along it is every 10 percent, and chooses it as the installer when it's checked.", tone: .info)
+                Announcer.shared.announce("Guest House keeps downloading \(downloader.distribution.title), says how far along it is every 10 percent, and chooses it as the installer when it's checked.", tone: .info)
                 dismiss()
             }
             .keyboardShortcut(.escape, modifiers: [])
@@ -542,7 +542,7 @@ struct LinuxDownloadView: View {
 /// The download with no window (2026-10-30), for a full system test of a
 /// Linux install the way a user gets it:
 ///
-///   AVM.app/Contents/MacOS/AVM --download-linux ubuntu|debian|fedora|kali|almalinux|rocky|opensuse
+///   Guest House.app/Contents/MacOS/Guest House --download-linux ubuntu|debian|fedora|kali|almalinux|rocky|opensuse
 ///
 /// It runs LinuxISODownloader exactly as the setup wizard's Download Linux
 /// does, printing each step, and exits 0 with the installer's path as its
@@ -558,7 +558,7 @@ enum LinuxDownloadJob {
         Announcer.isMuted = true
         guard arguments.indices.contains(i + 1),
               let distribution = LinuxISODownloader.Distribution(rawValue: arguments[i + 1]) else {
-            print("Usage: AVM \(flag) \(LinuxISODownloader.Distribution.allCases.map(\.rawValue).joined(separator: "|"))")
+            print("Usage: Guest House \(flag) \(LinuxISODownloader.Distribution.allCases.map(\.rawValue).joined(separator: "|"))")
             exit(64)
         }
         let downloader = LinuxISODownloader()

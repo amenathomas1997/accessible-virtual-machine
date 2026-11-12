@@ -1,6 +1,6 @@
 #!/bin/bash
 # test-release.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
 # Checks a release before it's published (2026-10-31): 0.4.19 went out
 # tested only as a Debug build. It takes what build-installer.sh made, the
@@ -15,7 +15,7 @@
 #      last release's, so installed copies accept it;
 #   4. with --machines, a few real tests with the app from the DMG itself
 #      (save and resume, send file, the control socket, disk info), which
-#      need AVM quit: the suite would otherwise run a re-signed copy.
+#      need Guest House quit: the suite would otherwise run a re-signed copy.
 # Nothing is published or installed. The app is copied out of the DMG to
 # a temporary folder and removed afterwards.
 #
@@ -35,10 +35,10 @@ while [ $# -gt 0 ]; do
         *) echo "Unknown option: $1"; exit 2 ;;
     esac
 done
-[ -n "$DMG" ] || DMG="$(ls -t "$INSTALLER"/AVM-*.dmg 2>/dev/null | head -1)"
+[ -n "$DMG" ] || DMG="$(ls -t "$INSTALLER"/GuestHouse-*.dmg 2>/dev/null | head -1)"
 [ -f "$DMG" ] || { echo "FAILED: no DMG (build one with Tools/build-installer.sh, or pass --dmg)."; exit 1; }
-VERSION="$(basename "$DMG" .dmg | sed 's/^AVM-//')"
-ZIP="$(dirname "$DMG")/AVM-$VERSION.zip"
+VERSION="$(basename "$DMG" .dmg | sed 's/^GuestHouse-//')"
+ZIP="$(dirname "$DMG")/GuestHouse-$VERSION.zip"
 ITEM="$(dirname "$DMG")/appcast-item.xml"
 
 FAILED=0
@@ -49,7 +49,7 @@ MOUNT="$WORK/mount"
 cleanup() { hdiutil detach -quiet "$MOUNT" 2>/dev/null; rm -rf "$WORK"; }
 trap cleanup EXIT
 
-echo "== AVM $VERSION: $DMG"
+echo "== Guest House $VERSION: $DMG"
 echo
 echo "== The DMG"
 out="$(spctl -a -t open --context context:primary-signature -vv "$DMG" 2>&1)"
@@ -59,9 +59,9 @@ check "its notarization ticket is stapled" $? "$(echo "$out" | tail -1)"
 mkdir -p "$MOUNT"
 hdiutil attach -quiet -nobrowse -readonly -mountpoint "$MOUNT" "$DMG"
 check "it opens" $?
-[ -d "$MOUNT/AVM.app" ]; check "it holds AVM.app" $?
-ditto "$MOUNT/AVM.app" "$WORK/AVM.app" 2>/dev/null
-APP="$WORK/AVM.app"
+[ -d "$MOUNT/Guest House.app" ]; check "it holds Guest House.app" $?
+ditto "$MOUNT/Guest House.app" "$WORK/Guest House.app" 2>/dev/null
+APP="$WORK/Guest House.app"
 
 echo
 echo "== The app in it"
@@ -94,7 +94,12 @@ if [ -f "$ZIP" ] && [ -f "$ITEM" ]; then
     [ "$item_short" = "$SHORT" ] && [ "$item_build" = "$BUILD" ]; check "the feed entry is $SHORT ($BUILD), as the app" $? "it says $item_short ($item_build)"
     [ "$length" = "$(stat -f %z "$ZIP")" ]; check "the zip's size is the feed entry's" $?
     unzip -qq -o "$ZIP" -d "$WORK/zip"
-    [ "$(plist CFBundleVersion "$WORK/zip/AVM.app/Contents/Info.plist")" = "$BUILD" ]; check "the zip holds the same build" $?
+    # fork-only
+    # Under the file name from before the rename, so copies from then take it (build-installer.sh).
+    [ -d "$WORK/zip/AVM.app" ]; check "the zip's app has the file name copies from before the rename look for" $?
+    mv "$WORK/zip/AVM.app" "$WORK/zip/Guest House.app" 2>/dev/null
+    # /fork-only
+    [ "$(plist CFBundleVersion "$WORK/zip/Guest House.app/Contents/Info.plist")" = "$BUILD" ]; check "the zip holds the same build" $?
     KEY="$(plist SUPublicEDKey "$APP/Contents/Info.plist" | tr -d '[:space:]')"
     cat > "$WORK/verify.swift" <<'EOF'
 import CryptoKit
@@ -121,8 +126,8 @@ fi
 if [ $MACHINES = 1 ]; then
     echo
     echo "== Machines, with the app from the DMG"
-    if pgrep -x AVM >/dev/null; then
-        check "AVM is quit (the suite would test a re-signed copy)" 1
+    if pgrep -x "Guest House" >/dev/null; then
+        check "Guest House is quit (the suite would test a re-signed copy)" 1
     else
         SUITE_LOG="$WORK/machines.txt"
         "$REPO_ROOT/Tools/run-all-tests.sh" --app "$APP" --only "windows-save windows-send windows-control debian-send debian-control debian-disk" \
@@ -136,5 +141,5 @@ if [ $MACHINES = 1 ]; then
 fi
 
 echo
-if [ $FAILED = 0 ]; then echo "PASSED: AVM $VERSION is ready to publish."; else echo "FAILED: see the NO lines above."; fi
+if [ $FAILED = 0 ]; then echo "PASSED: Guest House $VERSION is ready to publish."; else echo "FAILED: see the NO lines above."; fi
 exit $FAILED

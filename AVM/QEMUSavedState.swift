@@ -1,5 +1,5 @@
 // QEMUSavedState.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 
 import Foundation
 
@@ -129,7 +129,7 @@ nonisolated enum QEMUSavedState {
         let disk = URL(fileURLWithPath: configuration.resolvedDiskImagePath)
         let marker = runtimeDir.appendingPathComponent(loadedMarker)
         guard let tags = await snapshotTags(disk: disk) else {
-            AVMLog.write("AVM: SavedState — the disk's snapshots couldn't be read; nothing is loaded or deleted at this Start.")
+            AVMLog.write("Guest House: SavedState — the disk's snapshots couldn't be read; nothing is loaded or deleted at this Start.")
             // With a saved state waiting, the Start stops here (2026-10-28,
             // fifth audit): booted fresh, the next Start loaded the old
             // state over that session's work.
@@ -143,7 +143,7 @@ nonisolated enum QEMUSavedState {
         let resume = runtimeDir.appendingPathComponent(resumeFile)
         if tags.contains(tag) {
             if fm.fileExists(atPath: marker.path) {
-                AVMLog.write("AVM: SavedState — a saved state already carried on once is still on the disk; deleting it, not loading it.")
+                AVMLog.write("Guest House: SavedState — a saved state already carried on once is still on the disk; deleting it, not loading it.")
                 // Said (2026-10-28, fifth audit): after QEMU died during the
                 // load, the list still said Saved, and this Start dropped the
                 // session without a word. Not when it did carry on and only
@@ -159,7 +159,7 @@ nonisolated enum QEMUSavedState {
                 // The marker goes only once the saved state has (2026-10-28,
                 // code review): otherwise the Start after next loads it.
                 if await snapshotTags(disk: disk)?.contains(tag) != false {
-                    AVMLog.write("AVM: SavedState — the stale saved state couldn't be deleted; keeping the marker so it's never loaded.")
+                    AVMLog.write("Guest House: SavedState — the stale saved state couldn't be deleted; keeping the marker so it's never loaded.")
                 } else {
                     try? fm.removeItem(at: marker)
                 }
@@ -197,10 +197,10 @@ nonisolated enum QEMUSavedState {
             // the old session over the restored disk and said it was resuming.
             // The quiet word: its loss, if any, was said by the restore.
             try? carriedOnWord.write(to: dir.appendingPathComponent(loadedMarker), atomically: true, encoding: .utf8)
-            AVMLog.write("AVM: SavedState — couldn't confirm the saved state was deleted; the marker makes the next Start delete it, not load it.")
+            AVMLog.write("Guest House: SavedState — couldn't confirm the saved state was deleted; the marker makes the next Start delete it, not load it.")
             return
         }
-        AVMLog.write("AVM: SavedState — discarded.")
+        AVMLog.write("Guest House: SavedState — discarded.")
         try? FileManager.default.removeItem(at: hint(in: dir))
         try? FileManager.default.removeItem(at: dir.appendingPathComponent(loadedMarker))
     }

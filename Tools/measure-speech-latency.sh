@@ -1,13 +1,13 @@
 #!/bin/bash
 # measure-speech-latency.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
 # Compiles Tools/speech-latency (once, or again when it changes) and runs
 # it with any options given. It measures how long a screen reader in a VM
 # takes to start speaking after a key press; Tools/speech-latency/main.swift
 # explains how, and what to set up first.
 #
-#   Tools/measure-speech-latency.sh --label "AVM 0.1.3"
+#   Tools/measure-speech-latency.sh --label "Guest House 0.1.3"
 #   Tools/measure-speech-latency.sh --label Parallels --csv parallels.csv
 #   Tools/measure-speech-latency.sh --help
 

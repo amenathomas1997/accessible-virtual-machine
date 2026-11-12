@@ -1,10 +1,10 @@
 // BluetoothDevices.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Bluetooth devices for a virtual machine (2026-10-27). A Bluetooth braille
 // display, game controller or other HID device goes to a machine without
-// using a USB port: AVM's helper takes it from macOS (BluetoothHold.swift)
-// and relays its reports to QEMU's usb-hid-bridge (AVM's QEMU patch), which
+// using a USB port: Guest House's helper takes it from macOS (BluetoothHold.swift)
+// and relays its reports to QEMU's usb-hid-bridge (Guest House's QEMU patch), which
 // shows the machine a USB device of the same kind, with the device's own
 // report descriptor. Windows then uses the driver it would for the real
 // thing: its HID braille support, which NVDA and Narrator use, its game
@@ -108,23 +108,23 @@ final class BluetoothDevices: ObservableObject {
         // Sent now, by hand or on its return: nothing left to wait for.
         awaitingReturn[device.id] = nil
         // Input Monitoring first, for a device with keys (2026-10-29, the
-        // user's Mantis): macOS lets the helper open one only when AVM is
+        // user's Mantis): macOS lets the helper open one only when Guest House is
         // allowed there (InputMonitoring.swift). Asked for, and waited on,
         // before the bridge goes into QEMU, so nothing waits in the machine
         // meanwhile. Once the wait is over the helper decides.
         if HIDReportDescriptor.hasKeyboard(device.descriptor) || needsInputMonitoring.contains(device.id),
            !InputMonitoring.isAllowed {
             let outcome = await InputMonitoring.ask(
-                title: "AVM needs Input Monitoring to send \(device.name)",
-                why: "\(device.name) has keys, and macOS lets AVM's helper take a device with keys only when AVM is allowed under Input Monitoring.",
-                then: "AVM sends \(device.name) to \(machine.machineName) as soon as it's allowed.",
+                title: "Guest House needs Input Monitoring to send \(device.name)",
+                why: "\(device.name) has keys, and macOS lets Guest House's helper take a device with keys only when Guest House is allowed under Input Monitoring.",
+                then: "Guest House sends \(device.name) to \(machine.machineName) as soon as it's allowed.",
                 while: {
                     if machine.isSaving { return false }
                     if case .running = machine.state { return true }
                     return false
                 })
             if outcome == .notNow {
-                say("\(device.name) stayed on the Mac. Send it again when you're ready to allow AVM under Input Monitoring.", tone: .info)
+                say("\(device.name) stayed on the Mac. Send it again when you're ready to allow Guest House under Input Monitoring.", tone: .info)
                 return false
             }
             if machine.isSaving {
@@ -196,7 +196,7 @@ final class BluetoothDevices: ObservableObject {
             return .stopped
         }
         if case .failure(.notEnabled(.requiresApproval)) = held {
-            say("\(device.name) goes to \(machine.machineName) once AVM's helper is allowed in Login Items.", tone: .info)
+            say("\(device.name) goes to \(machine.machineName) once Guest House's helper is allowed in Login Items.", tone: .info)
             let approved = await USBHelperClient.shared.waitForApproval(while: {
                 waitEnded = cantTakeIt()
                 return waitEnded == nil
@@ -247,9 +247,9 @@ final class BluetoothDevices: ObservableObject {
                 case .paused?:
                     say("\(machine.machineName) is paused. Resume it, then send \(device.name) again from Bluetooth Devices.", tone: .info)
                 case .stopped?:
-                    say("\(device.name) stayed on the Mac: \(machine.machineName) stopped before AVM's helper was allowed.", tone: .info)
+                    say("\(device.name) stayed on the Mac: \(machine.machineName) stopped before Guest House's helper was allowed.", tone: .info)
                 case .notApproved?:
-                    say("\(device.name) stayed on the Mac: AVM's helper wasn't allowed in time. Allow AVM in Login Items, then send it again from Bluetooth Devices.", tone: .info)
+                    say("\(device.name) stayed on the Mac: Guest House's helper wasn't allowed in time. Allow Guest House in Login Items, then send it again from Bluetooth Devices.", tone: .info)
                 case nil:
                     if machine.isSaving {
                         say("\(machine.machineName) is being saved, so \(device.name) stays on the Mac.", tone: .info)
@@ -266,10 +266,10 @@ final class BluetoothDevices: ObservableObject {
             if case .helper(_, let detail) = error, InputMonitoring.refusedHelper(detail) {
                 if !InputMonitoring.isAllowed {
                     needsInputMonitoring.insert(device.id)
-                    say("\(device.name) stayed on the Mac: macOS lets AVM's helper take it only when AVM is allowed under Input Monitoring. Send it again, and AVM asks for it.", tone: .failure)
+                    say("\(device.name) stayed on the Mac: macOS lets Guest House's helper take it only when Guest House is allowed under Input Monitoring. Send it again, and Guest House asks for it.", tone: .failure)
                     return false
                 }
-                AVMLog.write("Bluetooth: AVM is allowed under Input Monitoring, and macOS still refused the helper \(device.name)", category: "Bluetooth")
+                AVMLog.write("Bluetooth: Guest House is allowed under Input Monitoring, and macOS still refused the helper \(device.name)", category: "Bluetooth")
             }
             // Not "stayed on the Mac" for a machine's keyboard for Windows,
             // which the helper has already (2026-10-29, sixth audit).
@@ -351,7 +351,7 @@ final class BluetoothDevices: ObservableObject {
         case .restorePoint:
             return "\(device.name) stayed on the Mac: \(machine.machineName) was taking a restore point. Send it again from Bluetooth Devices."
         case .helperRestart:
-            return "\(device.name) stayed on the Mac: AVM's helper was restarted. Send it again from Bluetooth Devices."
+            return "\(device.name) stayed on the Mac: Guest House's helper was restarted. Send it again from Bluetooth Devices."
         }
     }
 
@@ -490,7 +490,7 @@ final class BluetoothDevices: ObservableObject {
     }
 
     /// A keyboard the Mac keeps: not the keyboard for Windows, not a device
-    /// AVM has sent or is waiting to send (counted by name, as the helper's
+    /// Guest House has sent or is waiting to send (counted by name, as the helper's
     /// list has its own ids, so two alike are told apart), and not a key or
     /// remapping device the helper doesn't count either. A rough check: when
     /// it's wrong the helper still decides, as before. True when the list
@@ -548,7 +548,7 @@ final class BluetoothDevices: ObservableObject {
             }
         }
         if !lost.isEmpty {
-            say("Bluetooth devices went back to the Mac: AVM's helper stopped. Send them again from Bluetooth Devices.", tone: .info)
+            say("Bluetooth devices went back to the Mac: Guest House's helper stopped. Send them again from Bluetooth Devices.", tone: .info)
         }
     }
 
@@ -710,14 +710,14 @@ struct BluetoothDevicesView: View {
             // already; the window shows them (2026-10-29).
             switch error {
             case .notEnabled(.requiresApproval):
-                problem = "AVM's helper is waiting for your approval. In System Settings, under General, then Login Items and Extensions, allow AVM in the background, then choose Look Again."
+                problem = "Guest House's helper is waiting for your approval. In System Settings, under General, then Login Items and Extensions, allow Guest House in the background, then choose Look Again."
             case .notEnabled:
-                problem = "AVM's helper couldn't be set up. Choose Look Again to try again."
+                problem = "Guest House's helper couldn't be set up. Choose Look Again to try again."
             case .notStarting:
-                problem = "AVM's helper isn't starting. In System Settings, under General, then Login Items and Extensions, turn AVM off and on again under Allow in the Background, then quit and reopen AVM."
+                problem = "Guest House's helper isn't starting. In System Settings, under General, then Login Items and Extensions, turn Guest House off and on again under Allow in the Background, then quit and reopen Guest House."
             default:
-                problem = "AVM couldn't list Bluetooth devices. Reason: \(error)."
-                Announcer.shared.announce("AVM couldn't list Bluetooth devices. Reason: \(error)", tone: .failure)
+                problem = "Guest House couldn't list Bluetooth devices. Reason: \(error)."
+                Announcer.shared.announce("Guest House couldn't list Bluetooth devices. Reason: \(error)", tone: .failure)
             }
         }
         looking = false

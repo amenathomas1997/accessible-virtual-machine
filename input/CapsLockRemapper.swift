@@ -1,13 +1,13 @@
 //
 //  CapsLockRemapper.swift
-//  AVM
+//  Guest House
 //
 //  Created by Allison Meloy on 7/26/26.
 //
 
 
 // CapsLockRemapper.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Owns the Caps Lock → F19 hidutil remap and its full lifecycle.
 //
@@ -20,7 +20,7 @@
 //   laptop layout, and Narrator's DEFAULT modifier is "Caps lock or Insert".
 //   No Mac keyboard has Insert and a MacBook has no numpad, so laptop layout
 //   is the only option and there is no fallback modifier. Without this remap,
-//   AVM's own documented path (Narrator) is broken.
+//   Guest House's own documented path (Narrator) is broken.
 //
 //   The fix: hidutil remaps Caps Lock → F19 at the driver level, below the
 //   layer that swallows it. VMView's scancode table maps kVK_F19 → 0x3A
@@ -31,7 +31,7 @@
 // WHY hidutil AND NOT AN EVENT TAP:
 //   hidutil needs no permission prompt. A CGEventTap needs Input Monitoring,
 //   and a surprise permissions dialog while VoiceOver is off is precisely
-//   the failure mode AVM exists to prevent. (AVM previously carried a
+//   the failure mode Guest House exists to prevent. (Guest House previously carried a
 //   never-started CGEventTap that claimed to do this job; it was removed
 //   2026-07-26. It could never have worked — see the root cause above.)
 //
@@ -60,7 +60,7 @@
 //   If the READ fails we do NOT apply. We cannot restore a baseline we never
 //   captured, and applying blind could destroy the user's existing remaps
 //   permanently. Better that Caps Lock stays broken in the guest for this
-//   session than that AVM wrecks the user's Mac configuration.
+//   session than that Guest House wrecks the user's Mac configuration.
 //
 // SILENCE IS NEVER NEUTRAL:
 //   If the remap fails, Caps Lock silently stops being a modifier and every
@@ -140,7 +140,7 @@ final class CapsLockRemapper {
 
     /// Decision 4: on by default, with a setting to disable. Narrator's
     /// default modifier settles this — it is not really a preference, it is
-    /// required for AVM's documented path to work at all. The disable switch
+    /// required for Guest House's documented path to work at all. The disable switch
     /// exists as an escape hatch, not as an invitation.
     static let enabledKey = "AVMCapsLockRemapEnabled"
 
@@ -180,13 +180,13 @@ final class CapsLockRemapper {
 
     func applyForLock() {
         guard isEnabled else {
-            AVMLog.write("AVM: CapsLockRemapper — disabled by setting; not applying.")
+            AVMLog.write("Guest House: CapsLockRemapper — disabled by setting; not applying.")
             return
         }
 
         // Read first. If we cannot read, we do not write — see FAIL SAFE.
         guard let existing = readCurrentMapping() else {
-            AVMLog.write("AVM: CapsLockRemapper — FAILED to read current mapping; NOT applying (fail safe).")
+            AVMLog.write("Guest House: CapsLockRemapper — FAILED to read current mapping; NOT applying (fail safe).")
             Announcer.shared.announce(
                 "Caps Lock setup failed. Screen reader commands may not work.",
                 tone: .failure)
@@ -199,24 +199,24 @@ final class CapsLockRemapper {
         // Control-Command-Escape no longer got the user out. Said once a
         // run: in Windows, Caps Lock then isn't the screen reader key.
         if let theirs = existing.first(where: { $0.src == Self.capsLockUsage && $0.dst != Self.f19Usage }) {
-            AVMLog.write("AVM: CapsLockRemapper — Caps Lock is already mapped (to \(String(theirs.dst, radix: 16))); leaving the user's mapping alone.")
+            AVMLog.write("Guest House: CapsLockRemapper — Caps Lock is already mapped (to \(String(theirs.dst, radix: 16))); leaving the user's mapping alone.")
             if !toldAboutUserMapping {
                 toldAboutUserMapping = true
                 // No "use Insert" (2026-10-28, fifth audit): the Touch Bar
                 // Macs this is for have none.
-                Announcer.shared.announce("Your Mac already maps Caps Lock to another key, so AVM leaves it as it is. In the virtual machine, Caps Lock does what your mapping says, so it isn't the screen reader's key there. If this keyboard has no Insert key, set the screen reader's modifier to another key in Windows, or remove the Caps Lock mapping in System Settings, Keyboard, Modifier Keys.", tone: .info)
+                Announcer.shared.announce("Your Mac already maps Caps Lock to another key, so Guest House leaves it as it is. In the virtual machine, Caps Lock does what your mapping says, so it isn't the screen reader's key there. If this keyboard has no Insert key, set the screen reader's modifier to another key in Windows, or remove the Caps Lock mapping in System Settings, Keyboard, Modifier Keys.", tone: .info)
             }
             return
         }
 
-        // Caps Lock to F19 already, and not AVM's (2026-10-29, sixth audit):
-        // the user's own mapping, a Hyper key say. It's what AVM needs, so
+        // Caps Lock to F19 already, and not Guest House's (2026-10-29, sixth audit):
+        // the user's own mapping, a Hyper key say. It's what Guest House needs, so
         // nothing is applied, and nothing is restored: restoring wrote the
         // Mac's mapping back without it, and the user's F19 shortcuts were
         // gone after the first Return to Mac.
         if existing.contains(where: { $0.src == Self.capsLockUsage && $0.dst == Self.f19Usage }),
            !UserDefaults.standard.bool(forKey: Self.activeKey) {
-            AVMLog.write("AVM: CapsLockRemapper — Caps Lock is already mapped to F19 by the user; nothing to apply or restore.")
+            AVMLog.write("Guest House: CapsLockRemapper — Caps Lock is already mapped to F19 by the user; nothing to apply or restore.")
             return
         }
 
@@ -231,23 +231,23 @@ final class CapsLockRemapper {
         // in which we have changed the system without having recorded how to
         // put it back.
         //
-        // NEVER SAVE AVM'S OWN REMAP AS THE ORIGINAL (2026-10-25, code audit):
+        // NEVER SAVE Guest House'S OWN REMAP AS THE ORIGINAL (2026-10-25, code audit):
         // if an earlier restore failed, the system still carries Caps Lock to
         // F19 and the flag is still set. Saving that as the "original" meant
         // the next successful restore wrote the remap back and cleared the
         // flag, leaving Caps Lock dead with nothing left to recover it. So
-        // AVM's own entry is filtered out, and an original saved earlier and
+        // Guest House's own entry is filtered out, and an original saved earlier and
         // not yet restored is kept as it is.
         let original = existing.filter { !($0.src == Self.capsLockUsage && $0.dst == Self.f19Usage) }
         let unrestored = UserDefaults.standard.bool(forKey: Self.activeKey)
             && UserDefaults.standard.string(forKey: Self.savedMappingKey) != nil
         if unrestored {
-            AVMLog.write("AVM: CapsLockRemapper — an earlier original is still saved (not yet restored); keeping it.")
+            AVMLog.write("Guest House: CapsLockRemapper — an earlier original is still saved (not yet restored); keeping it.")
         } else if let encoded = try? JSONEncoder().encode(original),
            let json = String(data: encoded, encoding: .utf8) {
             UserDefaults.standard.set(json, forKey: Self.savedMappingKey)
         } else {
-            AVMLog.write("AVM: CapsLockRemapper — could not encode saved mapping; NOT applying (fail safe).")
+            AVMLog.write("Guest House: CapsLockRemapper — could not encode saved mapping; NOT applying (fail safe).")
             Announcer.shared.announce(
                 "Caps Lock setup failed. Screen reader commands may not work.",
                 tone: .failure)
@@ -257,22 +257,22 @@ final class CapsLockRemapper {
         UserDefaults.standard.synchronize()
 
         if writeMapping(merged) {
-            AVMLog.write("AVM: CapsLockRemapper — APPLIED (preserved \(preserved.count) existing entr\(preserved.count == 1 ? "y" : "ies")). Success is silent by design.")
+            AVMLog.write("Guest House: CapsLockRemapper — APPLIED (preserved \(preserved.count) existing entr\(preserved.count == 1 ? "y" : "ies")). Success is silent by design.")
             watchForAVMDying()
         } else {
             // The write failed, so the system is unchanged by THIS apply.
             // Clear the flag so launch recovery does not later "restore" over
             // a system we never touched, UNLESS an earlier restore failed
             // (2026-10-26, keyboard audit): then the system still carries
-            // AVM's remap from before, and the flag and saved original are
+            // Guest House's remap from before, and the flag and saved original are
             // the only way back, so both stay.
             if unrestored {
-                AVMLog.write("AVM: CapsLockRemapper — apply FAILED; an earlier remap is still in place, so the recovery record is kept.")
+                AVMLog.write("Guest House: CapsLockRemapper — apply FAILED; an earlier remap is still in place, so the recovery record is kept.")
             } else {
                 UserDefaults.standard.set(false, forKey: Self.activeKey)
                 UserDefaults.standard.removeObject(forKey: Self.savedMappingKey)
                 UserDefaults.standard.synchronize()
-                AVMLog.write("AVM: CapsLockRemapper — apply FAILED; flag cleared.")
+                AVMLog.write("Guest House: CapsLockRemapper — apply FAILED; flag cleared.")
             }
             Announcer.shared.announce(
                 "Caps Lock setup failed. Screen reader commands may not work.",
@@ -307,7 +307,7 @@ final class CapsLockRemapper {
     /// power loss. If the active flag is not set we touch NOTHING — that is
     /// what protects a user who maintains their own persistent Caps Lock remap
     /// (installed via a login item, since hidutil mappings die at reboot) from
-    /// having AVM wipe it on launch.
+    /// having Guest House wipe it on launch.
     ///
     /// Log lines here are file-log (Stage C tier 1): launch is a safe context
     /// for the async file logger, and a stranded-remap recovery is exactly the
@@ -315,11 +315,11 @@ final class CapsLockRemapper {
     /// Lock was broken" report.
     func recoverAtLaunch() {
         guard UserDefaults.standard.bool(forKey: Self.activeKey) else {
-            AVMLog.write("AVM: CapsLockRemapper — launch recovery: no stranded remap flagged; touching nothing.")
+            AVMLog.write("Guest House: CapsLockRemapper — launch recovery: no stranded remap flagged; touching nothing.")
             return
         }
 
-        AVMLog.write("AVM: CapsLockRemapper — launch recovery: stranded remap flagged (AVM did not exit cleanly).")
+        AVMLog.write("Guest House: CapsLockRemapper — launch recovery: stranded remap flagged (Guest House did not exit cleanly).")
 
         // Belt and braces: confirm OUR entry is actually present before
         // restoring. If the flag is set but Caps Lock is no longer mapped to
@@ -331,7 +331,7 @@ final class CapsLockRemapper {
                 $0.src == Self.capsLockUsage && $0.dst == Self.f19Usage
             }
             if !oursPresent {
-                AVMLog.write("AVM: CapsLockRemapper — launch recovery: our entry is NOT present; clearing flag, leaving system alone.")
+                AVMLog.write("Guest House: CapsLockRemapper — launch recovery: our entry is NOT present; clearing flag, leaving system alone.")
                 clearSavedState()
                 return
             }
@@ -357,7 +357,7 @@ final class CapsLockRemapper {
         guard UserDefaults.standard.bool(forKey: Self.activeKey) else {
             // Nothing of ours is applied. Never write in this case: a blind
             // write would clobber mappings we do not own.
-            log("AVM: CapsLockRemapper — restore (\(context)): not active; no-op.")
+            log("Guest House: CapsLockRemapper — restore (\(context)): not active; no-op.")
             return
         }
 
@@ -369,18 +369,18 @@ final class CapsLockRemapper {
            let decoded = try? JSONDecoder().decode([KeyMapping].self, from: data) {
             original = decoded
         } else {
-            log("AVM: CapsLockRemapper — restore (\(context)): no decodable saved mapping; restoring to empty.")
+            log("Guest House: CapsLockRemapper — restore (\(context)): no decodable saved mapping; restoring to empty.")
         }
 
         if writeMapping(original) {
             deathWatch?.terminate()
             deathWatch = nil
             clearSavedState()
-            log("AVM: CapsLockRemapper — RESTORED (\(context)); \(original.count) original entr\(original.count == 1 ? "y" : "ies") put back.")
+            log("Guest House: CapsLockRemapper — RESTORED (\(context)); \(original.count) original entr\(original.count == 1 ? "y" : "ies") put back.")
         } else {
             // Deliberately DO NOT clear the flag: the remap is still live, and
             // the flag is what lets the next launch try again.
-            log("AVM: CapsLockRemapper — restore FAILED (\(context)); flag left set for next launch.")
+            log("Guest House: CapsLockRemapper — restore FAILED (\(context)); flag left set for next launch.")
             if announceFailure {
                 Announcer.shared.announce(
                     "Caps Lock could not be returned to normal. Restart your Mac to fix it.",
@@ -389,10 +389,10 @@ final class CapsLockRemapper {
         }
     }
 
-    /// A small shell that puts the mapping back when AVM dies (2026-11-09,
+    /// A small shell that puts the mapping back when Guest House dies (2026-11-09,
     /// audit of 0.4.41 #7): Force Quit is the way out of a hang, nothing of
-    /// AVM's runs after it, and with Caps Lock as the VoiceOver key every
-    /// VoiceOver command was dead until AVM was opened again. The flag stays,
+    /// Guest House's runs after it, and with Caps Lock as the VoiceOver key every
+    /// VoiceOver command was dead until Guest House was opened again. The flag stays,
     /// and launch recovery finds the entry gone and clears it.
     private var deathWatch: Process?
 
@@ -410,7 +410,7 @@ final class CapsLockRemapper {
             try watch.run()
             deathWatch = watch
         } catch {
-            AVMLog.write("AVM: CapsLockRemapper — no watch for a Force Quit: \(error.localizedDescription)")
+            AVMLog.write("Guest House: CapsLockRemapper — no watch for a Force Quit: \(error.localizedDescription)")
         }
     }
 
@@ -440,7 +440,7 @@ final class CapsLockRemapper {
             return nil
         }
         guard result.status == 0 else {
-            NSLog("AVM: CapsLockRemapper — hidutil --get exited \(result.status).")
+            NSLog("Guest House: CapsLockRemapper — hidutil --get exited \(result.status).")
             return nil
         }
         return Self.parseMapping(result.output)
@@ -460,7 +460,7 @@ final class CapsLockRemapper {
             return false
         }
         guard result.status == 0 else {
-            NSLog("AVM: CapsLockRemapper — hidutil --set exited \(result.status). Output: \(result.output)")
+            NSLog("Guest House: CapsLockRemapper — hidutil --set exited \(result.status). Output: \(result.output)")
             return false
         }
         return true
@@ -493,7 +493,7 @@ final class CapsLockRemapper {
             let blockText = String(text[blockRange])
             guard let src = field("HIDKeyboardModifierMappingSrc", in: blockText),
                   let dst = field("HIDKeyboardModifierMappingDst", in: blockText) else {
-                NSLog("AVM: CapsLockRemapper — skipping unparseable mapping block.")
+                NSLog("Guest House: CapsLockRemapper — skipping unparseable mapping block.")
                 continue
             }
             results.append(KeyMapping(src: src, dst: dst))
@@ -551,13 +551,13 @@ final class CapsLockRemapper {
         do {
             try process.run()
         } catch {
-            NSLog("AVM: CapsLockRemapper — could not launch hidutil: \(error.localizedDescription)")
+            NSLog("Guest House: CapsLockRemapper — could not launch hidutil: \(error.localizedDescription)")
             return nil
         }
 
         let watchdog = DispatchWorkItem {
             if process.isRunning {
-                NSLog("AVM: CapsLockRemapper — hidutil exceeded \(timeout)s; terminating.")
+                NSLog("Guest House: CapsLockRemapper — hidutil exceeded \(timeout)s; terminating.")
                 process.terminate()
             }
         }
@@ -580,7 +580,7 @@ final class CapsLockRemapper {
         let out = String(data: outData, encoding: .utf8) ?? ""
         let err = String(data: errData, encoding: .utf8) ?? ""
         if !err.isEmpty {
-            NSLog("AVM: CapsLockRemapper — hidutil stderr: \(err.trimmingCharacters(in: .whitespacesAndNewlines))")
+            NSLog("Guest House: CapsLockRemapper — hidutil stderr: \(err.trimmingCharacters(in: .whitespacesAndNewlines))")
         }
         return (process.terminationStatus, out)
     }

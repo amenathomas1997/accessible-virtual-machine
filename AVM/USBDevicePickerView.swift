@@ -1,10 +1,10 @@
 //
 //  USBDevicePickerView.swift
-//  AVM
+//  Guest House
 //
 //  The USB device picker sheet (increment 2a, 2026-09-12). One sheet,
 //  two modes: attach lists the devices the Mac can see, detach lists
-//  the devices AVM has redirected. ContentView decides whether to open
+//  the devices Guest House has redirected. ContentView decides whether to open
 //  it at all (an empty list is spoken, never shown, the Reclaim rule).
 //
 //  VoiceOver: a radio group, product string as the label, vendor:product

@@ -1,6 +1,6 @@
 //
 //  USBRedirectController.swift
-//  AVM
+//  Guest House
 //
 //  The user-facing owner of USB redirection (increment 2a, 2026-09-12).
 //  Replaces the Debug-only USBRedirectDebug driver. Holds the map from
@@ -8,12 +8,12 @@
 //  (the hot-add reserve on the qemu-xhci p2=8,p3=8 map, handoff 48),
 //  and runs the two orderings that were live-proven in increment 1b:
 //
-//  Attach order: QEMU first, helper second. AVM adds the usbredir
+//  Attach order: QEMU first, helper second. Guest House adds the usbredir
 //  chardev and the usb-redir device over QMP so QEMU is listening on
 //  the stream socket before the root helper dials it.
 //
 //  Detach order: helper first, QEMU second. The helper releases the
-//  device back to macOS (about two seconds), then AVM removes the
+//  device back to macOS (about two seconds), then Guest House removes the
 //  usb-redir device and the chardev so the same port can be used
 //  again without restarting the VM.
 //
@@ -39,7 +39,7 @@
 //  (quiet: true) logs instead of speaking, the vanish cleanup's unplug
 //  line is logged, and the gate speaks one outcome itself.
 //
-//  USB drives (2026-10-25): macOS 27 won't let AVM's helper open a USB
+//  USB drives (2026-10-25): macOS 27 won't let Guest House's helper open a USB
 //  storage device, since a launchd daemon has no responsible app for
 //  the Removable Volumes permission. Apple has a code-level support
 //  request. Until that's solved, storageBlocked stops every send of a
@@ -60,14 +60,14 @@ final class USBRedirectController: ObservableObject {
     /// Devices holding a QEMU port: pending or attached.
     @Published private(set) var portByDevice: [AVMUSBDeviceIdentity: Int] = [:]
 
-    /// Devices AVM is handing back to the Mac right now, by
+    /// Devices Guest House is handing back to the Mac right now, by
     /// USBPlugPrompt.deviceKey, and when each recent hand-back finished.
     private var handingBack: Set<String> = []
     private var handedBackAt: [String: Date] = [:]
     /// How long after a hand-back its re-arrivals count as coming home.
     static let handBackSettle: TimeInterval = 5
 
-    /// True while AVM is handing this device back to the Mac, or within
+    /// True while Guest House is handing this device back to the Mac, or within
     /// handBackSettle seconds after. macOS can drop and re-add a device
     /// several times while it comes home (log, 2026-10-12); the watcher
     /// asks nothing about those arrivals.
@@ -91,7 +91,7 @@ final class USBRedirectController: ObservableObject {
 
     /// The watcher saw a device leave the Mac. If it was in Windows and
     /// still holds a port after vanishGrace, the helper never reported
-    /// it (a Monarch switching modes, 2026-10-17), so AVM speaks the
+    /// it (a Monarch switching modes, 2026-10-17), so Guest House speaks the
     /// unplug, frees the port, and quietly tells the helper to drop it.
     func deviceVanished(_ device: AVMUSBDeviceIdentity) {
         guard let held = heldIdentity(matching: device) else { return }
@@ -433,7 +433,7 @@ final class USBRedirectController: ObservableObject {
                         self.log("no approval for \(device.description); not sent")
                         // Said (2026-10-28, fifth audit): the approval dialog
                         // was the last word.
-                        self.announce("\(device.displayName) stayed on the Mac: AVM's helper wasn't allowed in time, or it was unplugged. Try Attach USB Device again.", tone: .info)
+                        self.announce("\(device.displayName) stayed on the Mac: Guest House's helper wasn't allowed in time, or it was unplugged. Try Attach USB Device again.", tone: .info)
                         return
                     }
                     guard let manager, case .running = manager.state, USBHotPlugWatcher.shared.isPresent(device) != false else {
@@ -460,23 +460,23 @@ final class USBRedirectController: ObservableObject {
         restartingHelper = true
         defer { restartingHelper = false }
         let held = redirectedDevices
-        announce(held.isEmpty && BluetoothDevices.shared.attached.isEmpty ? "Restarting AVM's USB helper." : "Returning devices to the Mac and restarting AVM's USB helper.", tone: .info)
+        announce(held.isEmpty && BluetoothDevices.shared.attached.isEmpty ? "Restarting Guest House's USB helper." : "Returning devices to the Mac and restarting Guest House's USB helper.", tone: .info)
         for device in held { await detach(device) }
         await BluetoothDevices.shared.detachAll()
         switch await USBHelperClient.shared.restartHelper() {
         case .success:
-            announce("AVM's USB helper restarted. Plug the device in again, or choose Attach USB Device.", tone: .success)
+            announce("Guest House's USB helper restarted. Plug the device in again, or choose Attach USB Device.", tone: .success)
         case .failure(.notEnabled), .failure(.notStarting):
             break   // the client has asked for its approval, or said why it isn't starting
         case .failure(let error):
             log("restart failed: \(error)")
-            announce("AVM's USB helper didn't restart. Reason: \(error). Next: quit and reopen AVM, or restart your Mac.", tone: .failure)
+            announce("Guest House's USB helper didn't restart. Reason: \(error). Next: quit and reopen Guest House, or restart your Mac.", tone: .failure)
         }
     }
 
     // MARK: USB drives
 
-    /// Set to false once Apple lets AVM capture USB storage. See the
+    /// Set to false once Apple lets Guest House capture USB storage. See the
     /// header.
     static let storageBlocked = true
 
@@ -492,7 +492,7 @@ final class USBRedirectController: ObservableObject {
     /// quiet, since no send gate is ever open for a drive.
     func refuseStorage(_ device: AVMUSBDeviceIdentity) {
         log("\(device.description) is a USB drive; not sent (macOS 27 blocks USB storage)")
-        announce("\(device.displayName) stays on the Mac. macOS doesn't let AVM send USB drives to Windows yet.", tone: .info)
+        announce("\(device.displayName) stays on the Mac. macOS doesn't let Guest House send USB drives to Windows yet.", tone: .info)
     }
 
     private func say(_ message: String, tone: Announcer.Tone, quiet: Bool) {
@@ -567,7 +567,7 @@ final class USBRedirectController: ObservableObject {
         reserved[key] = nil
     }
 
-    /// AVM's helper stopped (2026-10-26, code audit): the kernel has given
+    /// Guest House's helper stopped (2026-10-26, code audit): the kernel has given
     /// every device it held back to the Mac, so their ports go, and the
     /// next plug-in attaches afresh instead of "already attached".
     func helperLost() {
@@ -577,7 +577,7 @@ final class USBRedirectController: ObservableObject {
             for device in devices {
                 await releasePort(for: device, reason: "the helper stopped")
             }
-            Announcer.shared.announce("USB devices sent to the virtual machine are back on the Mac: AVM's helper stopped. Plug them in again to send them.", tone: .failure)
+            Announcer.shared.announce("USB devices sent to the virtual machine are back on the Mac: Guest House's helper stopped. Plug them in again to send them.", tone: .failure)
         }
     }
 

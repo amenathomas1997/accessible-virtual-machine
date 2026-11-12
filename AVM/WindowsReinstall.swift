@@ -1,14 +1,14 @@
 // WindowsReinstall.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Reinstall Windows (2026-10-26): erase a stopped Windows machine and set
 // it up to install again, from the same ISO with the same setup answers,
 // at its next Start. Settings asks first, and asks again for a local
-// account's password, which AVM forgot once the first install media was
+// account's password, which Guest House forgot once the first install media was
 // built (WindowsSetupAnswers.swift).
 //
 // What goes: the disk (with its restore points), the firmware settings,
-// the TPM, the install media AVM built and the UNATTEND volume with its
+// the TPM, the install media Guest House built and the UNATTEND volume with its
 // install-complete marker, so the next Start runs Setup as the first one
 // did. What stays: the machine's settings, its setup answers, and the
 // user's own ISO, which must still be where it was.
@@ -28,7 +28,7 @@ nonisolated enum WindowsReinstallError: LocalizedError, Sendable {
         case .installerMissing(let path):
             return "The Windows installer this machine was made from isn't at \((path as NSString).abbreviatingWithTildeInPath) any more. Next: put it back there, then reinstall."
         case .passwordNeeded:
-            return "AVM needs the Windows account's password again to reinstall."
+            return "Guest House needs the Windows account's password again to reinstall."
         case .failed(let detail):
             return detail
         }
@@ -64,10 +64,10 @@ enum WindowsReinstall {
             throw WindowsReinstallError.installerMissing(configuration.installISOPath ?? "")
         }
         let dir = try configuration.directoryURL()
-        // Not under a QEMU left from before AVM last closed (2026-11-10,
+        // Not under a QEMU left from before Guest House last closed (2026-11-10,
         // audit of that day #18): it still holds the disk being replaced.
         if VMManager.hasOrphanedQEMU(configuration.id) {
-            throw WindowsReinstallError.failed("\(configuration.name) is still running from before AVM last closed, so nothing was changed. Next: start it, shut it down, then reinstall.")
+            throw WindowsReinstallError.failed("\(configuration.name) is still running from before Guest House last closed, so nothing was changed. Next: start it, shut it down, then reinstall.")
         }
 
         // The answers, with the password again for a local account.
@@ -86,7 +86,7 @@ enum WindowsReinstall {
         do {
             try await VMManager().createDiskImage(at: fresh.path, sizeGB: configuration.diskSizeGB)
         } catch {
-            throw WindowsReinstallError.failed("AVM couldn't make a new disk, so nothing was changed. Reason: \(error.localizedDescription)")
+            throw WindowsReinstallError.failed("Guest House couldn't make a new disk, so nothing was changed. Reason: \(error.localizedDescription)")
         }
 
         // The new disk first, then everything of the old Windows (2026-10-26,
@@ -103,7 +103,7 @@ enum WindowsReinstall {
         } catch {
             try? fm.removeItem(at: staging)
             try? fm.removeItem(at: fresh)
-            throw WindowsReinstallError.failed("AVM couldn't save the setup answers, so nothing was changed. Reason: \(error.localizedDescription)")
+            throw WindowsReinstallError.failed("Guest House couldn't save the setup answers, so nothing was changed. Reason: \(error.localizedDescription)")
         }
         do {
             if fm.fileExists(atPath: disk.path) {
@@ -114,7 +114,7 @@ enum WindowsReinstall {
         } catch {
             try? fm.removeItem(at: staging)
             try? fm.removeItem(at: fresh)
-            throw WindowsReinstallError.failed("AVM couldn't put the new disk in place, so nothing was changed. Reason: \(error.localizedDescription)")
+            throw WindowsReinstallError.failed("Guest House couldn't put the new disk in place, so nothing was changed. Reason: \(error.localizedDescription)")
         }
         let answersFile = staging.appendingPathComponent(WindowsSetupAnswers.fileName)
         if fm.fileExists(atPath: answersFile.path) {
@@ -138,6 +138,6 @@ enum WindowsReinstall {
                 _ = try? await RestorePoints.qemuImg(["snapshot", "-d", tag, second.path])
             }
         }
-        AVMLog.write("AVM: Reinstall — \(configuration.name) is ready to install Windows again at its next start.")
+        AVMLog.write("Guest House: Reinstall — \(configuration.name) is ready to install Windows again at its next start.")
     }
 }

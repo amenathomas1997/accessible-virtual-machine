@@ -1,11 +1,11 @@
 // KeyboardHold.swift
-// AVMUSBHelper — AVM's privileged helper
+// AVMUSBHelper — Guest House's privileged helper
 //
 // A keyboard for Windows (2026-10-26). A second keyboard, USB or
-// Bluetooth, chosen in AVM's Settings, types only into Windows: the
+// Bluetooth, chosen in Guest House's Settings, types only into Windows: the
 // helper opens it with kIOHIDOptionsTypeSeizeDevice, which takes it away
 // from macOS (and so from VoiceOver) entirely, and passes each key to the
-// AVM that asked. macOS allows seizing a keyboard only to a privileged
+// Guest House that asked. macOS allows seizing a keyboard only to a privileged
 // process (measured: kIOReturnNotPrivileged as a user), which is why this
 // lives in the helper rather than the app.
 //
@@ -13,7 +13,7 @@
 //   - Keys go to the one connection that asked, and nowhere else; the
 //     helper never logs a key, only that a keyboard was held or let go.
 //   - Only for the user at the Mac's screen (the console user), so one
-//     user's AVM can't take another user's keyboard.
+//     user's Guest House can't take another user's keyboard.
 //   - Never the built-in keyboard, and never the only keyboard: the Mac
 //     must always keep one. While the Mac has no other (at login, its own
 //     Bluetooth keyboard connects a few seconds later), the helper waits
@@ -22,7 +22,7 @@
 //     Mac has another again (2026-10-28).
 //   - Never a braille display with a keyboard (2026-10-29): seized, it's
 //     gone from VoiceOver. It goes to a machine as itself instead.
-//   - Let go when AVM asks, when its connection ends (quit or crash), or
+//   - Let go when Guest House asks, when its connection ends (quit or crash), or
 //     when the keyboard disconnects; while wanted and not connected, the
 //     helper looks for it every few seconds, so a Bluetooth keyboard that
 //     wakes up later is taken then.
@@ -45,7 +45,7 @@ enum HeldByHelper {
     /// Taken by both holds across "count the Mac's other keyboards, open,
     /// add" (2026-10-29, sixth audit): each could count before the other's
     /// add, and between them take the Mac's last two keyboards at once.
-    /// Never held while AVM is told anything.
+    /// Never held while Guest House is told anything.
     static let taking = NSLock()
 
     static func entryID(_ device: IOHIDDevice) -> UInt64? {
@@ -90,7 +90,7 @@ final class KeyboardHold {
     /// (2026-10-28): the keyboard is given back after two, 6 seconds, so a
     /// Bluetooth keyboard's moment away doesn't cost it.
     private var checksWithoutAnother = 0
-    /// AVM has been told, once, that the helper is waiting for the Mac to
+    /// Guest House has been told, once, that the helper is waiting for the Mac to
     /// have another keyboard.
     private var saidWaiting = false
     /// Opens refused as exclusive (fifth audit), or by a device on its way
@@ -195,7 +195,7 @@ final class KeyboardHold {
                 // A keyboard to type on, by the rule that decides what must
                 // stay on the Mac (2026-11-10, audit of that day #15): this
                 // list also holds mice and scanners with a keyboard part,
-                // and AVM counted those as a keyboard the Mac would keep.
+                // and Guest House counted those as a keyboard the Mac would keep.
                 "typing": NSNumber(value: interfaces.contains(where: Self.isTypingKeyboard)),
             ] as NSDictionary
         }
@@ -214,19 +214,19 @@ final class KeyboardHold {
                 // A user no longer at the screen gives way (2026-11-09, fifth
                 // audit #40): their request stays set, to take the keyboard
                 // back on their return, and it told the person at the screen
-                // "another copy of AVM" for as long as that session's AVM ran.
+                // "another copy of Guest House" for as long as that session's Guest House ran.
                 // Everything below replaces it; they are told it has ended.
                 if let uid = self.heldOwnerUID, !Self.isConsoleUser(uid) {
                     os_log("keyboard for Windows: the person at the screen takes over a background user's request", log: log, type: .default)
                     self.client()?.keyboardState(wanted, held: false, detail: "another user at this Mac chose a keyboard for Windows while you were away. Next: choose it again in the machine's Settings.")
                 } else {
-                    reply(false, "Another copy of AVM is using a keyboard for Windows.")
+                    reply(false, "Another copy of Guest House is using a keyboard for Windows.")
                     return
                 }
             }
-            // Held for this AVM already (2026-10-29, seventh audit): asked
+            // Held for this Guest House already (2026-10-29, seventh audit): asked
             // again for the keyboard it held, the helper let it go, took it
-            // back and reported it held once more, which AVM spoke as "is
+            // back and reported it held once more, which Guest House spoke as "is
             // back, typing in Windows" right after "now types only in
             // Windows", with the keyboard on the Mac for an instant between.
             if self.owner === connection, self.wantedID == keyboardID, !self.held.isEmpty {
@@ -277,7 +277,7 @@ final class KeyboardHold {
             return
         }
         if interfaces.contains(where: Self.isBuiltIn) {
-            refuse(wanted, "AVM never takes the Mac's built-in keyboard.")
+            refuse(wanted, "Guest House never takes the Mac's built-in keyboard.")
             return
         }
         // A braille display with a keyboard (2026-10-29, sixth audit): seized
@@ -290,7 +290,7 @@ final class KeyboardHold {
         // The count, the open and the add under the lock the Bluetooth hold
         // takes too (2026-10-29, sixth audit), so the two can't both find
         // the Mac another keyboard at once. Unlocked on every way out,
-        // before AVM is told anything.
+        // before Guest House is told anything.
         HeldByHelper.taking.lock()
         // In a machine through Bluetooth Devices (2026-10-29, sixth audit):
         // the helper's own Bluetooth hold has it, and the open was tried
@@ -301,9 +301,9 @@ final class KeyboardHold {
             return
         }
         // The only keyboard: not a refusal (2026-10-28, a user's report). At
-        // login the Mac's own Bluetooth keyboard connects seconds after AVM
+        // login the Mac's own Bluetooth keyboard connects seconds after Guest House
         // asks, so the helper waits and takes this one once the Mac has
-        // another; AVM is told once, as "waiting".
+        // another; Guest House is told once, as "waiting".
         if Self.otherKeyboards(all, than: wanted) < 1 {
             HeldByHelper.taking.unlock()
             if !saidWaiting {
@@ -444,8 +444,8 @@ final class KeyboardHold {
         // An Apple keyboard's Fn key (2026-10-26): on Apple's own pages
         // (0xFF, the older top-case page, and 0xFF01), usage 3. macOS
         // turns Fn combinations into Forward Delete, Home, End and the
-        // rest; with the keyboard held, AVM does (WindowsKeyboard), so Fn
-        // goes to AVM as HIDKeyMap.fnUsage.
+        // rest; with the keyboard held, Guest House does (WindowsKeyboard), so Fn
+        // goes to Guest House as HIDKeyMap.fnUsage.
         if (page == 0xFF || page == 0xFF01) && usage == 0x03 {
             client()?.keyboardKey(usage: 0x1_0003, pressed: pressed)
             return

@@ -1,12 +1,12 @@
 // WindowsInstallPipeline.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Builds a modified, bootable Windows 11 ARM64 install ISO + a FAT answer-file
 // image at VM-CREATE TIME, so the VM can install fully unattended and reach OOBE
 // with Narrator speaking — with NO interactive prompts a blind user can't see.
 //
 // ALL SIX STAGES + the validation gate are implemented, PROVEN GREEN IN-APP,
-// and the output is BOOT-PROVEN: an AVM-built install-avm.iso + autounattend.img
+// and the output is BOOT-PROVEN: Guest House's own install-avm.iso + autounattend.img
 // installed Windows 11 25H2 ARM64 fully unattended from a blank qcow2 to OOBE
 // (disk 0 -> 15GB, rebooted to Windows Boot Manager off the GPT disk it created,
 // accessibility button present at OOBE). Requires the bundled xorriso to be
@@ -312,18 +312,18 @@ nonisolated private struct ResolvedEdition {
 // MARK: - Validation Gate
 
 /// Result of the cheap, fail-fast ISO validation that runs BEFORE the expensive
-/// extract. Two-tier by design (Allison's framing): HARD-STOP only where AVM is
+/// extract. Two-tier by design (Allison's framing): HARD-STOP only where Guest House is
 /// CERTAIN the outcome is doomed (wrong architecture, not a Windows installer,
 /// or — since issue #6 — the DEFAULTED edition absent from the disc, which
-/// guarantees a silent Setup hang); WARN-AND-PROCEED where AVM is merely UNSURE
+/// guarantees a silent Setup hang); WARN-AND-PROCEED where Guest House is merely UNSURE
 /// (user-requested edition not in the image list, unrecognized build) so a
 /// techy user is never blocked on a valid-but-unusual ISO.
 nonisolated enum ISOValidation {
     /// Cleared the gate — proceed with the build.
     case ok
-    /// AVM is certain this can't work. Halt before the extract, with a reason.
+    /// Guest House is certain this can't work. Halt before the extract, with a reason.
     case hardStop(reason: String)
-    /// AVM is unsure. Surface the reason and let the user decide whether to go on.
+    /// Guest House is unsure. Surface the reason and let the user decide whether to go on.
     case warn(reason: String)
 }
 
@@ -354,7 +354,7 @@ nonisolated enum PipelineError: LocalizedError {
         case .validationHardStop(let reason):
             return reason
         case .isoMountFailed(let reason):
-            return "AVM couldn't open the Windows ISO. \(reason)"
+            return "Guest House couldn't open the Windows ISO. \(reason)"
         case .userCancelled:
             return "Install media preparation was cancelled."
         }
@@ -393,7 +393,7 @@ nonisolated struct PipelineInput {
 
 /// The verified artifacts the pipeline produces, living in the VM runtime dir.
 nonisolated struct PipelineOutput {
-    let rebuiltISOPath: String       // the /legacy + driver ISO AVM generated
+    let rebuiltISOPath: String       // the /legacy + driver ISO Guest House generated
     let answerImagePath: String      // the FAT autounattend image (removable usb-storage at launch)
 }
 
@@ -405,7 +405,7 @@ nonisolated struct PipelineOutput {
 // NONISOLATED (2026-10-25, code audit): under the app target's default
 // MainActor isolation this class was implicitly @MainActor, so every stage
 // hopped back to the main thread, and moving the 7.5 GB install-avm.iso to
-// a VM folder on another drive became a minutes-long copy that froze AVM
+// a VM folder on another drive became a minutes-long copy that froze Guest House
 // and VoiceOver. Like UbuntuInstallPipeline, it now runs off the main actor;
 // only onProgress runs on it.
 nonisolated final class WindowsInstallPipeline {
@@ -921,11 +921,11 @@ nonisolated final class WindowsInstallPipeline {
     private func validateMountedISO(input: PipelineInput, resolved: ResolvedEdition, wimlib: URL, mount: URL) async -> ISOValidation {
         let installWim = mount.appendingPathComponent("sources/install.wim")
         guard FileManager.default.fileExists(atPath: installWim.path) else {
-            // An installer with install.esd is a Windows installer AVM can't
+            // An installer with install.esd is a Windows installer Guest House can't
             // use as it is (2026-11-10, fourth audit of 2026-11-09 #30): it
             // was told it wasn't a Windows 11 installer at all.
             if FileManager.default.fileExists(atPath: mount.appendingPathComponent("sources/install.esd").path) {
-                return .hardStop(reason: "This Windows installer keeps its system image as install.esd, which AVM's setup can't use as it is; it needs install.wim. Next: choose Download Windows 11 in the Setup Wizard, which makes a disc AVM can use, or use Microsoft's Windows 11 ARM64 disc.")
+                return .hardStop(reason: "This Windows installer keeps its system image as install.esd, which Guest House's setup can't use as it is; it needs install.wim. Next: choose Download Windows 11 in the Setup Wizard, which makes a disc Guest House can use, or use Microsoft's Windows 11 ARM64 disc.")
             }
             // A Windows install ISO otherwise always has sources/install.wim.
             return .hardStop(reason: "This doesn't look like a Windows 11 installer — it has no install image (sources/install.wim). Make sure you selected a Windows 11 ARM64 ISO.")
@@ -938,7 +938,7 @@ nonisolated final class WindowsInstallPipeline {
             // Stage 4's backstop cannot assert without a list.)
             // Said as what happens, not a choice (2026-10-28, fifth audit:
             // nothing could answer "you can proceed").
-            return .warn(reason: "AVM found the Windows install image but couldn't read its details, so it can't check the edition or the architecture. The ISO may be unusual or partly corrupted. AVM is going ahead; if Windows doesn't install, use a standard Windows 11 ARM64 ISO from Microsoft.")
+            return .warn(reason: "Guest House found the Windows install image but couldn't read its details, so it can't check the edition or the architecture. The ISO may be unusual or partly corrupted. Guest House is going ahead; if Windows doesn't install, use a standard Windows 11 ARM64 ISO from Microsoft.")
         }
 
         let info = parseWIMInfo(result.output)
@@ -957,7 +957,7 @@ nonisolated final class WindowsInstallPipeline {
             }
         } else {
             // Couldn't read architecture — unsure, not certain. Warn.
-            return .warn(reason: "AVM couldn't confirm this ISO is the ARM64 version of Windows, and is going ahead. If it isn't ARM64, Windows won't start from it: then make a new virtual machine with a Windows 11 ARM64 ISO from Microsoft.")
+            return .warn(reason: "Guest House couldn't confirm this ISO is the ARM64 version of Windows, and is going ahead. If it isn't ARM64, Windows won't start from it: then make a new virtual machine with a Windows 11 ARM64 ISO from Microsoft.")
         }
 
         // The wim is readable — record the disc's edition names for Stage 4's
@@ -983,14 +983,14 @@ nonisolated final class WindowsInstallPipeline {
                 // Setup hangs silently — field-proven by issue #6 (IoT
                 // Enterprise LTSC). The user made no choice to honor, so there
                 // is nothing to warn about — stop, say why, name what IS there.
-                return .hardStop(reason: "This ISO does not contain \(resolved.name), the edition AVM currently installs. It contains: \(available). AVM can't install these editions yet. A standard Windows 11 ARM64 ISO from Microsoft's Windows 11 download page will work.")
+                return .hardStop(reason: "This ISO does not contain \(resolved.name), the edition Guest House currently installs. It contains: \(available). Guest House can't install these editions yet. A standard Windows 11 ARM64 ISO from Microsoft's Windows 11 download page will work.")
             } else {
                 // A chosen edition missing stops too (2026-10-28, fourth
                 // audit): the warning went to a handler nothing set, so the
                 // build went ahead and Setup hung exactly as in issue #6.
                 // The wizard's names are Microsoft's image names, so a
                 // missing one is missing, not spelled differently.
-                return .hardStop(reason: "This ISO doesn't contain \(resolved.name), the edition chosen for this virtual machine. It contains: \(available). Next: make a new virtual machine and choose one of those editions if AVM offers it, or use a standard Windows 11 ARM64 ISO from Microsoft's Windows 11 download page.")
+                return .hardStop(reason: "This ISO doesn't contain \(resolved.name), the edition chosen for this virtual machine. It contains: \(available). Next: make a new virtual machine and choose one of those editions if Guest House offers it, or use a standard Windows 11 ARM64 ISO from Microsoft's Windows 11 download page.")
             }
         }
 
@@ -1447,7 +1447,7 @@ nonisolated final class WindowsInstallPipeline {
         guard !unfilled.contains(where: { filled.contains($0) }), XMLParser(data: Data(filled.utf8)).parse() else {
             throw PipelineError.stageFailed(
                 stage: .buildAnswerImage,
-                reason: "AVM couldn't write a valid answer file from the setup answers. This is a build problem, not something you did."
+                reason: "Guest House couldn't write a valid answer file from the setup answers. This is a build problem, not something you did."
             )
         }
 
@@ -1606,7 +1606,7 @@ nonisolated final class WindowsInstallPipeline {
             "-indev", input.sourceISOPath,
             "-report_el_torito", "plain"
         ])
-        // An ISO AVM made from Microsoft's .esd (2026-10-30,
+        // An ISO Guest House made from Microsoft's .esd (2026-10-30,
         // WindowsAutoDownload.swift): hdiutil wrote it, UDF with an ISO 9660
         // part libisofs can't load ("Damaged RR/SUSP information"), so the
         // tree is read as best it can be, for the boot record alone (exit 32,
@@ -1650,7 +1650,7 @@ nonisolated final class WindowsInstallPipeline {
         guard elTorito.ldsiz > 0 else {
             throw PipelineError.stageFailed(
                 stage: .rebuildISO,
-                reason: "The Windows ISO's boot image has an unusual layout AVM can't rebuild. It may not be a standard Windows installer ISO."
+                reason: "The Windows ISO's boot image has an unusual layout Guest House can't rebuild. It may not be a standard Windows installer ISO."
             )
         }
 

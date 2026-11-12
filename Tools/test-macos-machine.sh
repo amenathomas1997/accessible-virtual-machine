@@ -1,10 +1,10 @@
 #!/bin/bash
 # test-macos-machine.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
 # A macOS machine tested end to end with no one at the screen (2026-10-26),
-# the macOS counterpart of test-windows-install.sh. AVM itself does the
-# work (AVM --test-mac-machine, MacTestJob.swift):
+# the macOS counterpart of test-windows-install.sh. Guest House itself does the
+# work (Guest House --test-mac-machine, MacTestJob.swift):
 #   1. installs macOS from an IPSW, as New macOS Virtual Machine does, with
 #      its fresh-install restore point;
 #   2. starts it and waits for macOS to come up (it asks for a network
@@ -17,18 +17,18 @@
 #
 #   Tools/test-macos-machine.sh [--ipsw PATH] [--app PATH] [--keep] [--reuse FOLDER] [--auto-setup]
 #
-# --auto-setup (2026-10-30) has AVM go through Setup Assistant itself, as
+# --auto-setup (2026-10-30) has Guest House go through Setup Assistant itself, as
 # "Set up macOS for me" does (MacAutoSetup.swift), so the save and resume
 # are checked on a set-up Mac, past Setup Assistant's refusal.
 # --reuse FOLDER runs the steps after the install on a test machine a
 # failed run kept, which saves the install's few minutes.
 #
-# Without --ipsw it uses the macOS installer AVM downloaded before.
+# Without --ipsw it uses the macOS installer Guest House downloaded before.
 
 set -euo pipefail
 
 IPSW=""
-APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/AVM.app"
+APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/Guest House.app"
 KEEP=0
 REUSE=""
 AUTOSETUP=""
@@ -55,8 +55,8 @@ if [ -z "$IPSW" ]; then
 fi
 # A reused machine is installed already (2026-10-30): no installer needed.
 [ -n "$REUSE" ] && [ -z "$IPSW" ] && IPSW="$REUSE/none.ipsw"
-[ -n "$REUSE" ] || { [ -n "$IPSW" ] && [ -f "$IPSW" ]; } || fail "No macOS installer. Pass one with --ipsw, or make a macOS machine in AVM once so it downloads one."
-[ -x "$APP/Contents/MacOS/AVM" ] || fail "No AVM build at $APP. Build AVM first, or pass --app."
+[ -n "$REUSE" ] || { [ -n "$IPSW" ] && [ -f "$IPSW" ]; } || fail "No macOS installer. Pass one with --ipsw, or make a macOS machine in Guest House once so it downloads one."
+[ -x "$APP/Contents/MacOS/Guest House" ] || fail "No Guest House build at $APP. Build Guest House first, or pass --app."
 
 WORK="${REUSE:-$HOME/Library/Caches/AVM-build/macos-test-$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$WORK"
@@ -65,11 +65,11 @@ START=$(date +%s)
 
 set +e
 [ -n "$AUTOSETUP" ] && mkdir -p "$WORK/setup-screens" && export AVM_SETUP_PICTURES="$WORK/setup-screens"
-# Its own copy while AVM runs (2026-10-31), as the other tests: loginwindow
-# ends a second AVM after about 30 seconds.
+# Its own copy while Guest House runs (2026-10-31), as the other tests: loginwindow
+# ends a second Guest House after about 30 seconds.
 source "$(dirname "$0")/avm-own-copy.sh"
-avm_own_copy "$APP" test || fail "Couldn't make a copy of AVM for the test." "Check that $APP is a complete AVM build."
-"$AVM_COPY/Contents/MacOS/AVM" --test-mac-machine --ipsw "$IPSW" --out "$WORK" ${REUSE:+--reuse} ${AUTOSETUP:+--auto-setup}
+avm_own_copy "$APP" test || fail "Couldn't make a copy of Guest House for the test." "Check that $APP is a complete Guest House build."
+"$AVM_COPY/Contents/MacOS/Guest House" --test-mac-machine --ipsw "$IPSW" --out "$WORK" ${REUSE:+--reuse} ${AUTOSETUP:+--auto-setup}
 CODE=$?
 [ -n "$AVM_COPY_DIR" ] && rm -rf "$AVM_COPY_DIR"
 set -e

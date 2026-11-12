@@ -1,5 +1,5 @@
 // MachineDevicesView.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Return Devices to Mac (2026-10-29, the user's request): one window with
 // every device a machine has from the Mac, each with its own button to

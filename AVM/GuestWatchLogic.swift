@@ -1,5 +1,5 @@
 // GuestWatchLogic.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // What GuestWatch.swift decides from (2026-10-31): its settings, what a
 // machine's process list says is running, and whether its screen changed. Apart from the loop, so the logic tests
@@ -22,7 +22,7 @@ nonisolated enum WindowsSetupReport {
 nonisolated enum GuestWatchSettings {
     static let restartReaderKey = "AVMRestartStoppedScreenReader"
     static let pointBeforeUpdatesKey = "AVMRestorePointBeforeUpdates"
-    /// AVM's updates held while the keyboard is in a machine whose screen
+    /// Guest House's updates held while the keyboard is in a machine whose screen
     /// reader is running, and said when it comes back (Announcer, 2026-10-31).
     static let holdWhileInMachineKey = "AVMHoldUpdatesInMachine"
     /// Off by default: each new machine gets the saved screen reader setup.
@@ -86,9 +86,9 @@ nonisolated struct GuestProcesses: Equatable {
     }
 }
 
-// MARK: - AVM's keys with the keyboard in a machine
+// MARK: - Guest House's keys with the keyboard in a machine
 
-/// AVM's menu keys that answer or act from the Mac (2026-11-02): with the keyboard
+/// Guest House's menu keys that answer or act from the Mac (2026-11-02): with the keyboard
 /// in a machine, the screens that need Read Screen are right there, and these
 /// reached Windows as Windows-Shift keys instead. Only these: the rest of Command
 /// is still the machine's Windows key.
@@ -176,7 +176,7 @@ nonisolated struct StuckWatch: Sendable {
     /// Long enough for Windows' slowest quiet restarts, as a first restart
     /// after the 3D driver, which take several minutes.
     static let limit: TimeInterval = 600
-    /// Longer than this between looks, AVM wasn't looking: the Mac slept, or
+    /// Longer than this between looks, Guest House wasn't looking: the Mac slept, or
     /// the machine was paused.
     static let longestGap: TimeInterval = 60
 
@@ -225,7 +225,7 @@ nonisolated struct MachineCheckResult: Sendable {
 
     init(agentAnswered: Bool, output: String, windows: Bool, soundLevels: (left: Int, right: Int)?) {
         guard agentAnswered else {
-            problems.append(Problem(what: "it isn't answering AVM", next: "wait for it to finish starting. If it's been more than a few minutes, press Command-Shift-R to reset it"))
+            problems.append(Problem(what: "it isn't answering Guest House", next: "wait for it to finish starting. If it's been more than a few minutes, press Command-Shift-R to reset it"))
             return
         }
         var values: [String: String] = [:]
@@ -258,7 +258,7 @@ nonisolated struct MachineCheckResult: Sendable {
         }
         if let soundLevels {
             if soundLevels.left == 0 && soundLevels.right == 0 {
-                problems.append(Problem(what: "its volume is set to zero in AVM", next: "turn it up in its Settings, under Display and Sound"))
+                problems.append(Problem(what: "its volume is set to zero in Guest House", next: "turn it up in its Settings, under Display and Sound"))
             } else if soundLevels.left == 0 {
                 fine.append("its sound goes to your right ear only")
             } else if soundLevels.right == 0 {
@@ -275,7 +275,7 @@ nonisolated struct MachineCheckResult: Sendable {
         if values["sharedfolder"] == "1" {
             fine.append("the shared folder service is running")
         } else {
-            problems.append(Problem(what: "the shared folder service isn't running", next: windows ? "install spice-webdavd from spice-space.org in it" : "choose Virtual Machine, Repair for AVM, if it's offered, or restart it"))
+            problems.append(Problem(what: "the shared folder service isn't running", next: windows ? "install spice-webdavd from spice-space.org in it" : "choose Virtual Machine, Repair for Guest House, if it's offered, or restart it"))
         }
     }
 
@@ -324,7 +324,7 @@ nonisolated enum MacSpacesShortcuts {
     }
 }
 
-/// Which of the feed's early releases this copy of AVM takes.
+/// Which of the feed's early releases this copy of Guest House takes.
 nonisolated enum UpdateChannels {
     static let earlyKey = "AVMEarlyUpdates"
     static var allowed: Set<String> {
@@ -363,7 +363,7 @@ nonisolated struct MachineHealth: Sendable {
 
     /// For Check This Machine.
     var words: String {
-        warnings.isEmpty ? "AVM's own health check found nothing wrong." : "AVM's own health check: " + warnings.map(\.words).joined(separator: " ")
+        warnings.isEmpty ? "Guest House's own health check found nothing wrong." : "Guest House's own health check: " + warnings.map(\.words).joined(separator: " ")
     }
 }
 
@@ -489,13 +489,13 @@ enum KeepAwake {
     static func begin(_ key: String, reason: String) {
         guard holds[key] == nil else { return }
         holds[key] = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled], reason: reason)
-        AVMLog.write("AVM: KeepAwake — the Mac stays awake: \(reason)")
+        AVMLog.write("Guest House: KeepAwake — the Mac stays awake: \(reason)")
     }
 
     static func end(_ key: String) {
         guard let hold = holds.removeValue(forKey: key) else { return }
         ProcessInfo.processInfo.endActivity(hold)
-        AVMLog.write("AVM: KeepAwake — released (\(key))")
+        AVMLog.write("Guest House: KeepAwake — released (\(key))")
     }
 }
 

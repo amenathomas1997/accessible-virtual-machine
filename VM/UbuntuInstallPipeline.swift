@@ -1,5 +1,5 @@
 // UbuntuInstallPipeline.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Builds the install media for an Ubuntu desktop ARM64 virtual machine, so
 // Ubuntu installs with no questions and starts with Orca speaking, at the
@@ -17,7 +17,7 @@
 // (Fedora's), and openSUSE Tumbleweed (an AutoYaST profile).
 //
 // HOW UBUNTU INSTALLS WITH NO QUESTIONS (approach proven first in Parallels
-// Manager's install-ubuntu.sh, then in AVM's own QEMU set-up, 2026-10-19):
+// Manager's install-ubuntu.sh, then in Guest House's own QEMU set-up, 2026-10-19):
 //   Ubuntu's desktop installer reads an autoinstall answer file (cloud-init
 //   NoCloud format) when the kernel is started with
 //   `autoinstall ds=nocloud;s=/cdrom/nocloud/`. The pipeline adds a
@@ -54,7 +54,7 @@
 //
 // THE ACCOUNT: Ubuntu's answer file needs the user name and the password
 // hash up front (the Windows path leaves the account to OOBE, which Narrator
-// reads; Ubuntu's own first-run screens are not something AVM can count on
+// reads; Ubuntu's own first-run screens are not something Guest House can count on
 // Orca reading). The Setup Wizard collects them, hashes the password at once
 // (SHA512Crypt) and stores only the hash, in ubuntu-account.json in the VM's
 // folder, owner-only. The pipeline reads it, writes it into the answer file
@@ -65,7 +65,7 @@
 // ACCESSIBILITY SET IN THE ANSWER FILE (late-commands, setup.sh):
 //   - Orca on at the login screen and in the user's session.
 //   - Orca's laptop layout, whose Orca key is Caps Lock. A Mac has no
-//     Insert key, and AVM already delivers a genuine held Caps Lock to the
+//     Insert key, and Guest House already delivers a genuine held Caps Lock to the
 //     guest (CapsLockRemapper), so Caps Lock is the Orca key that works.
 //     Orca 50 (Ubuntu 26.04) keeps it at
 //     /org/gnome/orca/default/keybindings/keyboard-layout, a relocatable
@@ -74,7 +74,7 @@
 //   - Sign in automatically, when the user asked for it in the wizard.
 //   - No screen lock, no idle blanking, no automatic suspend: a locked or
 //     suspended guest is silent, and silence reads as broken. Ubuntu does
-//     not know it runs in a VM under AVM's HVF set-up (systemd-detect-virt
+//     not know it runs in a VM under Guest House's HVF set-up (systemd-detect-virt
 //     says "none"), so without this GNOME suspends it when idle.
 //   - No first-run wizard (gnome-initial-setup) and no crash-report
 //     prompts. Ubuntu 26.04 also starts a per-release welcome tour
@@ -88,7 +88,7 @@
 //     positioning (issue #4 mechanism: two display channels need the agent),
 //     with its audio volume sync disarmed. PROVEN IN-APP 2026-10-19: on
 //     every SPICE connect (each Enter Ubuntu) the agent set Ubuntu's master
-//     volume to 0, the volume AVM's SPICE client reports, so Orca ran but
+//     volume to 0, the volume Guest House's SPICE client reports, so Orca ran but
 //     was silent. Stopping the agent kept the sound; running it with an
 //     ALSA configuration that has no mixer (a systemd user drop-in) kept
 //     the sound AND client-mode mouse. The Windows agent is not affected.
@@ -342,7 +342,7 @@ enum UbuntuKeyboard {
 
 // MARK: - What the ISO is
 
-/// What AVM read off an installer ISO, used by the Setup Wizard to say what
+/// What Guest House read off an installer ISO, used by the Setup Wizard to say what
 /// the user picked and by the pipeline's validation gate.
 /// Which Linux the installer is (2026-10-26): Ubuntu's autoinstall,
 /// Debian's preseed or Fedora's kickstart. Everything after the answers
@@ -389,7 +389,7 @@ nonisolated struct UbuntuISOInfo: Equatable {
     let isDesktop: Bool
     var distro: LinuxDistro = .ubuntu
     /// Fedora only (2026-10-26): a live image (Fedora Workstation Live),
-    /// not an installer AVM can give answers to. See identifyFedora.
+    /// not an installer Guest House can give answers to. See identifyFedora.
     var isLiveImage = false
 
     /// A spoken-friendly name, e.g. "Ubuntu 26.04.1 LTS desktop".
@@ -502,7 +502,7 @@ nonisolated final class UbuntuInstallPipeline {
 
     /// The boot-menu edit: the first `linux /casper/vmlinuz` line gains
     /// these words. GRUB needs the ; escaped. console=ttyAMA0 copies the
-    /// installer's kernel and boot messages to the serial port, which AVM
+    /// installer's kernel and boot messages to the serial port, which Guest House
     /// already records as firmware-serial.log in the VM's folder: the one
     /// place a stalled install can be diagnosed from. The menu's own
     /// console=tty0 comes later on the line, so the screen stays the main
@@ -563,13 +563,13 @@ nonisolated final class UbuntuInstallPipeline {
                 if let suse = await identifyOpenSUSE(isoPath: isoPath, xorriso: xorriso) {
                     return .ubuntu(suse)
                 }
-                ubuntuLog("identify: no /casper/vmlinuz, /install.a64/vmlinuz or Fedora disc — not a Linux installer AVM knows")
+                ubuntuLog("identify: no /casper/vmlinuz, /install.a64/vmlinuz or Fedora disc — not a Linux installer Guest House knows")
                 return .notUbuntu
             }
             // A UDF disc xorriso can't read (2026-10-30, a tester): the
-            // Windows installer AVM makes from Microsoft's download has UDF
+            // Windows installer Guest House makes from Microsoft's download has UDF
             // and only a stub ISO 9660 part, so xorriso fails on it ("Cannot
-            // read ISO image tree") and AVM called its own download
+            // read ISO image tree") and Guest House called its own download
             // unreadable. Linux installers are plain ISO 9660, which xorriso
             // reads, so they never get here; the Windows pipeline reads UDF.
             if readable && hasUDF(isoPath) {
@@ -577,7 +577,7 @@ nonisolated final class UbuntuInstallPipeline {
                 return .notUbuntu
             }
             ubuntuLog("identify: xorriso couldn't read the ISO (exit \(listing.code)): \(listing.output.suffix(300))")
-            return .unreadable("AVM couldn't read this ISO. It may be damaged, still downloading, or not a disc image.")
+            return .unreadable("Guest House couldn't read this ISO. It may be damaged, still downloading, or not a disc image.")
         }
         let isARM64 = found.contains("'/EFI/boot/bootaa64.efi'")
 
@@ -617,7 +617,7 @@ nonisolated final class UbuntuInstallPipeline {
         return (0..<8).map(id).contains { $0 == "NSR02" || $0 == "NSR03" }
     }
 
-    /// Why AVM can't install from this ISO, or nil when it can. The same
+    /// Why Guest House can't install from this ISO, or nil when it can. The same
     /// words serve the Setup Wizard and the pipeline's gate.
     /// Debian's ARM64 installer (netinst or DVD), or nil.
     @concurrent
@@ -682,7 +682,7 @@ nonisolated final class UbuntuInstallPipeline {
 
     static func problem(with info: UbuntuISOInfo?) -> String? {
         guard let info else {
-            return "This ISO isn't an Ubuntu installer AVM recognizes."
+            return "This ISO isn't an Ubuntu installer Guest House recognizes."
         }
         if info.distro == .kali {
             // Kali is a rolling release: any arm64 installer is current.
@@ -696,7 +696,7 @@ nonisolated final class UbuntuInstallPipeline {
                 return "This is a Debian installer for Intel and AMD PCs. This Mac needs the arm64 one: on debian.org, download the arm64 netinst image."
             }
             if info.majorVersion != 0 && info.majorVersion < 12 {
-                return "This is \(info.spokenName). AVM needs Debian 12 or later."
+                return "This is \(info.spokenName). Guest House needs Debian 12 or later."
             }
             return nil
         }
@@ -713,18 +713,18 @@ nonisolated final class UbuntuInstallPipeline {
             return "This is an Ubuntu installer for Intel and AMD PCs. This Mac needs the ARM version: on ubuntu.com, download Ubuntu Desktop for ARM."
         }
         if !info.isDesktop {
-            return "This is the Ubuntu Server installer. AVM needs Ubuntu Desktop for ARM, which brings the desktop and the Orca screen reader."
+            return "This is the Ubuntu Server installer. Guest House needs Ubuntu Desktop for ARM, which brings the desktop and the Orca screen reader."
         }
         // 26.04 is the release every part of this was proven on, so anything
         // older is refused rather than half-supported: the interim 25.04 and
         // 25.10 were never tested, and 24.04's WirePlumber 0.4 ignores the
         // audio tuning's configuration format (third review, 2026-10-19). A
-        // version AVM can't read is refused for the same reason.
+        // version Guest House can't read is refused for the same reason.
         if info.majorVersion == 0 {
-            return "AVM couldn't tell which Ubuntu version this is. AVM needs Ubuntu 26.04 or later, from ubuntu.com."
+            return "Guest House couldn't tell which Ubuntu version this is. Guest House needs Ubuntu 26.04 or later, from ubuntu.com."
         }
         if info.majorVersion < 26 {
-            return "This is \(info.spokenName). AVM needs Ubuntu 26.04 or later."
+            return "This is \(info.spokenName). Guest House needs Ubuntu 26.04 or later."
         }
         return nil
     }
@@ -878,7 +878,7 @@ nonisolated final class UbuntuInstallPipeline {
             - spice-webdavd
             # The guest agent (2026-10-30): Debian's and Fedora's installs
             # had it, Ubuntu's didn't, so an installed Ubuntu never answered
-            # AVM through it (Shut Down's second ask, Send File; the install
+            # Guest House through it (Shut Down's second ask, Send File; the install
             # test: "didn't answer through the guest agent in 10 minutes").
             - qemu-guest-agent
           late-commands:
@@ -902,7 +902,7 @@ nonisolated final class UbuntuInstallPipeline {
             : "# Sign in automatically: not chosen."
         return """
         #!/bin/bash
-        # Written by AVM. Runs once, at the end of Ubuntu's install.
+        # Written by Guest House. Runs once, at the end of Ubuntu's install.
         # set -e: any failed step fails the install, so error-commands
         # (failed.sh) report it, instead of the marker announcing an install
         # whose Orca or sign-in settings never landed (code review,
@@ -959,7 +959,7 @@ nonisolated final class UbuntuInstallPipeline {
         chmod 755 $T/usr/local/lib/avm/orca-settings-guard.sh
         cat > $T/etc/systemd/user/avm-orca-settings-guard.service <<'UNIT'
         [Unit]
-        Description=AVM: set aside an unreadable Orca settings file
+        Description=Guest House: set aside an unreadable Orca settings file
         Before=graphical-session-pre.target
 
         [Service]
@@ -974,7 +974,7 @@ nonisolated final class UbuntuInstallPipeline {
         # Orca's "say the time", median of 20): in a virtual machine,
         # WirePlumber gives the sound card 1024-frame periods and 8192
         # frames of headroom, about 170 ms held back, for emulated cards
-        # that answer late. AVM's answers on time (QEMU plays straight to
+        # that answer late. Guest House's answers on time (QEMU plays straight to
         # the Mac), so 256 and 512 are enough: 389 ms became 221 ms (128
         # and 256 measured the same). WirePlumber 0.5 reads the .conf
         # file, 0.4 the .lua one; each ignores the other.
@@ -994,7 +994,7 @@ nonisolated final class UbuntuInstallPipeline {
         })
         WP
         # THE MAC'S SHARED FOLDER (2026-10-27): spice-webdavd serves the
-        # folder chosen in AVM's Settings at localhost:9843 in the guest.
+        # folder chosen in Guest House's Settings at localhost:9843 in the guest.
         # At each sign-in it's mounted and bookmarked in Files as "Mac
         # shared folder", so it's in the sidebar for Orca users too.
         mkdir -p $T/usr/local/lib/avm $T/etc/xdg/autostart
@@ -1041,7 +1041,7 @@ nonisolated final class UbuntuInstallPipeline {
         curtin in-target -- update-grub || true
         if [ -f $T/etc/default/apport ]; then sed -i 's/^enabled=1/enabled=0/' $T/etc/default/apport; fi
         # The SPICE agent's audio volume sync sets Ubuntu's master volume to
-        # whatever AVM's SPICE client reports, which is 0, every time AVM
+        # whatever Guest House's SPICE client reports, which is 0, every time Guest House
         # connects (each Enter Ubuntu), so Orca goes silent. The agent has no
         # switch for it, so it runs with an ALSA configuration that has no
         # mixer to reach; its mouse and display work is untouched.
@@ -1049,8 +1049,8 @@ nonisolated final class UbuntuInstallPipeline {
         echo 'ctl.!default { type hw card 31 }' > $T/etc/avm/spice-vdagent-alsa.conf
         printf '[Service]\\nEnvironment=ALSA_CONFIG_PATH=/etc/avm/spice-vdagent-alsa.conf\\n' > $T/etc/systemd/user/spice-vdagent.service.d/10-avm-no-volume-sync.conf
         # Audio without crackle (2026-10-19, heard in the in-app test): run
-        # PipeWire at 44.1 kHz, the rate AVM's QEMU audio uses (QMP
-        # query-audiodevs on a running AVM VM: spice out frequency 44100,
+        # PipeWire at 44.1 kHz, the rate Guest House's QEMU audio uses (QMP
+        # query-audiodevs on a running Guest House VM: spice out frequency 44100,
         # fixed-settings true), so nothing is
         # resampled, and give the emulated sound card a larger buffer, so
         # speech doesn't run dry between QEMU's audio ticks.
@@ -1081,7 +1081,7 @@ nonisolated final class UbuntuInstallPipeline {
         # The install-complete marker, last: Ubuntu is on the disk.
         mkdir -p /run/avm-unattend
         mount -t vfat /dev/disk/by-label/UNATTEND /run/avm-unattend || exit 1
-        echo "Ubuntu installed by AVM" > /run/avm-unattend/AVMDONE.TAG
+        echo "Ubuntu installed by Guest House" > /run/avm-unattend/AVMDONE.TAG
         sync
         # The marker is written and synced; nothing after it may fail the
         # install (VMManager also lets AVMDONE win over AVMFAIL).
@@ -1098,7 +1098,7 @@ nonisolated final class UbuntuInstallPipeline {
     /// (UBUNTU INSTALL END). The logs are cut to fit the 8 MB volume.
     static let failureScript = """
         #!/bin/bash
-        # Written by AVM. Runs only if Ubuntu's install fails.
+        # Written by Guest House. Runs only if Ubuntu's install fails.
         set -x
         mkdir -p /run/avm-unattend
         if mount -t vfat /dev/disk/by-label/UNATTEND /run/avm-unattend; then
@@ -1173,7 +1173,7 @@ nonisolated final class UbuntuInstallPipeline {
         }
         guard let edited = menu else {
             throw UbuntuPipelineError.stageFailed(stage: .rebuildISO,
-                                                 reason: "The installer's boot menu isn't in the form AVM knows, so the answers couldn't be added. This Ubuntu release may be newer than this version of AVM.")
+                                                 reason: "The installer's boot menu isn't in the form Guest House knows, so the answers couldn't be added. This Ubuntu release may be newer than this version of Guest House.")
         }
         do {
             try? FileManager.default.removeItem(at: grubURL)
@@ -1257,12 +1257,12 @@ nonisolated final class UbuntuInstallPipeline {
     }
 
     /// Debian's answers. Installs onto the virtual disk (nvme0n1) only,
-    /// never the UNATTEND volume, with GNOME, Orca and the agents AVM uses,
+    /// never the UNATTEND volume, with GNOME, Orca and the agents Guest House uses,
     /// then runs setup.sh, and powers off as Ubuntu's install does, so
-    /// AVM's restart-after-install takes over.
+    /// Guest House's restart-after-install takes over.
     static func debianPreseed(account: UbuntuAccount, hostName: String, timeZone: String, disk: String = "nvme0n1") -> String {
         """
-        # Written by AVM. Debian's installer reads this and asks nothing.
+        # Written by Guest House. Debian's installer reads this and asks nothing.
         d-i debian-installer/locale string en_US.UTF-8
         d-i keyboard-configuration/xkb-keymap select \(account.keyboardLayout ?? "us")
         d-i keyboard-configuration/layoutcode string \(account.keyboardLayout ?? "us")
@@ -1315,7 +1315,7 @@ nonisolated final class UbuntuInstallPipeline {
     /// busybox and no systemd.
     static let debianFailureScript = """
         #!/bin/sh
-        # Written by AVM. Runs only if Debian's install fails.
+        # Written by Guest House. Runs only if Debian's install fails.
         set -x
         mkdir -p /run/avm-unattend
         if mount -t vfat /dev/disk/by-label/UNATTEND /run/avm-unattend; then
@@ -1336,7 +1336,7 @@ nonisolated final class UbuntuInstallPipeline {
             .replacingOccurrences(of: "#!/bin/bash", with: "#!/bin/sh")
             .replacingOccurrences(of: "curtin in-target -- ", with: "in-target ")
             .replacingOccurrences(of: "/etc/gdm3/custom.conf", with: "/etc/gdm3/daemon.conf")
-            .replacingOccurrences(of: "Ubuntu installed by AVM", with: "Debian installed by AVM")
+            .replacingOccurrences(of: "Ubuntu installed by Guest House", with: "Debian installed by Guest House")
             .replacingOccurrences(of: "at the end of Ubuntu's install", with: "at the end of Debian's install")
             .replacingOccurrences(of: "T=/target\n", with: "T=/target\n" + debianKeyboardFix(account), options: [], range: nil)
     }
@@ -1352,7 +1352,7 @@ nonisolated final class UbuntuInstallPipeline {
         let layout = account.keyboardLayout ?? "us"
         let variant = account.keyboardVariant ?? ""
         return """
-            # The keyboard chosen in AVM's wizard (Debian's installer keeps "us").
+            # The keyboard chosen in Guest House's wizard (Debian's installer keeps "us").
             sed -i -e 's/^XKBLAYOUT=.*/XKBLAYOUT="\(layout)"/' -e 's/^XKBVARIANT=.*/XKBVARIANT="\(variant)"/' $T/etc/default/keyboard
 
             """
@@ -1366,8 +1366,8 @@ nonisolated final class UbuntuInstallPipeline {
     //   - Its boot menu already names a preseed file of its own
     //     (preseed/file=/cdrom/simple-cdd/default.preseed, with
     //     simple-cdd/profiles=kali). A second preseed/file on the command
-    //     line replaces the first, so AVM's takes its place on the entry it
-    //     boots, and AVM's answers start the same thing Kali's did (its only
+    //     line replaces the first, so Guest House's takes its place on the entry it
+    //     boots, and Guest House's answers start the same thing Kali's did (its only
     //     line: anna-install simple-cdd-profiles), which then loads Kali's
     //     own answers (kali.preseed: Kali's mirror, no Debian security
     //     mirror, contrib and non-free) and runs kali.postinst at the end.
@@ -1385,7 +1385,7 @@ nonisolated final class UbuntuInstallPipeline {
     static let kaliOwnPreseedArgument = "preseed/file=/cdrom/simple-cdd/default.preseed"
 
     /// Debian's menu edit, with Kali's own preseed argument taken off the
-    /// entry that boots (AVM's file starts what it started) and GNOME
+    /// entry that boots (Guest House's file starts what it started) and GNOME
     /// chosen. nil when the menu isn't Kali's: no installer entry, or one
     /// without Kali's profile.
     static func editedKaliBootMenu(_ original: String, keyboard: String = "") -> String? {
@@ -1407,8 +1407,8 @@ nonisolated final class UbuntuInstallPipeline {
     /// command is Kali's default.preseed's only line.
     static func kaliPreseed(account: UbuntuAccount, hostName: String, timeZone: String, disk: String = "nvme0n1") -> String {
         debianPreseed(account: account, hostName: hostName, timeZone: timeZone, disk: disk)
-            .replacingOccurrences(of: "# Written by AVM. Debian's installer reads this and asks nothing.",
-                                  with: "# Written by AVM. Kali's installer reads this and asks nothing.\nd-i preseed/early_command string anna-install simple-cdd-profiles")
+            .replacingOccurrences(of: "# Written by Guest House. Debian's installer reads this and asks nothing.",
+                                  with: "# Written by Guest House. Kali's installer reads this and asks nothing.\nd-i preseed/early_command string anna-install simple-cdd-profiles")
             .replacingOccurrences(of: "d-i mirror/http/hostname string deb.debian.org\nd-i mirror/http/directory string /debian",
                                   with: "d-i mirror/http/hostname string http.kali.org\nd-i mirror/http/directory string /kali\nd-i apt-setup/services-select multiselect\nd-i apt-setup/contrib boolean true\nd-i apt-setup/non-free boolean true")
             .replacingOccurrences(of: "tasksel tasksel/first multiselect standard, gnome-desktop",
@@ -1417,17 +1417,17 @@ nonisolated final class UbuntuInstallPipeline {
     }
 
     /// Debian's setup script, made Kali's. Kali's GNOME may bring a dconf
-    /// profile of its own (its themes), so AVM's local database is added
+    /// profile of its own (its themes), so Guest House's local database is added
     /// to it rather than written over it.
     static func kaliSetupScript(account: UbuntuAccount) -> String {
         debianSetupScript(account: account)
             .replacingOccurrences(of: "at the end of Debian's install", with: "at the end of Kali's install")
-            .replacingOccurrences(of: "Debian installed by AVM", with: "Kali Linux installed by AVM")
+            .replacingOccurrences(of: "Debian installed by Guest House", with: "Kali Linux installed by Guest House")
             .replacingOccurrences(of: "printf 'user-db:user\\nsystem-db:local\\n' > $T/etc/dconf/profile/user",
                                   with: dconfProfileKeptAndExtended)
     }
 
-    /// The dconf user profile the distribution brings, with AVM's local
+    /// The dconf user profile the distribution brings, with Guest House's local
     /// database added to it; written new only when there is none.
     static let dconfProfileKeptAndExtended = """
         if [ -s $T/etc/dconf/profile/user ]; then
@@ -1444,7 +1444,7 @@ nonisolated final class UbuntuInstallPipeline {
 
     // MARK: Fedora (2026-10-26)
     //
-    // Fedora's installer (Anaconda) reads a kickstart file. AVM installs from
+    // Fedora's installer (Anaconda) reads a kickstart file. Guest House installs from
     // the Everything netinstall ISO (or the Server one), never the
     // Workstation live image: the live image installs by copying itself
     // (liveinst), where kickstart has no %packages, so the agents and Orca's
@@ -1466,7 +1466,7 @@ nonisolated final class UbuntuInstallPipeline {
     // THE VOLUME ID MUST STAY. The menu finds the installer's second stage by
     // the disc's label (inst.stage2=hd:LABEL=Fedora-E-dvd-aarch64-44), and
     // the kickstart is found the same way, on the same disc, so the label
-    // AVM adds is read from the menu itself, and the rebuilt disc's label is
+    // Guest House adds is read from the menu itself, and the rebuilt disc's label is
     // checked against it.
     //
     // THE REST IS UBUNTU'S. The kickstart's %post runs Ubuntu's setup script
@@ -1531,7 +1531,7 @@ nonisolated final class UbuntuInstallPipeline {
 
     /// Fedora's answers. Installs onto the virtual disk (nvme0n1) only, never
     /// the UNATTEND volume or the installer, from Fedora's mirrors with its
-    /// updates, with GNOME, Orca and the agents AVM uses (spice-webdavd is
+    /// updates, with GNOME, Orca and the agents Guest House uses (spice-webdavd is
     /// the shared-folder service). `version` is the release the disc says it
     /// is (.discinfo), so the mirrors serve that release; Anaconda's own
     /// $releasever stands in when it is unknown. The welcome tour is left
@@ -1561,7 +1561,7 @@ nonisolated final class UbuntuInstallPipeline {
         let layout = account.keyboardLayout ?? "us"
         let xkb = account.keyboardVariant.map { "\(layout) (\($0))" } ?? layout
         return """
-        # Written by AVM. \(installer) reads this and asks nothing.
+        # Written by Guest House. \(installer) reads this and asks nothing.
         text
         lang en_US.UTF-8
         keyboard --xlayouts=\(kickstartQuoted(xkb))
@@ -1601,15 +1601,15 @@ nonisolated final class UbuntuInstallPipeline {
     // send-file and Remote Desktop's useradd failed ("Permission denied",
     // "useradd: command not found") on all four, while the same tests
     // passed on Debian, Ubuntu and Kali, which don't confine it. The agent's
-    // channel is reachable only from AVM on the Mac. semodule is part of
+    // channel is reachable only from Guest House on the Mac. semodule is part of
     // policycoreutils, always installed with SELinux; it works on the
     // policy store, so it runs in the install's chroot.
     static let guestAgentUnconfined = """
-        # SELinux (see AVM's source): the guest agent may do what AVM asks
+        # SELinux (see Guest House's source): the guest agent may do what Guest House asks
         # of it; everything else stays enforcing.
         if command -v semodule >/dev/null; then
             printf '(typepermissive virt_qemu_ga_t)\\n' > /tmp/avm-qemu-ga.cil
-            semodule -i /tmp/avm-qemu-ga.cil || echo "AVM: the guest agent's SELinux module wasn't installed"
+            semodule -i /tmp/avm-qemu-ga.cil || echo "Guest House: the guest agent's SELinux module wasn't installed"
             rm -f /tmp/avm-qemu-ga.cil
         fi
 
@@ -1648,7 +1648,7 @@ nonisolated final class UbuntuInstallPipeline {
                                   with: "grubby --update-kernel=ALL --remove-args=\"console=ttyAMA0 console=tty0\" || true")
             .replacingOccurrences(of: "# The install-complete marker, last", with: fedoraExtras + "# The install-complete marker, last")
             .replacingOccurrences(of: "Ubuntu is on the disk", with: "Fedora is on the disk")
-            .replacingOccurrences(of: "Ubuntu installed by AVM", with: "Fedora installed by AVM")
+            .replacingOccurrences(of: "Ubuntu installed by Guest House", with: "Fedora installed by Guest House")
     }
 
     /// The kickstart's %onerror: runs in the installer when the install
@@ -1657,7 +1657,7 @@ nonisolated final class UbuntuInstallPipeline {
     /// contract as failureScript: the end of the logs on the UNATTEND volume
     /// (cut to fit its 8 MB), AVMFAIL.TAG, and a power-off.
     static let fedoraFailureScript = """
-        # Written by AVM. Runs only if Fedora's install fails.
+        # Written by Guest House. Runs only if Fedora's install fails.
         set -x
         mkdir -p /run/avm-unattend
         if mount -t vfat /dev/disk/by-label/UNATTEND /run/avm-unattend; then
@@ -1736,23 +1736,23 @@ nonisolated final class UbuntuInstallPipeline {
                              distro: .fedora, isLiveImage: !isInstaller)
     }
 
-    /// Why AVM can't install from this Fedora disc, or nil when it can.
+    /// Why Guest House can't install from this Fedora disc, or nil when it can.
     /// Fedora 44 or later: it brings Orca 50, which keeps the laptop layout
     /// (Caps Lock as the Orca key, see the file header) where the setup
     /// script writes it, the place proven on Ubuntu 26.04's Orca 50. An
     /// older Orca would leave its key on Insert, which a Mac doesn't have.
     static func fedoraProblem(with info: UbuntuISOInfo) -> String? {
         if info.isLiveImage {
-            return "This is a Fedora live image. AVM installs Fedora from the Everything netinstall image instead, which brings the same Fedora Workstation desktop: on fedoraproject.org, download Fedora Everything for aarch64, the netinstall ISO."
+            return "This is a Fedora live image. Guest House installs Fedora from the Everything netinstall image instead, which brings the same Fedora Workstation desktop: on fedoraproject.org, download Fedora Everything for aarch64, the netinstall ISO."
         }
         if !info.isARM64 {
             return "This is a Fedora installer for Intel and AMD PCs. This Mac needs the aarch64 one: on fedoraproject.org, download the Fedora Everything netinstall image for aarch64."
         }
         if info.majorVersion == 0 {
-            return "AVM couldn't tell which Fedora version this is. AVM needs Fedora 44 or later, from fedoraproject.org."
+            return "Guest House couldn't tell which Fedora version this is. Guest House needs Fedora 44 or later, from fedoraproject.org."
         }
         if info.majorVersion < 44 {
-            return "This is \(info.spokenName). AVM needs Fedora 44 or later."
+            return "This is \(info.spokenName). Guest House needs Fedora 44 or later."
         }
         return nil
     }
@@ -1797,23 +1797,23 @@ nonisolated final class UbuntuInstallPipeline {
                              distro: distro, isLiveImage: !isInstaller)
     }
 
-    /// Why AVM can't install from this AlmaLinux or Rocky disc, or nil.
+    /// Why Guest House can't install from this AlmaLinux or Rocky disc, or nil.
     /// Version 10 or later: it brings GNOME 47 and Orca 48; 9 was never
     /// tried.
     static func enterpriseProblem(with info: UbuntuISOInfo) -> String? {
         let name = info.distro.name
         let site = info.distro == .rocky ? "rockylinux.org" : "almalinux.org"
         if info.isLiveImage {
-            return "This is a \(name) live image. AVM installs \(name) from its boot ISO instead: on \(site), download \(name) for ARM64 (aarch64), the boot ISO."
+            return "This is a \(name) live image. Guest House installs \(name) from its boot ISO instead: on \(site), download \(name) for ARM64 (aarch64), the boot ISO."
         }
         if !info.isARM64 {
             return "This is a \(name) installer for Intel and AMD PCs. This Mac needs the aarch64 one: on \(site), download the \(name) boot ISO for ARM64 (aarch64)."
         }
         if info.majorVersion == 0 {
-            return "AVM couldn't tell which \(name) version this is. AVM needs \(name) 10 or later, from \(site)."
+            return "Guest House couldn't tell which \(name) version this is. Guest House needs \(name) 10 or later, from \(site)."
         }
         if info.majorVersion < 10 {
-            return "This is \(info.spokenName). AVM needs \(name) 10 or later."
+            return "This is \(info.spokenName). Guest House needs \(name) 10 or later."
         }
         return nil
     }
@@ -1857,7 +1857,7 @@ nonisolated final class UbuntuInstallPipeline {
     static let rockyKeySHA256 = "de57c3c0a2dcde88ff5b894e74335f55a0ec074815f36d472270d937c16f077b"
     static let rockyWebDAV = """
         # The shared folder's service, which Rocky doesn't package: AlmaLinux's,
-        # signature-checked (see AVM's source).
+        # signature-checked (see Guest House's source).
         avm_rocky_webdav() {
           B=https://repo.almalinux.org/almalinux/10/AppStream/aarch64/os/Packages
           K=/tmp/avm-alma10.key
@@ -1879,7 +1879,7 @@ nonisolated final class UbuntuInstallPipeline {
           done
           rpm -q spice-webdavd >/dev/null
         }
-        avm_rocky_webdav || echo "AVM: the shared folder's service couldn't be installed from AlmaLinux"
+        avm_rocky_webdav || echo "Guest House: the shared folder's service couldn't be installed from AlmaLinux"
 
         """
 
@@ -1888,13 +1888,13 @@ nonisolated final class UbuntuInstallPipeline {
     static func enterpriseSetupScript(account: UbuntuAccount, distro: LinuxDistro) -> String {
         // MEASURED 2026-10-31 on AlmaLinux 10.2 (guest-info): RHEL's
         // /etc/sysconfig/qemu-ga lets the guest agent answer only a list of
-        // commands, without guest-exec and the guest-file ones, which AVM's
+        // commands, without guest-exec and the guest-file ones, which Guest House's
         // Send File, disk check and install test use; the first install
         // test's agent answered pings and refused the rest. An empty list
         // enables all, as Fedora, Debian and Ubuntu ship it. The agent's
-        // channel is reachable only from AVM on the Mac.
+        // channel is reachable only from Guest House on the Mac.
         let agent = """
-            # The guest agent answers everything AVM asks (see AVM's source).
+            # The guest agent answers everything Guest House asks (see Guest House's source).
             sed -i 's/^FILTER_RPC_ARGS=.*/FILTER_RPC_ARGS=""/' /etc/sysconfig/qemu-ga
             grep -qx 'FILTER_RPC_ARGS=""' /etc/sysconfig/qemu-ga
 
@@ -1912,7 +1912,7 @@ nonisolated final class UbuntuInstallPipeline {
     // still YaST, not Agama: MEASURED on the Snapshot20261020 image, its
     // initrd's linuxrc.config reads an AutoYaST profile (autoyast2: ...
     // autoinst.xml), and the inst-sys downloads from
-    // download.opensuse.org/ports/aarch64/tumbleweed/repo/oss. So AVM
+    // download.opensuse.org/ports/aarch64/tumbleweed/repo/oss. So Guest House
     // gives YaST an AutoYaST profile:
     //   - The profile rides the rebuilt disc at /nocloud/autoinst.xml and
     //     the boot entry says where (autoyast=cd:/...), in text mode, with
@@ -1940,7 +1940,7 @@ nonisolated final class UbuntuInstallPipeline {
     //     way to the desktop. So the profile leaves YaST's restart alone,
     //     and the restart lands on the installer disc, whose marker guard
     //     here powers the machine off (GRUB's halt) instead of handing back
-    //     to the firmware, the power-off AVM's restart-after-install waits
+    //     to the firmware, the power-off Guest House's restart-after-install waits
     //     for. Handing back left the firmware's setup screen up, since the
     //     firmware didn't go on to the disk's boot manager. If halt ever
     //     failed, exit follows, as for the other distributions.
@@ -2014,15 +2014,15 @@ nonisolated final class UbuntuInstallPipeline {
                              isDesktop: true, distro: .opensuse, isLiveImage: !hasInstallerKernel)
     }
 
-    /// Why AVM can't install from this openSUSE disc, or nil. Tumbleweed
-    /// only: Leap 16 installs with Agama, which AVM doesn't answer yet.
+    /// Why Guest House can't install from this openSUSE disc, or nil. Tumbleweed
+    /// only: Leap 16 installs with Agama, which Guest House doesn't answer yet.
     static func openSUSEProblem(with info: UbuntuISOInfo) -> String? {
         let get = "on get.opensuse.org, choose Tumbleweed, then the aarch64 Network Image"
         if !info.discInfo.contains("Tumbleweed") {
-            return "This is an openSUSE installer AVM can't answer yet. AVM installs openSUSE Tumbleweed: \(get)."
+            return "This is an openSUSE installer Guest House can't answer yet. Guest House installs openSUSE Tumbleweed: \(get)."
         }
         if info.isLiveImage {
-            return "This is an openSUSE Tumbleweed live image. AVM installs Tumbleweed from its installer instead: \(get)."
+            return "This is an openSUSE Tumbleweed live image. Guest House installs Tumbleweed from its installer instead: \(get)."
         }
         if !info.isARM64 {
             return "This is an openSUSE Tumbleweed installer for Intel and AMD PCs. This Mac needs the aarch64 one: \(get)."
@@ -2050,7 +2050,7 @@ nonisolated final class UbuntuInstallPipeline {
         return """
         <?xml version="1.0"?>
         <!DOCTYPE profile>
-        <!-- Written by AVM. openSUSE's installer (YaST) reads this and asks nothing. -->
+        <!-- Written by Guest House. openSUSE's installer (YaST) reads this and asks nothing. -->
         <profile xmlns="http://www.suse.com/1.0/yast2ns" xmlns:config="http://www.suse.com/1.0/configns">
           <general>
             <mode>
@@ -2167,17 +2167,17 @@ nonisolated final class UbuntuInstallPipeline {
             systemctl enable spice-vdagentd.socket qemu-guest-agent.service || true
             # openSUSE's guest agent refuses guest-exec (its
             # /usr/etc/sysconfig/qemu-ga, qemu-guest-agent 11.1.2), which
-            # AVM's Send File, disk check and install test use; the admin's
+            # Guest House's Send File, disk check and install test use; the admin's
             # file, read after it, lets it answer everything, as Fedora's,
-            # Debian's and Ubuntu's do. Only AVM on the Mac reaches it.
-            printf '# Written by AVM: the guest agent answers everything AVM asks.\\nFILTER_RPC_ARGS=""\\n' > $T/etc/sysconfig/qemu-ga
+            # Debian's and Ubuntu's do. Only Guest House on the Mac reaches it.
+            printf '# Written by Guest House: the guest agent answers everything Guest House asks.\\nFILTER_RPC_ARGS=""\\n' > $T/etc/sysconfig/qemu-ga
             # openSUSE's systemd hardening gives spice-webdavd PrivateDevices,
             # which hides /dev/virtio-ports, so the shared folder never
             # mounted ("Failed to open /dev/virtio-ports/org.spice-space.webdav.0",
             # 2026-10-31). It gets its devices back; the rest stays.
             mkdir -p $T/etc/systemd/system/spice-webdavd.service.d
-            printf '# Written by AVM: the shared folder needs its virtio port.\\n[Service]\\nPrivateDevices=no\\n' > $T/etc/systemd/system/spice-webdavd.service.d/avm.conf
-            # The keyboard chosen in AVM's wizard, for the sign-in screen
+            printf '# Written by Guest House: the shared folder needs its virtio port.\\n[Service]\\nPrivateDevices=no\\n' > $T/etc/systemd/system/spice-webdavd.service.d/avm.conf
+            # The keyboard chosen in Guest House's wizard, for the sign-in screen
             # and the desktop (the profile's keymap is only the console's).
             mkdir -p $T/etc/X11/xorg.conf.d
             printf 'Section "InputClass"\\n    Identifier "system-keyboard"\\n    MatchIsKeyboard "on"\\n    Option "XkbLayout" "%s"\\n    Option "XkbVariant" "%s"\\nEndSection\\n' '\(layout)' '\(variant)' > $T/etc/X11/xorg.conf.d/00-keyboard.conf
@@ -2209,7 +2209,7 @@ nonisolated final class UbuntuInstallPipeline {
                                   with: dconfProfileKeptAndExtended)
             .replacingOccurrences(of: "# The install-complete marker, last", with: extras + "# The install-complete marker, last")
             .replacingOccurrences(of: "Ubuntu is on the disk", with: "openSUSE is on the disk")
-            .replacingOccurrences(of: "Ubuntu installed by AVM", with: "openSUSE Tumbleweed installed by AVM")
+            .replacingOccurrences(of: "Ubuntu installed by Guest House", with: "openSUSE Tumbleweed installed by Guest House")
     }
 
     /// The chroot script's failure branch: the setup log on the UNATTEND
@@ -2217,7 +2217,7 @@ nonisolated final class UbuntuInstallPipeline {
     /// otherwise carry on and halt as if all were well).
     static let openSUSEFailureScript = """
         #!/bin/bash
-        # Written by AVM. Runs only if the setup step of openSUSE's install fails.
+        # Written by Guest House. Runs only if the setup step of openSUSE's install fails.
         set -x
         mkdir -p /run/avm-unattend
         if mount -t vfat /dev/disk/by-label/UNATTEND /run/avm-unattend; then
@@ -2263,7 +2263,7 @@ nonisolated final class UbuntuInstallPipeline {
         guard let edited = suse ? Self.editedOpenSUSEBootMenu(original) : Self.editedFedoraBootMenu(original),
               let label = foundLabel else {
             throw UbuntuPipelineError.stageFailed(stage: .rebuildISO,
-                                                 reason: "The installer's boot menu isn't in the form AVM knows, so the answers couldn't be added. This \(distro.name) release may be newer than this version of AVM.")
+                                                 reason: "The installer's boot menu isn't in the form Guest House knows, so the answers couldn't be added. This \(distro.name) release may be newer than this version of Guest House.")
         }
         do {
             try? fm.removeItem(at: grubURL)
@@ -2287,7 +2287,7 @@ nonisolated final class UbuntuInstallPipeline {
         // a USB stick (its EFI image as partition 1), which xorriso can't
         // replay ("Cannot make proposal to mark data file as MBR
         // partition", SORRY, even reading the original), so the copy has
-        // none. AVM attaches the copy as a CD, which boots from El Torito,
+        // none. Guest House attaches the copy as a CD, which boots from El Torito,
         // so that one complaint is tolerated; anything worse still fails.
         let tolerance = suse ? ["-return_with", "FAILURE", "32"] : []
         let build = await Self.runTool(xorriso, tolerance + [

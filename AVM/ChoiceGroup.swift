@@ -1,5 +1,5 @@
 // ChoiceGroup.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Choices as pop-up buttons (2026-10-27, user feedback). A VoiceOver user
 // reaching a radio group heard its name with one option already chosen
@@ -7,7 +7,7 @@
 // macOS can't carry that: neither accessibilityHint nor help reaches the
 // AXRadioGroup, and Tab skips them (MEASURED with the accessibility
 // audit). A pop-up button says "pop-up button", takes Tab, and its hint
-// says what to choose, so every choice in AVM is one.
+// says what to choose, so every choice in Guest House is one.
 
 import SwiftUI
 

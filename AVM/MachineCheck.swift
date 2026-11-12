@@ -1,5 +1,5 @@
 // MachineCheck.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // "Is this working?" (2026-11-01, the user's request): one command, Virtual
 // Machine > Check This Machine, that asks the machine about what a person relies
@@ -52,13 +52,13 @@ extension VMManager {
     }
 
     private func say(_ result: MachineCheckResult, machine: String) {
-        AVMLog.write("AVM: Check This Machine — \(machine): \(result.problems.count) problem(s), \(result.fine.count) fine")
+        AVMLog.write("Guest House: Check This Machine — \(machine): \(result.problems.count) problem(s), \(result.fine.count) fine")
         // Said beside the result, not as a problem with the machine: someone
         // may want the shortcuts for Spaces.
         let mac = Self.macTakesControlArrows ? " " + MacSpacesShortcuts.words(machine: machine) : ""
         let reading = healthReading(since: startedAt ?? Date())
         let health = MachineHealth(reading)
-        AVMLog.write("AVM: Check This Machine — QEMU has \(reading.openFiles) of \(reading.fileLimit) files open, \(reading.memoryBytes >> 20) MB, \(reading.faults) fault(s)")
+        AVMLog.write("Guest House: Check This Machine — QEMU has \(reading.openFiles) of \(reading.fileLimit) files open, \(reading.memoryBytes >> 20) MB, \(reading.faults) fault(s)")
         Announcer.shared.announce(result.words(machine: machine) + " " + health.words + mac, tone: result.problems.isEmpty && health.warnings.isEmpty ? .success : .failure)
     }
 
@@ -101,12 +101,12 @@ extension VMManager {
         return MacSpacesShortcuts.takeControlArrows(CFPreferencesCopyAppValue("AppleSymbolicHotKeys" as CFString, domain) as? [String: Any])
     }
 
-    /// Once each time AVM opens, as a Windows machine starts: every start would
+    /// Once each time Guest House opens, as a Windows machine starts: every start would
     /// nag someone who keeps them for Spaces.
     func warnAboutMacSpacesShortcuts(_ configuration: VMConfiguration) {
         guard configuration.guestOS == .windows, !Self.warnedAboutMacSpacesShortcuts, Self.macTakesControlArrows else { return }
         Self.warnedAboutMacSpacesShortcuts = true
-        AVMLog.write("AVM: the Mac's Spaces shortcuts hold Control and the arrows")
+        AVMLog.write("Guest House: the Mac's Spaces shortcuts hold Control and the arrows")
         Announcer.shared.announce(MacSpacesShortcuts.words(machine: configuration.name), tone: .info)
     }
     private static var warnedAboutMacSpacesShortcuts = false

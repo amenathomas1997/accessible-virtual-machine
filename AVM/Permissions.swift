@@ -1,16 +1,16 @@
 // Permissions.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // The Permissions window (2026-10-30, the user's request): everything macOS
-// has to allow for AVM, in one place, each with what it's for, whether it's
-// allowed, and one button to allow it. It opens by itself when AVM opens
-// and something AVM needs right now isn't allowed, and not otherwise; AVM >
+// has to allow for Guest House, in one place, each with what it's for, whether it's
+// allowed, and one button to allow it. It opens by itself when Guest House opens
+// and something Guest House needs right now isn't allowed, and not otherwise; Guest House >
 // Permissions… opens it any time.
 //
 // Before it, each permission was asked for at the moment it was first
 // needed, often mid-start: a tester's keyboard for Windows waited behind an
 // Input Monitoring question that sat unanswered for two and a half minutes
-// at login, holding up the rest of AVM.
+// at login, holding up the rest of Guest House.
 //
 // "Needed now" depends on the user's setup: Input Monitoring only with a
 // keyboard for Windows chosen, VoiceOver control only with VoiceOver on,
@@ -29,7 +29,7 @@ final class PermissionsCenter: ObservableObject {
     enum State: Equatable {
         case allowed
         case notAllowed
-        /// Not something AVM can read without asking; said, not counted.
+        /// Not something Guest House can read without asking; said, not counted.
         case unknown
     }
 
@@ -66,10 +66,10 @@ final class PermissionsCenter: ObservableObject {
                  neededNow: configurations.contains { $0.windowsKeyboardID != nil },
                  button: "Allow Input Monitoring"),
             Item(id: "voiceover", title: "VoiceOver control",
-                 why: "Lets AVM speak in your own VoiceOver voice while you're in other apps. Two switches: in VoiceOver Utility, General, Allow VoiceOver to be controlled with AppleScript; and AVM allowed to control VoiceOver, which macOS asks about.",
+                 why: "Lets Guest House speak in your own VoiceOver voice while you're in other apps. Two switches: in VoiceOver Utility, General, Allow VoiceOver to be controlled with AppleScript; and Guest House allowed to control VoiceOver, which macOS asks about.",
                  state: voiceOverControl == .allowed ? .allowed : (voiceOverControl == .unknown ? .unknown : .notAllowed),
                  neededNow: voiceOverOn,
-                 button: voiceOverControl == .scriptingOff ? "Open VoiceOver Utility" : "Allow AVM to Control VoiceOver"),
+                 button: voiceOverControl == .scriptingOff ? "Open VoiceOver Utility" : "Allow Guest House to Control VoiceOver"),
             Item(id: "microphone", title: "Microphone",
                  why: "Lets a virtual machine hear your Mac's microphone, when it's turned on in that machine's Settings.",
                  state: Self.state(AVCaptureDevice.authorizationStatus(for: .audio)),
@@ -95,7 +95,7 @@ final class PermissionsCenter: ObservableObject {
 
     nonisolated enum VoiceOverControl: Equatable, Sendable {
         case allowed
-        /// AVM not allowed to control VoiceOver (System Settings, Automation).
+        /// Guest House not allowed to control VoiceOver (System Settings, Automation).
         case automationNotAllowed
         /// VoiceOver Utility's "Allow VoiceOver to be controlled with
         /// AppleScript" off.
@@ -133,7 +133,7 @@ final class PermissionsCenter: ObservableObject {
         if script.terminationStatus == 0 { return .allowed }
         if said.contains("-1743") { return .automationNotAllowed }
         if said.contains("-10000") || said.contains("-10004") { return .scriptingOff }
-        AVMLog.write("AVM: Permissions — VoiceOver check inconclusive: \(said.trimmingCharacters(in: .whitespacesAndNewlines))", category: "Permissions")
+        AVMLog.write("Guest House: Permissions — VoiceOver check inconclusive: \(said.trimmingCharacters(in: .whitespacesAndNewlines))", category: "Permissions")
         return .unknown
     }
 
@@ -165,7 +165,7 @@ final class PermissionsCenter: ObservableObject {
     // MARK: Allowing one
 
     func allow(_ item: Item) {
-        AVMLog.write("AVM: Permissions — \(item.button)", category: "Permissions")
+        AVMLog.write("Guest House: Permissions — \(item.button)", category: "Permissions")
         switch item.id {
         case "helper":
             if USBHelperClient.shared.refreshStatus() == .requiresApproval {
@@ -174,9 +174,9 @@ final class PermissionsCenter: ObservableObject {
                 _ = USBHelperClient.shared.ensureRegistered()
             }
         case "input":
-            Task { _ = await InputMonitoring.ask(title: "Allow Input Monitoring for AVM",
-                                                 why: "macOS lets AVM's helper take a keyboard for Windows only when AVM is allowed under Input Monitoring.",
-                                                 then: "Come back to AVM's Permissions window afterwards.",
+            Task { _ = await InputMonitoring.ask(title: "Allow Input Monitoring for Guest House",
+                                                 why: "macOS lets Guest House's helper take a keyboard for Windows only when Guest House is allowed under Input Monitoring.",
+                                                 then: "Come back to Guest House's Permissions window afterwards.",
                                                  while: { true }) }
         case "voiceover":
             if voiceOverControl != .scriptingOff {
@@ -189,7 +189,7 @@ final class PermissionsCenter: ObservableObject {
                             if answer == OSStatus(errAEEventNotPermitted),
                                let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
                                 NSWorkspace.shared.open(url)
-                                Announcer.shared.announce("System Settings is opening Automation. Under AVM, turn on VoiceOver, then come back to AVM's Permissions window.", tone: .info)
+                                Announcer.shared.announce("System Settings is opening Automation. Under Guest House, turn on VoiceOver, then come back to Guest House's Permissions window.", tone: .info)
                             }
                             PermissionsCenter.shared.checkVoiceOver()
                         }
@@ -197,7 +197,7 @@ final class PermissionsCenter: ObservableObject {
                 }
             } else {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/VoiceOver Utility.app"))
-                Announcer.shared.announce("VoiceOver Utility is opening. In General, turn on Allow VoiceOver to be controlled with AppleScript, then come back to AVM's Permissions window.", tone: .info)
+                Announcer.shared.announce("VoiceOver Utility is opening. In General, turn on Allow VoiceOver to be controlled with AppleScript, then come back to Guest House's Permissions window.", tone: .info)
             }
         case "microphone", "camera":
             AVCaptureDevice.requestAccess(for: item.id == "camera" ? .video : .audio) { _ in
@@ -218,7 +218,7 @@ final class PermissionsCenter: ObservableObject {
 
     // MARK: The window
 
-    /// At launch, once AVM is in front (AVMAppDelegate): only when
+    /// At launch, once Guest House is in front (AVMAppDelegate): only when
     /// something needed now isn't allowed.
     func showIfSomethingIsMissing() {
         checkVoiceOver { [weak self] in self?.showMissing() }
@@ -226,7 +226,7 @@ final class PermissionsCenter: ObservableObject {
 
     private func showMissing() {
         guard !missing.isEmpty else { return }
-        AVMLog.write("AVM: Permissions — not allowed yet: \(missing.map(\.title).joined(separator: ", ")); showing the window", category: "Permissions")
+        AVMLog.write("Guest House: Permissions — not allowed yet: \(missing.map(\.title).joined(separator: ", ")); showing the window", category: "Permissions")
         show()
     }
 
@@ -239,12 +239,12 @@ final class PermissionsCenter: ObservableObject {
         }
         let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 640),
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        panel.title = "AVM Permissions"
+        panel.title = "Guest House Permissions"
         panel.isReleasedWhenClosed = false
         panel.contentView = NSHostingView(rootView: PermissionsView(close: { [weak self] in self?.window?.close() }))
         panel.center()
         window = panel
-        // Fresh each time AVM comes back, from System Settings say.
+        // Fresh each time Guest House comes back, from System Settings say.
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { PermissionsCenter.shared.checkVoiceOver() }
         }
@@ -261,12 +261,12 @@ struct PermissionsView: View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("AVM Permissions")
+                    Text("Guest House Permissions")
                         .font(.title)
                         .accessibilityAddTraits(.isHeader)
                     Text(center.missing.isEmpty
-                         ? "Everything AVM needs for your setup is allowed."
-                         : "AVM needs \(center.missing.count == 1 ? "one permission" : "\(center.missing.count) permissions") for what you've set up. Choose each one's button; macOS asks, or opens the place to turn it on. This window opens by itself only while something is missing; AVM, Permissions opens it any time.")
+                         ? "Everything Guest House needs for your setup is allowed."
+                         : "Guest House needs \(center.missing.count == 1 ? "one permission" : "\(center.missing.count) permissions") for what you've set up. Choose each one's button; macOS asks, or opens the place to turn it on. This window opens by itself only while something is missing; Guest House, Permissions opens it any time.")
                         .fixedSize(horizontal: false, vertical: true)
                     ForEach(center.items) { item in
                         VStack(alignment: .leading, spacing: 6) {

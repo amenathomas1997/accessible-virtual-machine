@@ -1,5 +1,5 @@
 // AVMLogicTests.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Tests for the logic that can run without a VM, a sysroot or a window.
 // Each group names what it protects, because most of these guard a
@@ -15,7 +15,7 @@ import CryptoKit
 
 final class SHA512CryptTests: XCTestCase {
     /// The reference vector from the SHA-crypt specification (Drepper).
-    /// If this ever fails, Ubuntu would reject every password AVM sets.
+    /// If this ever fails, Ubuntu would reject every password Guest House sets.
     func testSpecificationVector() {
         XCTAssertEqual(
             SHA512Crypt.hash(password: "Hello world!", salt: "saltstring"),
@@ -53,7 +53,7 @@ final class SanitizerTests: XCTestCase {
 // MARK: - Saved configurations
 
 final class VMConfigurationTests: XCTestCase {
-    /// A configuration saved by AVM 0.1.2, before every setting added
+    /// A configuration saved by Guest House 0.1.2, before every setting added
     /// since. It must still load, or every VM in the file disappears.
     func testOldConfigurationStillLoads() throws {
         let json = """
@@ -91,7 +91,7 @@ final class VMConfigurationTests: XCTestCase {
 
     func testExternalDriveNameAndMissingDrive() {
         var config = VMConfiguration(name: "Travel PC")
-        config.storageFolderPath = "/Volumes/Backup Drive/AVM Virtual Machines/\(config.id.uuidString)"
+        config.storageFolderPath = "/Volumes/Backup Drive/Guest House Virtual Machines/\(config.id.uuidString)"
         XCTAssertEqual(config.storageDriveName, "Backup Drive")
         XCTAssertTrue(config.storageIsMissing)
         XCTAssertTrue(config.storageMissingMessage.contains("Backup Drive"))
@@ -247,7 +247,7 @@ final class StreamSocketCheckTests: XCTestCase {
         XCTAssertNil(streamSocketProblem(socketPath, uid: getuid()))
     }
 
-    /// The root AVM falls back to when another account holds
+    /// The root Guest House falls back to when another account holds
     /// /tmp/avm-<uid> (2026-10-28): six lower-case hex digits, no other tail.
     func testTheFallbackRootIsAcceptedAndOnlyThatShape() throws {
         let uid = getuid()
@@ -452,7 +452,7 @@ final class WindowsSetupAnswersTests: XCTestCase {
         XCTAssertNotNil(WindowsSetupAnswers.problem(withComputerName: "my pc"))
         XCTAssertEqual(WindowsSetupAnswers.suggestedComputerName(from: "Amena's PC"), "Amenas-PC")
         XCTAssertEqual(WindowsSetupAnswers.suggestedComputerName(from: "Windows 11 ARM test machine"), "Windows-11-ARM")
-        XCTAssertEqual(WindowsSetupAnswers.suggestedComputerName(from: "ʼʼʼ"), "AVM-PC")
+        XCTAssertEqual(WindowsSetupAnswers.suggestedComputerName(from: "ʼʼʼ"), "GuestHouse-PC")
     }
 
     func testUserNames() {
@@ -966,7 +966,7 @@ final class DebianInstallTests: XCTestCase {
         for os: GuestOS in [.windows, .ubuntu, .debian, .fedora, .kali, .opensuse, .macOS] {
             XCTAssertFalse(os.remoteDesktopIsGNOME, os.rawValue)
         }
-        XCTAssertTrue(GuestOS.rocky.hasSharedFolderService, "AlmaLinux's service, installed by AVM")
+        XCTAssertTrue(GuestOS.rocky.hasSharedFolderService, "AlmaLinux's service, installed by Guest House")
         XCTAssertFalse(GuestOS.macOS.hasSharedFolderService, "macOS has its own sharing")
         XCTAssertTrue(GuestOS.almalinux.hasSharedFolderService)
         XCTAssertTrue(GuestOS.windows.hasSharedFolderService)
@@ -1032,7 +1032,7 @@ final class MachineArchiveTests: XCTestCase {
     }
 
     /// The tests have no bundled mdir, and the sample image isn't a FAT disk,
-    /// so this proves the safe side only: media AVM can't read counts as
+    /// so this proves the safe side only: media Guest House can't read counts as
     /// still holding the password (2026-11-09, fourth audit #34). The name
     /// used to claim more. An image whose answer file really is gone needs
     /// the app's mdir, and only a live export covers that.
@@ -1213,7 +1213,7 @@ final class MachineArchiveTests: XCTestCase {
         var newer = try JSONSerialization.jsonObject(with: Data(contentsOf: package.appendingPathComponent(MachineArchive.manifestName))) as! [String: Any]
         newer["format"] = MachineArchive.formatVersion + 1
         try JSONSerialization.data(withJSONObject: newer).write(to: package.appendingPathComponent(MachineArchive.manifestName))
-        XCTAssertTrue(message(package).contains("newer AVM"))
+        XCTAssertTrue(message(package).contains("newer Guest House"))
 
         XCTAssertTrue(message(root.appendingPathComponent("gone.avmvm")).contains("can't find"))
     }
@@ -1312,7 +1312,7 @@ final class MachineArchiveTests: XCTestCase {
         XCTAssertEqual(MachineArchive.uniqueName("Work PC", existing: []), "Work PC")
         var odd = config; odd.name = "../a/b:c"
         XCTAssertEqual(MachineArchive.packageName(for: odd), "-a-b-c.avmvm")
-        XCTAssertEqual(MachineArchive.placeName(of: URL(fileURLWithPath: "/Volumes/Backup/AVM")), "the drive Backup")
+        XCTAssertEqual(MachineArchive.placeName(of: URL(fileURLWithPath: "/Volumes/Backup/Guest House")), "the drive Backup")
         XCTAssertEqual(MachineArchive.placeName(of: root), "your Mac")
         XCTAssertTrue(MachineArchive.exportSkips("SavedState.vzvmsave"))
         XCTAssertTrue(MachineArchive.exportSkips("restore-points/x/.macos-disk.img.restoring"))
@@ -1365,7 +1365,7 @@ final class FedoraInstallTests: XCTestCase {
     }
 
     /// Ubuntu's autoinstall installs the guest agent (2026-10-30): it
-    /// didn't, so an installed Ubuntu never answered AVM through it.
+    /// didn't, so an installed Ubuntu never answered Guest House through it.
     func testUbuntuInstallsTheGuestAgent() {
         let data = UbuntuInstallPipeline.userData(account: account, hostName: "h", timeZone: "UTC")
         for package in ["- spice-vdagent\n", "- spice-webdavd\n", "- qemu-guest-agent\n"] {
@@ -1423,7 +1423,7 @@ final class FedoraInstallTests: XCTestCase {
         let permissive = try XCTUnwrap(script.range(of: "(typepermissive virt_qemu_ga_t)\\n' > /tmp/avm-qemu-ga.cil"))
         XCTAssertLessThan(permissive.lowerBound, marker.lowerBound, "the guest agent unconfined before the marker")
         XCTAssertTrue(script.contains("semodule -i /tmp/avm-qemu-ga.cil ||"), "a failed semodule doesn't fail the install")
-        XCTAssertTrue(script.contains("Fedora installed by AVM"))
+        XCTAssertTrue(script.contains("Fedora installed by Guest House"))
         // Nothing in it could end the kickstart's %post early.
         XCTAssertFalse(script.components(separatedBy: "\n").contains("%end"))
     }
@@ -1589,7 +1589,7 @@ final class DiskWatchTests: XCTestCase {
         XCTAssertTrue(script.contains("$_.PartitionStyle -eq 'RAW'"))
         XCTAssertTrue(script.contains("-not $_.IsBoot"))
         XCTAssertTrue(DiskWatch.linuxDriveScript(format: true).contains(#"if ! blkid "$d""#))
-        XCTAssertFalse(DiskWatch.linuxDriveScript(format: false).contains("mkfs"), "only a drive AVM hasn't made ready")
+        XCTAssertFalse(DiskWatch.linuxDriveScript(format: false).contains("mkfs"), "only a drive Guest House hasn't made ready")
     }
 
     func testWhatAGuestScriptSaid() {
@@ -1622,7 +1622,7 @@ final class DiskWatchTests: XCTestCase {
         DiskWatch.trimSerialLog(url, limit: 2000, keep: 100)
         let text = String(decoding: try Data(contentsOf: url), as: UTF8.self)
         XCTAssertTrue(text.hasSuffix("END"))
-        XCTAssertTrue(text.contains("[AVM: the log passed"))
+        XCTAssertTrue(text.contains("[Guest House: the log passed"))
         XCTAssertLessThan(text.utf8.count, 200)
         XCTAssertEqual(String(decoding: try DiskWatch.tail(of: url, bytes: 3), as: UTF8.self), "END")
         XCTAssertEqual(try DiskWatch.tail(of: url, bytes: 10_000).count, text.utf8.count)
@@ -1761,7 +1761,7 @@ final class RemoteDesktopTests: XCTestCase {
 
 // MARK: - Sixth audit (2026-10-29)
 
-/// A machine list with a number, string or null in it used to crash AVM at
+/// A machine list with a number, string or null in it used to crash Guest House at
 /// every launch: JSONSerialization raised an exception try? can't catch.
 final class MachineListEntryTests: XCTestCase {
     func testEntriesThatAreNotObjectsAreKeptNotDecoded() {
@@ -1888,14 +1888,14 @@ final class GuestWatchTests: XCTestCase {
         XCTAssertEqual(ClaudeDescribe.answer(status: 200, data: Data(ok.utf8)), .description("A blue stop screen."))
         XCTAssertEqual(ClaudeDescribe.answer(status: 200, data: Data(#"{"stop_reason":"refusal","content":[]}"#.utf8)), .declined)
         XCTAssertEqual(ClaudeDescribe.answer(status: 401, data: Data(#"{"error":{"message":"invalid x-api-key"}}"#.utf8)),
-                       .failed("Claude refused the API key. Check it in AVM's Settings."))
+                       .failed("Claude refused the API key. Check it in Guest House's Settings."))
     }
 
-    /// AVM's updates wait only while the keyboard is in a machine whose screen reader runs.
+    /// Guest House's updates wait only while the keyboard is in a machine whose screen reader runs.
     func testUpdatesWaitForTheMachinesScreenReader() {
         XCTAssertTrue(Announcer.holds(routine: true, keyboardIn: "PC", readerRunningIn: ["PC"], settingOn: true))
         XCTAssertFalse(Announcer.holds(routine: false, keyboardIn: "PC", readerRunningIn: ["PC"], settingOn: true), "only what a caller marks routine waits")
-        XCTAssertFalse(Announcer.holds(routine: true, keyboardIn: "PC", readerRunningIn: [], settingOn: true), "no screen reader: AVM is the only voice")
+        XCTAssertFalse(Announcer.holds(routine: true, keyboardIn: "PC", readerRunningIn: [], settingOn: true), "no screen reader: Guest House is the only voice")
         XCTAssertFalse(Announcer.holds(routine: true, keyboardIn: nil, readerRunningIn: ["PC"], settingOn: true))
         XCTAssertFalse(Announcer.holds(routine: true, keyboardIn: "PC", readerRunningIn: ["PC"], settingOn: false))
         XCTAssertNil(Announcer.heldSummary([], machine: "PC"))
@@ -2068,7 +2068,7 @@ final class KaliInstallTests: XCTestCase {
         }
         """
 
-    /// AVM's preseed takes the place of Kali's on the entry that boots,
+    /// Guest House's preseed takes the place of Kali's on the entry that boots,
     /// and only there; Kali's profile and the GNOME choice stay.
     func testBootMenuEdit() throws {
         let edited = try XCTUnwrap(UbuntuInstallPipeline.editedKaliBootMenu(menu, keyboard: "keymap=gb"))
@@ -2102,7 +2102,7 @@ final class KaliInstallTests: XCTestCase {
     func testSetupScriptIsKalis() throws {
         let script = UbuntuInstallPipeline.kaliSetupScript(account: account)
         XCTAssertTrue(script.hasPrefix("#!/bin/sh"))
-        XCTAssertTrue(script.contains("Kali Linux installed by AVM"))
+        XCTAssertTrue(script.contains("Kali Linux installed by Guest House"))
         XCTAssertTrue(script.contains("/etc/gdm3/daemon.conf"))
         XCTAssertTrue(script.contains(#"XKBLAYOUT="gb""#))
         // Kali's own dconf profile is added to, not written over.
@@ -2258,7 +2258,7 @@ final class EnterpriseInstallTests: XCTestCase {
                      "repo --name=AppStream --baseurl=\"https://repo.almalinux.org/almalinux/10/AppStream/aarch64/os/\"\n",
                      "\n@^graphical-server-environment\n", "\norca\n", "\nspice-vdagent\n", "\nspice-webdavd\n",
                      "\nqemu-guest-agent\n", "\nautopart\n", "ignoredisk --only-use=vda\n", "--groups=wheel",
-                     "AlmaLinux installed by AVM", "AlmaLinux install failed", "\npoweroff\n"] {
+                     "AlmaLinux installed by Guest House", "AlmaLinux install failed", "\npoweroff\n"] {
             XCTAssertTrue(alma.contains(line), line)
         }
         XCTAssertFalse(alma.contains("btrfs"))
@@ -2269,7 +2269,7 @@ final class EnterpriseInstallTests: XCTestCase {
                                                               distro: .rocky, version: "10.2", disk: "vda")
         XCTAssertTrue(rocky.contains("url --url=\"https://download.rockylinux.org/pub/rocky/10/BaseOS/aarch64/os/\"\n"))
         XCTAssertFalse(rocky.contains("spice-webdavd\n"), "Rocky has no spice-webdavd package of its own")
-        XCTAssertTrue(rocky.contains("Rocky Linux installed by AVM"))
+        XCTAssertTrue(rocky.contains("Rocky Linux installed by Guest House"))
         // RHEL's guest agent is let answer guest-exec and guest-file, before the marker.
         let filter = try XCTUnwrap(rocky.range(of: "s/^FILTER_RPC_ARGS=.*/FILTER_RPC_ARGS=\"\"/' /etc/sysconfig/qemu-ga"))
         let marker = try XCTUnwrap(rocky.range(of: "AVMDONE.TAG"))
@@ -2384,7 +2384,7 @@ final class OpenSUSEInstallTests: XCTestCase {
         }
         XCTAssertTrue(try text(".//*[local-name()='pattern']").contains("gnome"))
         let source = try XCTUnwrap(try text(".//*[local-name()='source']").first)
-        XCTAssertTrue(source.contains("openSUSE Tumbleweed installed by AVM"))
+        XCTAssertTrue(source.contains("openSUSE Tumbleweed installed by Guest House"))
         XCTAssertTrue(source.contains("AVMFAIL.TAG"))
         XCTAssertTrue(source.contains("|| bash /tmp/avm-failed.sh"))
         // Without automatic sign-in there's no autologin user.
@@ -2446,7 +2446,7 @@ final class OpenSUSEInstallTests: XCTestCase {
     }
 
     // The tour's keys are real ones (2026-11-01): it's read out to people
-    // learning AVM, and a key that doesn't exist loses them.
+    // learning Guest House, and a key that doesn't exist loses them.
     func testEveryKeyTheTourNamesIsInTheMenus() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let tour = try String(contentsOf: root.appendingPathComponent("AVM/Tour.swift"), encoding: .utf8)
@@ -2503,7 +2503,7 @@ final class OpenSUSEInstallTests: XCTestCase {
         for _ in 0..<6 { XCTAssertEqual(look(), .none) }
         XCTAssertEqual(look(), .stuck)
         XCTAssertEqual(look(false, true), .alive)
-        // AVM wasn't looking for an hour, as when the Mac slept: not stuck.
+        // Guest House wasn't looking for an hour, as when the Mac slept: not stuck.
         now += 3600
         XCTAssertEqual(watch.look(agentAnswered: false, screenChanged: false, now: now), .none)
     }
@@ -2547,7 +2547,7 @@ final class OpenSUSEInstallTests: XCTestCase {
         XCTAssertFalse(QEMUStderrNoise.isHarmless("Nov  2 13:13:26  virgl_render_server[6991] <Debug>: npt: failed to map a blob"))
         XCTAssertFalse(QEMUStderrNoise.isHarmless("virtio_gpu_virgl_process_cmd: ctrl 0x102, error 0x1203"))
         XCTAssertFalse(QEMUStderrNoise.isHarmless("usb-camera: the Mac's camera went on"))
-        XCTAssertFalse(QEMUStderrNoise.isHarmless("AVM: open file limit 245760"))
+        XCTAssertFalse(QEMUStderrNoise.isHarmless("Guest House: open file limit 245760"))
         XCTAssertNil(QEMUStderrNoise.filter("warn:  GetCurrentThread not implemented.\n").kept)
         let mixed = QEMUStderrNoise.filter("warn:  SetThreadPriority not implemented.\nreal trouble\n")
         XCTAssertEqual(mixed.kept, "real trouble\n")
@@ -2600,7 +2600,7 @@ final class OpenSUSEInstallTests: XCTestCase {
         XCTAssertTrue(fine.words(machine: "PC").contains("NVDA is running"))
         XCTAssertTrue(fine.words(machine: "PC").contains("left ear only"))
         let silent = MachineCheckResult(agentAnswered: false, output: "", windows: true, soundLevels: nil)
-        XCTAssertTrue(silent.words(machine: "PC").contains("isn't answering AVM"))
+        XCTAssertTrue(silent.words(machine: "PC").contains("isn't answering Guest House"))
         let bad = MachineCheckResult(agentAnswered: true, output: "signedin=1\nreader=\nsound=0\nsounddevice=1\nclipboard=0\nsharedfolder=0\n", windows: false, soundLevels: (0, 0))
         XCTAssertEqual(bad.problems.count, 5)
         XCTAssertTrue(bad.words(machine: "L").contains("Super-Alt-S"))
@@ -2772,7 +2772,7 @@ final class PermanentDeleteTests: XCTestCase {
 
 // MARK: - The helper's version (2026-11-09, fourth audit #19)
 
-/// After an update the old root helper can keep running, and AVM only asks
+/// After an update the old root helper can keep running, and Guest House only asks
 /// it to exit when its version differs. So a helper change without a new
 /// helperBuildVersion runs the old code with nothing in the log. The helper
 /// isn't in this package, so this reads its source.
@@ -2780,8 +2780,8 @@ final class PermanentDeleteTests: XCTestCase {
 /// When it fails: bump helperBuildVersion if you haven't, then copy the two
 /// values from the failure message into `recorded`.
 final class HelperVersionTests: XCTestCase {
-    private let recorded = (version: "0.4.45",
-                            sources: "7112d891cfe4d29cf38d17cd7d26e5c781b94bddafff30cd161da62b697f0b52")
+    private let recorded = (version: "0.4.47",
+                            sources: "e4a5e5a8cc0883caae37d7d17cdb81e32d21e7bff1b17c8ea49c756255b2a452")
 
     private var helperFolder: URL {
         URL(fileURLWithPath: #filePath)

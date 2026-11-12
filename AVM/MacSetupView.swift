@@ -1,9 +1,9 @@
 // MacSetupView.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // New macOS Virtual Machine (2026-10-26): the setup sheet for a macOS
 // machine (MacGuest.swift). macOS comes from Apple, the newest version
-// this Mac supports, or from an IPSW file the user already has. AVM
+// this Mac supports, or from an IPSW file the user already has. Guest House
 // downloads it, installs it, and says how far it has got throughout; the
 // machine joins the dashboard list when the install has finished. macOS's
 // own Setup Assistant then runs at the first Start, where VoiceOver is
@@ -41,7 +41,7 @@ struct MacSetupView: View {
                 Text("New macOS Virtual Machine")
                     .font(.title)
                     .accessibilityAddTraits(.isHeader)
-                Text("macOS runs on Apple's own virtualization. AVM gets macOS from Apple and installs it, saying how far it has got. macOS's Setup Assistant then runs the first time you start the machine, and offers VoiceOver itself: give macOS the keyboard, wait about a minute on its first screen, and press Escape when it speaks. macOS keeps VoiceOver on after that. To use VoiceOver inside the machine, turn your Mac's VoiceOver off with Command-F5 while you work there.")
+                Text("macOS runs on Apple's own virtualization. Guest House gets macOS from Apple and installs it, saying how far it has got. macOS's Setup Assistant then runs the first time you start the machine, and offers VoiceOver itself: give macOS the keyboard, wait about a minute on its first screen, and press Escape when it speaks. macOS keeps VoiceOver on after that. To use VoiceOver inside the machine, turn your Mac's VoiceOver off with Command-F5 while you work there.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -89,7 +89,7 @@ struct MacSetupView: View {
 
                 if MacAutoSetup.isAvailable {
                     Toggle("Set up macOS for me", isOn: $autoSetup)
-                        .accessibilityHint("AVM goes through Setup Assistant at the first start, makes your account and signs in, with no screens to get through")
+                        .accessibilityHint("Guest House goes through Setup Assistant at the first start, makes your account and signs in, with no screens to get through")
                     if autoSetup {
                         TextField("Your full name", text: $fullName)
                             .textFieldStyle(.roundedBorder)
@@ -98,7 +98,7 @@ struct MacSetupView: View {
                             .textFieldStyle(.roundedBorder)
                             .accessibilityLabel("Password for the macOS account")
                         Toggle("Turn on VoiceOver in macOS", isOn: $voiceOver)
-                        Text("Account name: \(MacSetupAnswers.accountName(for: fullName)). AVM skips the optional steps: no Apple Account, Siri, Screen Time or location; you can turn any of them on later in System Settings. The password is kept in the machine's folder, readable only by you, until setup ends.")
+                        Text("Account name: \(MacSetupAnswers.accountName(for: fullName)). Guest House skips the optional steps: no Apple Account, Siri, Screen Time or location; you can turn any of them on later in System Settings. The password is kept in the machine's folder, readable only by you, until setup ends.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -120,7 +120,7 @@ struct MacSetupView: View {
                         .disabled(working)
                 }
                 if working {
-                    Text("Keep this window open. The download is large (26 GB for macOS 27) and is kept for your next macOS machine; the install itself takes a few minutes. AVM speaks each step.")
+                    Text("Keep this window open. The download is large (26 GB for macOS 27) and is kept for your next macOS machine; the install itself takes a few minutes. Guest House speaks each step.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -175,21 +175,21 @@ struct MacSetupView: View {
         }
         if autoSetup {
             guard !fullName.trimmingCharacters(in: .whitespaces).isEmpty, password.count >= 4 else {
-                Announcer.shared.announce("To set macOS up for you, AVM needs your full name and a password of at least 4 characters. Or turn off Set up macOS for me.", tone: .info)
+                Announcer.shared.announce("To set macOS up for you, Guest House needs your full name and a password of at least 4 characters. Or turn off Set up macOS for me.", tone: .info)
                 return
             }
         }
-        // AVM types these into macOS's setup, and only plain letters, numbers
+        // Guest House types these into macOS's setup, and only plain letters, numbers
         // and symbols can be typed (2026-11-01, audit). Accents come off a
         // name; a password stays exactly what the user knows, or isn't used.
         if autoSetup {
             guard password.canBeConverted(to: .ascii) else {
-                Announcer.shared.announce("AVM can only type plain letters, numbers and symbols into macOS's setup, and your password has other characters. Next: choose a password without them, or turn off Set up macOS for me.", tone: .failure)
+                Announcer.shared.announce("Guest House can only type plain letters, numbers and symbols into macOS's setup, and your password has other characters. Next: choose a password without them, or turn off Set up macOS for me.", tone: .failure)
                 return
             }
             fullName = fullName.applyingTransform(.stripDiacritics, reverse: false) ?? fullName
             guard fullName.canBeConverted(to: .ascii) else {
-                Announcer.shared.announce("AVM can only type plain letters into macOS's setup, and your full name has other characters. Next: write it with plain letters, or turn off Set up macOS for me.", tone: .failure)
+                Announcer.shared.announce("Guest House can only type plain letters into macOS's setup, and your full name has other characters. Next: write it with plain letters, or turn off Set up macOS for me.", tone: .failure)
                 return
             }
         }
@@ -202,7 +202,7 @@ struct MacSetupView: View {
             folder = try config.directoryURL()
         } catch {
             // Said (2026-10-29, seventh audit): Create did nothing, silently.
-            Announcer.shared.announce("AVM can't make a folder for \(trimmed). Reason: \(error.localizedDescription)", tone: .failure)
+            Announcer.shared.announce("Guest House can't make a folder for \(trimmed). Reason: \(error.localizedDescription)", tone: .failure)
             return
         }
         config.diskImagePath = MacGuestFiles(folder: folder).disk.path
@@ -461,7 +461,7 @@ struct MacSettingsView: View {
             .font(.headline)
             .accessibilityAddTraits(.isHeader)
         Picker("Monitor", selection: $displayID) {
-            Text("Wherever AVM puts it").tag(String?.none)
+            Text("Wherever Guest House puts it").tag(String?.none)
             ForEach(connectedDisplays) { display in
                 Text(display.choiceName).tag(Optional(display.id))
             }

@@ -1,11 +1,11 @@
 // SetupReport.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // What Windows Setup installed, said out loud (2026-10-26). The answer
 // file writes AVMSTATUS.TXT on the UNATTEND volume: one line per thing
 // setup checked for (jaws-installed, nvda-installed, ...), and
 // specialize-done / first-sign-in-done for how far it got. The first time
-// a machine starts after Windows is installed, AVM reads it and says what
+// a machine starts after Windows is installed, Guest House reads it and says what
 // is there and, by name, what isn't, with what to do. A failed installer
 // is then never silent. VMManager reads the file and retires it, so the
 // report is said once.
@@ -34,7 +34,7 @@ nonisolated enum SetupReport {
                            fix: "install NVDA from nvaccess.org in Windows")
 
     /// What to say, and whether everything was there. nil: no report (a
-    /// Windows installed before AVM wrote one), so nothing is said.
+    /// Windows installed before Guest House wrote one), so nothing is said.
     static func summary(reportText: String, expectsJAWS: Bool, expectsNVDA: Bool) -> (message: String, complete: Bool, failed: Bool, signedIn: Bool)? {
         let lines = Set(reportText.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
         guard lines.contains("specialize-done") else { return nil }

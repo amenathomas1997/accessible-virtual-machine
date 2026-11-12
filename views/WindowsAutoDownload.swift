@@ -1,20 +1,20 @@
 // WindowsAutoDownload.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Windows 11 for ARM with no website to touch (2026-10-30, the user's
 // request: a blind user should get Windows without ever handling a web
-// page). Microsoft's download page sits behind bot checks, and AVM doesn't
+// page). Microsoft's download page sits behind bot checks, and Guest House doesn't
 // try to get around them (WindowsISODownloader keeps that path, in the
 // browser). This takes the channel Microsoft's own Media Creation Tool
 // uses instead:
 //   - Its public catalog, products.cab (go.microsoft.com/fwlink/?LinkId=
 //     2156292), lists every Windows 11 download with a direct link on
-//     Microsoft's servers (dl.delivery.mp.microsoft.com) and a SHA-1. AVM
+//     Microsoft's servers (dl.delivery.mp.microsoft.com) and a SHA-1. Guest House
 //     reads it (macOS's tar opens the cabinet) and picks ARM64, in the Mac's
 //     language, English if Microsoft has none.
 //   - It downloads that file, an .esd of about 4.5 GB, saying how far along
 //     it is every 10 percent, and checks its SHA-1.
-//   - An .esd isn't an ISO, so AVM makes one, with the wimlib-imagex it
+//   - An .esd isn't an ISO, so Guest House makes one, with the wimlib-imagex it
 //     bundles for the install pipeline: image 1 is the setup files, 2 and 3
 //     Windows Setup's boot.wim, and the rest the editions (Home, Home Single
 //     Language, Pro), exported as install.wim, the name the pipeline reads.
@@ -115,7 +115,7 @@ final class WindowsAutoDownloader: NSObject, ObservableObject {
                 try await find()
             } catch {
                 guard !Task.isCancelled else { return }
-                fail("AVM couldn't get Windows from Microsoft. Reason: \(error.localizedDescription) Check the Mac's internet connection, then try again.")
+                fail("Guest House couldn't get Windows from Microsoft. Reason: \(error.localizedDescription) Check the Mac's internet connection, then try again.")
             }
         }
     }
@@ -202,7 +202,7 @@ final class WindowsAutoDownloader: NSObject, ObservableObject {
         self.task = task
         phase = .downloading
         resumes = 0
-        Announcer.shared.announce("Downloading Windows 11 for ARM, \(chosen.language), from Microsoft: \(LinuxISODownloader.size(chosen.size)). AVM says how far along it is every 10 percent.", tone: .info)
+        Announcer.shared.announce("Downloading Windows 11 for ARM, \(chosen.language), from Microsoft: \(LinuxISODownloader.size(chosen.size)). Guest House says how far along it is every 10 percent.", tone: .info)
         task.resume()
     }
 
@@ -264,7 +264,7 @@ final class WindowsAutoDownloader: NSObject, ObservableObject {
         guard phase == .downloading, self.session === session, let resumeData, resumes < 5 else { return false }
         resumes += 1
         AVMLog.write("Windows download: stopped; carrying on from where it got to (time \(resumes) of 5)")
-        Announcer.shared.announce("The download stopped. AVM is carrying on from where it got to.", tone: .info)
+        Announcer.shared.announce("The download stopped. Guest House is carrying on from where it got to.", tone: .info)
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(5 * resumes)) { [weak self] in
             guard let self, self.phase == .downloading, self.session === session else { return }
             let task = session.downloadTask(withResumeData: resumeData)
@@ -293,7 +293,7 @@ final class WindowsAutoDownloader: NSObject, ObservableObject {
             try FileManager.default.moveItem(at: temporary, to: esd)
         } catch {
             try? FileManager.default.removeItem(at: temporary)
-            fail("AVM couldn't keep the download. Reason: \(error.localizedDescription)")
+            fail("Guest House couldn't keep the download. Reason: \(error.localizedDescription)")
             return
         }
         job = Task { await verifyAndBuild(esd, offer: offer, work: work) }
@@ -311,7 +311,7 @@ final class WindowsAutoDownloader: NSObject, ObservableObject {
         }.value
         guard !Task.isCancelled else { return }
         guard sha1 == offer.sha1 else {
-            fail("The download didn't match Microsoft's checksum, so AVM deleted it. Try again.")
+            fail("The download didn't match Microsoft's checksum, so Guest House deleted it. Try again.")
             return
         }
         do {
@@ -323,7 +323,7 @@ final class WindowsAutoDownloader: NSObject, ObservableObject {
             onReady?(iso)
         } catch {
             guard !Task.isCancelled else { return }
-            fail("AVM couldn't make the Windows installer. Reason: \(error.localizedDescription)")
+            fail("Guest House couldn't make the Windows installer. Reason: \(error.localizedDescription)")
         }
     }
 
@@ -345,7 +345,7 @@ final class WindowsAutoDownloader: NSObject, ObservableObject {
         let images = Self.images(in: info)
         func image(_ test: (String) -> Bool, _ what: String) throws -> Int {
             guard let found = images.first(where: { test($0.name.lowercased()) }) else {
-                throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "The download isn't laid out as AVM expects: it has no \(what). Download Windows from Microsoft's page instead."])
+                throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "The download isn't laid out as Guest House expects: it has no \(what). Download Windows from Microsoft's page instead."])
             }
             return found.index
         }
@@ -483,7 +483,7 @@ extension WindowsAutoDownloader: URLSessionDownloadDelegate {
 /// The download with no window (2026-10-30), for a full system test of the
 /// Windows install the way a user gets it:
 ///
-///   AVM.app/Contents/MacOS/AVM --download-windows
+///   Guest House.app/Contents/MacOS/Guest House --download-windows
 ///
 /// It runs WindowsAutoDownloader exactly as the setup wizard's Download
 /// Windows 11 does, printing each step, and exits 0 with the ISO's path as

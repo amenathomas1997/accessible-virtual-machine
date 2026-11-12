@@ -1,9 +1,9 @@
 // ScreenReaderInstallers.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Gets the installers for the screen readers a Windows VM should have from
 // its first sign-in (2026-10-26): NVDA, free and GPL, from NV Access; JAWS
-// for ARM, from Freedom Scientific (Vispero). AVM never ships either one:
+// for ARM, from Freedom Scientific (Vispero). Guest House never ships either one:
 // it downloads each from its maker when the VM's install media is built.
 // JAWS's license doesn't allow redistribution, and downloading fresh means
 // every new VM gets the current version.
@@ -51,7 +51,7 @@ nonisolated enum ScreenReaderInstallerError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .download(let detail): return detail
-        case .checksum(let name): return "The \(name) installer didn't match its published checksum, so AVM didn't use it."
+        case .checksum(let name): return "The \(name) installer didn't match its published checksum, so Guest House didn't use it."
         }
     }
 }
@@ -87,20 +87,20 @@ nonisolated enum ScreenReaderInstallers {
                 if found.url.host == reader.vendorHost, found.url.scheme == "https" {
                     return found
                 }
-                AVMLog.write("AVM: ScreenReaders — NV Access's feed link isn't on \(reader.vendorHost); trying winget.")
+                AVMLog.write("Guest House: ScreenReaders — NV Access's feed link isn't on \(reader.vendorHost); trying winget.")
             } catch {
-                AVMLog.write("AVM: ScreenReaders — couldn't read NV Access's update feed (\(error.localizedDescription)); trying winget.")
+                AVMLog.write("Guest House: ScreenReaders — couldn't read NV Access's update feed (\(error.localizedDescription)); trying winget.")
             }
         }
         do {
             let found = try await lookUp(reader)
             guard found.url.host == reader.vendorHost, found.url.scheme == "https" else {
-                AVMLog.write("AVM: ScreenReaders — winget's \(reader.displayName) link isn't on \(reader.vendorHost).")
+                AVMLog.write("Guest House: ScreenReaders — winget's \(reader.displayName) link isn't on \(reader.vendorHost).")
                 return nil
             }
             return found
         } catch {
-            AVMLog.write("AVM: ScreenReaders — couldn't read winget's \(reader.displayName) manifest (\(error.localizedDescription)).")
+            AVMLog.write("Guest House: ScreenReaders — couldn't read winget's \(reader.displayName) manifest (\(error.localizedDescription)).")
             return nil
         }
     }
@@ -205,16 +205,16 @@ nonisolated enum ScreenReaderInstallers {
             // Windows installed with Narrator alone (2026-11-09, fifth audit #14).
             let found = await latest(reader)
             if found == nil, let kept = await newestGoodCopy(of: reader, in: cache) {
-                AVMLog.write("AVM: ScreenReaders — the newest release couldn't be looked up; using the \(reader.displayName) already downloaded (\(kept.lastPathComponent)).")
+                AVMLog.write("Guest House: ScreenReaders — the newest release couldn't be looked up; using the \(reader.displayName) already downloaded (\(kept.lastPathComponent)).")
                 got[reader] = kept
                 continue
             }
             let installer = found ?? pinned[reader]!
             let file = cache.appendingPathComponent("\(reader.rawValue)-\(installer.version).exe")
             // Hashed off the main actor (2026-10-29, seventh audit): this runs
-            // on the caller's actor, and 1.5 GB of SHA-256 froze AVM's speech.
+            // on the caller's actor, and 1.5 GB of SHA-256 froze Guest House's speech.
             if (try? await Task.detached { try matches(file, installer.checksum) }.value) == true {
-                AVMLog.write("AVM: ScreenReaders — reusing \(reader.displayName) \(installer.version).")
+                AVMLog.write("Guest House: ScreenReaders — reusing \(reader.displayName) \(installer.version).")
                 recordCopy(installer, at: file)
                 got[reader] = file
                 continue
@@ -233,7 +233,7 @@ nonisolated enum ScreenReaderInstallers {
                         try? FileManager.default.removeItem(at: file)
                         throw ScreenReaderInstallerError.checksum(reader.displayName)
                     }
-                    AVMLog.write("AVM: ScreenReaders — downloaded and checked \(reader.displayName) \(installer.version)\(attempt > 1 ? " on try \(attempt)" : "").")
+                    AVMLog.write("Guest House: ScreenReaders — downloaded and checked \(reader.displayName) \(installer.version)\(attempt > 1 ? " on try \(attempt)" : "").")
                     got[reader] = file
                     recordCopy(installer, at: file)
                     removeOlderCopies(of: reader, keeping: file, in: cache)
@@ -245,7 +245,7 @@ nonisolated enum ScreenReaderInstallers {
                     // try carries on from there (JAWS is 1.5 GB).
                     resumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data
                     let ns = error as NSError
-                    AVMLog.write("AVM: ScreenReaders — \(reader.displayName) try \(attempt) of \(downloadAttempts) failed from \(installer.url.host ?? "?"): \(error.localizedDescription) [\(ns.domain) \(ns.code)]\(resumeData != nil ? "; the next try carries on where it stopped" : "")")
+                    AVMLog.write("Guest House: ScreenReaders — \(reader.displayName) try \(attempt) of \(downloadAttempts) failed from \(installer.url.host ?? "?"): \(error.localizedDescription) [\(ns.domain) \(ns.code)]\(resumeData != nil ? "; the next try carries on where it stopped" : "")")
                     try? FileManager.default.removeItem(at: file.appendingPathExtension("part"))
                     if Task.isCancelled { break }
                     if attempt < downloadAttempts {
@@ -261,7 +261,7 @@ nonisolated enum ScreenReaderInstallers {
             // day #11): a newer release that wouldn't download meant Narrator
             // alone, though the last one, checked, was in the cache.
             if lastError != nil, !Task.isCancelled, let kept = await newestGoodCopy(of: reader, in: cache), kept != file {
-                AVMLog.write("AVM: ScreenReaders — \(reader.displayName) \(installer.version) didn't download; using the copy already downloaded (\(kept.lastPathComponent)).")
+                AVMLog.write("Guest House: ScreenReaders — \(reader.displayName) \(installer.version) didn't download; using the copy already downloaded (\(kept.lastPathComponent)).")
                 let version = versionInName(kept.lastPathComponent, of: reader).map { " \($0)" } ?? ""
                 await say("\(reader.displayName) \(installer.version) couldn't be downloaded, so the \(reader.displayName)\(version) already on this Mac is installed instead. \(reader.displayName) can update itself in Windows later.", false)
                 got[reader] = kept
@@ -345,7 +345,7 @@ nonisolated enum ScreenReaderInstallers {
         for name in (try? fm.contentsOfDirectory(atPath: cache.path)) ?? []
         where name.hasPrefix("\(reader.rawValue)-") && name != file.lastPathComponent && name != recordURL(of: file).lastPathComponent {
             let url = cache.appendingPathComponent(name)
-            // Only names AVM gives (2026-11-09, third audit of the day #26):
+            // Only names Guest House gives (2026-11-09, third audit of the day #26):
             // with --into a folder of the user's, a file of theirs that began
             // with the reader's name was deleted.
             guard let version = versionInName(name, of: reader) else { continue }
@@ -511,7 +511,7 @@ nonisolated enum ScreenReaderInstallers {
     private static func fetch(_ url: String) async throws -> Data {
         guard let u = URL(string: url) else { throw ScreenReaderInstallerError.download("bad address \(url)") }
         var request = URLRequest(url: u)
-        request.setValue("AVM", forHTTPHeaderField: "User-Agent")
+        request.setValue("Guest House", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 20
         let (data, response) = try await URLSession.shared.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {

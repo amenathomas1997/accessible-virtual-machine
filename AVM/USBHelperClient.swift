@@ -1,8 +1,8 @@
 //
 //  USBHelperClient.swift
-//  AVM
+//  Guest House
 //
-//  AVM's side of the root USB helper. Owns registration, the XPC
+//  Guest House's side of the root USB helper. Owns registration, the XPC
 //  connection, and turns the helper's honest state into speech.
 //
 //  Decisions of record (handoff 46):
@@ -19,7 +19,7 @@
 //      Dropping the connection here releases everything.
 //
 //  Connection lifetime (learned live 2026-09-07): the helper's idle
-//  exit waits for zero connections. An open NSXPCConnection from AVM
+//  exit waits for zero connections. An open NSXPCConnection from Guest House
 //  keeps a root process alive with nothing to do. So the connection
 //  lives only while a device is attached; one-off calls open it, use
 //  it, and drop it.
@@ -41,7 +41,7 @@
 //  service re-submits the job to launchd without a new approval.
 //
 //  A job that can't start (learned live 2026-10-29): launchd can also
-//  keep a job whose program it no longer finds, one AVM 0.3.8 had made
+//  keep a job whose program it no longer finds, one Guest House 0.3.8 had made
 //  six updates earlier ("No such process"). A call then gets no answer
 //  and no error, ever. The version check and the lists have a time
 //  limit; no answer to the check re-registers the helper
@@ -52,7 +52,7 @@
 //  self-voiced paragraph. Native dialogs are VoiceOver territory;
 //  self-voicing is for when VoiceOver may be off or a dialog makes no
 //  sense. The one-line "approved, continuing" stays spoken because at
-//  that moment the person is in System Settings, not in AVM.
+//  that moment the person is in System Settings, not in Guest House.
 //
 //  Status note (learned 2026-09-07): SMAppService reports .notFound for
 //  a daemon macOS has never been told about. The docs call that an
@@ -130,7 +130,7 @@ nonisolated enum USBHelperError: Error, CustomStringConvertible {
     /// helper's service while it can't start the program, and a call then
     /// gets neither a reply nor an error. Spoken by callers like any error.
     case noAnswer
-    /// No answer even after AVM registered the helper again (2026-10-29).
+    /// No answer even after Guest House registered the helper again (2026-10-29).
     /// The client has said so, with what to do; callers stay quiet, as
     /// they do for .notEnabled.
     case notStarting
@@ -142,8 +142,8 @@ nonisolated enum USBHelperError: Error, CustomStringConvertible {
         case .helperUnavailable(let s): return "helper unavailable: \(s)"
         case .interrupted(let s): return s
         case .helper(let step, let detail): return "\(step): \(detail)"
-        case .noAnswer: return "AVM's helper didn't answer"
-        case .notStarting: return "AVM's helper isn't starting"
+        case .noAnswer: return "Guest House's helper didn't answer"
+        case .notStarting: return "Guest House's helper isn't starting"
         }
     }
 
@@ -187,7 +187,7 @@ nonisolated final class HelperAnswer<Value>: @unchecked Sendable {
 final class USBHelperClient: NSObject, ObservableObject {
     static let shared = USBHelperClient()
 
-    /// SMAppService.Status, in AVM's own words.
+    /// SMAppService.Status, in Guest House's own words.
     enum HelperStatus: String {
         case notRegistered
         case enabled
@@ -207,7 +207,7 @@ final class USBHelperClient: NSObject, ObservableObject {
     /// connection open across that gap. See the header note.
     private var pendingDevices: Set<AVMUSBDeviceIdentity> = []
 
-    /// An attach failure can reach AVM twice: as a stateChanged event
+    /// An attach failure can reach Guest House twice: as a stateChanged event
     /// and as the call's own reply, in either order. Whichever arrives
     /// first speaks; the other stays quiet. Cleared on the next attach.
     private var announcedAttachFailures: Set<AVMUSBDeviceIdentity> = []
@@ -305,7 +305,7 @@ final class USBHelperClient: NSObject, ObservableObject {
                 return false
             case .notFound:
                 log("ensureRegistered: still notFound after register(); helper plist or binary missing from the bundle")
-                announce("The USB helper is missing from this copy of AVM. Step: registering the helper. Next: reinstall AVM.", tone: .failure)
+                announce("The USB helper is missing from this copy of Guest House. Step: registering the helper. Next: reinstall Guest House.", tone: .failure)
                 return false
             case .notRegistered, .unknown:
                 announce("The USB helper could not be registered with macOS. Step: registering the helper. Next: check the diagnostic log and report this.", tone: .failure)
@@ -326,7 +326,7 @@ final class USBHelperClient: NSObject, ObservableObject {
             announce("USB helper removed. Any redirected devices have been returned to the Mac.", tone: .info)
         } catch {
             log("unregister: threw: \(error)")
-            announce("The USB helper could not be removed. Step: unregistering the helper. Next: remove AVM from Login Items in System Settings.", tone: .failure)
+            announce("The USB helper could not be removed. Step: unregistering the helper. Next: remove Guest House from Login Items in System Settings.", tone: .failure)
         }
     }
 
@@ -363,8 +363,8 @@ final class USBHelperClient: NSObject, ObservableObject {
         approvalDialogShowing = true
         defer { approvalDialogShowing = false }
         let alert = NSAlert()
-        alert.messageText = "AVM needs permission to run its USB helper"
-        alert.informativeText = "macOS requires your approval before AVM can pass USB devices to a virtual machine. In System Settings, under General, then Login Items and Extensions, allow AVM to run in the background. AVM will announce when the helper is approved."
+        alert.messageText = "Guest House needs permission to run its USB helper"
+        alert.informativeText = "macOS requires your approval before Guest House can pass USB devices to a virtual machine. In System Settings, under General, then Login Items and Extensions, allow Guest House to run in the background. Guest House will announce when the helper is approved."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Open Login Items")
         alert.addButton(withTitle: "Not Now")
@@ -463,7 +463,7 @@ final class USBHelperClient: NSObject, ObservableObject {
         disconnectIfIdle()
     }
 
-    /// Before Sparkle relaunches AVM (2026-10-28): asks the helper to exit
+    /// Before Sparkle relaunches Guest House (2026-10-28): asks the helper to exit
     /// and waits for its answer, at most `wait`. Sparkle calls its delegate
     /// on the main thread, so this uses a connection of its own and never
     /// the main actor (a MainActor task can't run while the main thread
@@ -482,7 +482,7 @@ final class USBHelperClient: NSObject, ObservableObject {
     }
 
     /// A helper from before an update (2026-10-28, code review): it keeps
-    /// running for its idle grace period, and the new AVM would talk to
+    /// running for its idle grace period, and the new Guest House would talk to
     /// it. Once per run, before a device is taken: a helper answering with
     /// another version is asked to exit, so launchd starts this build's.
     /// One check per run, which every caller waits for (2026-10-28, fourth
@@ -519,7 +519,7 @@ final class USBHelperClient: NSObject, ObservableObject {
         }
         let version = answer.split(separator: " ").last.map(String.init) ?? answer
         guard version != AVMUSBHelperNames.helperBuildVersion else { return nil }
-        log("the running helper is \(version), this AVM expects \(AVMUSBHelperNames.helperBuildVersion); restarting it")
+        log("the running helper is \(version), this Guest House expects \(AVMUSBHelperNames.helperBuildVersion); restarting it")
         return Self.stopping(await restartHelper())
     }
 
@@ -573,7 +573,7 @@ final class USBHelperClient: NSObject, ObservableObject {
     /// Registers the helper again when it doesn't answer though Login
     /// Items says it's allowed. On the developer's Mac (2026-10-29, a
     /// Mantis Q40 the Bluetooth window never listed) launchd still had the
-    /// job AVM 0.3.8 made, six updates earlier. It couldn't find its
+    /// job Guest House 0.3.8 made, six updates earlier. It couldn't find its
     /// program ("No such process"), launchd tried every 10 seconds, and
     /// every call waited for good. register() again replaces the job
     /// without a new approval (see the header); if the helper still
@@ -591,7 +591,7 @@ final class USBHelperClient: NSObject, ObservableObject {
         log("repair: no answer in \(Int(answerLimit)) seconds though Login Items says enabled. launchd: \(await Self.launchdJob())")
         guard !repairTried else { return .failure(sayNotStarting()) }
         repairTried = true
-        announce("AVM's helper didn't answer, so AVM is setting it up again.", tone: .info)
+        announce("Guest House's helper didn't answer, so Guest House is setting it up again.", tone: .info)
 
         do {
             try service.register()
@@ -639,7 +639,7 @@ final class USBHelperClient: NSObject, ObservableObject {
 
     /// Said once for each request that finds the helper not starting.
     private func sayNotStarting() -> USBHelperError {
-        announce("AVM's helper isn't starting, so devices stay on the Mac. Next: in System Settings, under General, then Login Items and Extensions, turn AVM off and on again under Allow in the Background, then quit and reopen AVM.", tone: .failure)
+        announce("Guest House's helper isn't starting, so devices stay on the Mac. Next: in System Settings, under General, then Login Items and Extensions, turn Guest House off and on again under Allow in the Background, then quit and reopen Guest House.", tone: .failure)
         return .notStarting
     }
 
@@ -869,7 +869,7 @@ final class USBHelperClient: NSObject, ObservableObject {
         if case .success = result { keyboardActive = true }
         // A dropped launchd job (2026-10-29, seventh audit): re-registered
         // and asked once more, as attach() does; without it the keyboard
-        // was given up with "AVM's helper didn't answer".
+        // was given up with "Guest House's helper didn't answer".
         if case .failure(.helperUnavailable) = result, retrying == false, recoverLostRegistration() {
             return await holdKeyboard(keyboardID, retrying: true)
         }
@@ -878,7 +878,7 @@ final class USBHelperClient: NSObject, ObservableObject {
 
     /// The helper went away while it held the keyboard for Windows: the
     /// kernel has given the keyboard back to macOS, so Windows must let go
-    /// of any key still down, and AVM asks again (2026-10-26, keyboard
+    /// of any key still down, and Guest House asks again (2026-10-26, keyboard
     /// audit; this used to only log).
     /// Devices the helper held are the Mac's again once it's gone.
     private func devicesHelperLost() {
@@ -1069,7 +1069,7 @@ final class USBHelperClient: NSObject, ObservableObject {
             // Unplugging is normal in plug and play, so this uses the
             // ordinary sound, not the failure sound that cuts off other
             // speech (Allison, 2026-10-12). The VM has been told already.
-            // A device AVM already cleaned up after it vanished was
+            // A device Guest House already cleaned up after it vanished was
             // spoken then, so a late report is only logged.
             if stillKnown, isQuiet(device) {
                 log("yanked: not spoken; the send gate is handling \(device.description)")

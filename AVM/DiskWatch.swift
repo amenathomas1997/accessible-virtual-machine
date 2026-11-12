@@ -1,8 +1,8 @@
 // DiskWatch.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // DISK SPACE, SPOKEN (2026-10-27), as Hyper-V and VMware warn: while a
-// machine runs, AVM checks once a minute (VMManager.startDiskWatch):
+// machine runs, Guest House checks once a minute (VMManager.startDiskWatch):
 //   - the Mac's disk where the machine lives, which its disk grows into:
 //     said once at each of 20, 10 and 5 GB free, again only after it has
 //     had more than 25 GB free;
@@ -19,7 +19,7 @@ import Foundation
 
 nonisolated enum DiskWatch {
     static let gigabyte: Int64 = 1_073_741_824
-    /// Free space on the Mac at which AVM speaks, largest first.
+    /// Free space on the Mac at which Guest House speaks, largest first.
     static let hostThresholds: [Int64] = [20, 10, 5].map { $0 * gigabyte }
     /// More free than this, and the warnings start over.
     static let hostReset: Int64 = 25 * gigabyte
@@ -105,7 +105,7 @@ nonisolated enum DiskWatch {
     /// Where a Linux machine's second drive is mounted.
     static let linuxSecondDrive = "/mnt/avm-data"
 
-    /// The Disk column: what's used when AVM has heard, or the size it was given.
+    /// The Disk column: what's used when Guest House has heard, or the size it was given.
     /// A stopped machine's figures are from when it last ran, and say so. A machine
     /// that has never said (a macOS machine can't; 2026-11-03, the user's request)
     /// shows what its disk takes on the Mac, which holds restore points too and
@@ -184,7 +184,7 @@ nonisolated enum DiskWatch {
         """
     }
 
-    /// The disk QEMU named. Formatted only when AVM hasn't made it ready yet, and
+    /// The disk QEMU named. Formatted only when Guest House hasn't made it ready yet, and
     /// only if nothing is on it. Mounted at every Start: a restore point from before
     /// the drive puts back an /etc/fstab that doesn't name it (Windows finds it by
     /// itself). Everyone may use it, as the account in the machine isn't known here.
@@ -205,8 +205,8 @@ nonisolated enum DiskWatch {
         case "$type" in ext2|ext3|ext4|xfs|btrfs|vfat|exfat|ntfs|ntfs3) ;; *) type=; esac
         [ -n "$uuid" ] && [ -n "$type" ] || { sed -i '\\|^UUID= \(linuxSecondDrive) |d' /etc/fstab; echo partitioned; exit 0; }
         mkdir -p \(linuxSecondDrive)
-        # AVM's line names this file system: one made again has a new UUID.
-        # Only AVM's own form goes (audit of 2026-11-10 #24): any line naming
+        # Guest House's line names this file system: one made again has a new UUID.
+        # Only Guest House's own form goes (audit of 2026-11-10 #24): any line naming
         # the folder was deleted, a user's LABEL= line or one commented out
         # among them, at every Start. A line of the user's is left to rule.
         grep -q "^UUID=$uuid \(linuxSecondDrive) " /etc/fstab || { sed -i '\\|^UUID=[^ ]* \(linuxSecondDrive) |d' /etc/fstab; grep -qE '^[^#]*[[:space:]]\(linuxSecondDrive)[[:space:]]' /etc/fstab || echo "UUID=$uuid \(linuxSecondDrive) $type defaults,nofail 0 2" >> /etc/fstab; }
@@ -233,7 +233,7 @@ nonisolated enum DiskWatch {
               let handle = try? FileHandle(forUpdating: url) else { return }
         defer { try? handle.close() }
         let kept = (try? handle.seek(toOffset: UInt64(max(0, size.intValue - keep)))).flatMap { _ in try? handle.read(upToCount: keep) } ?? Data()
-        let note = Data("\n[AVM: the log passed \(limit >> 20) MB and was cut to its last \(keep >> 20) MB]\n".utf8)
+        let note = Data("\n[Guest House: the log passed \(limit >> 20) MB and was cut to its last \(keep >> 20) MB]\n".utf8)
         try? handle.truncate(atOffset: 0)
         try? handle.write(contentsOf: note + kept)
     }

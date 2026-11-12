@@ -1,10 +1,10 @@
 // VMConfiguration.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 
 import Foundation
 
 /// Persistent configuration for a single virtual machine.
-/// Stored as JSON in Application Support/AVM/configurations.json via VMStore.
+/// Stored as JSON in Application Support/<identifier>/configurations.json via VMStore.
 /// (Comment trued 2026-08-15: previously said "vms.json", a filename that has
 /// never existed in a shipped build.)
 ///
@@ -13,7 +13,7 @@ import Foundation
 /// automatic loader fails on a missing key for any property that is not
 /// optional, and one failure hides every VM in the file. So every setting
 /// added after 0.1.2 MUST be optional, with nil meaning "use the default".
-/// Older files then load unchanged, and an older AVM ignores keys it does
+/// Older files then load unchanged, and an older Guest House ignores keys it does
 /// not know.
 struct VMConfiguration: Identifiable, Codable, Hashable {
 
@@ -60,7 +60,7 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
 
     /// What happens when a USB device is plugged in while this VM is
     /// running. Stored as plain text, not as an enum, on purpose: an
-    /// unknown word from a newer AVM must read as the default, never fail
+    /// unknown word from a newer Guest House must read as the default, never fail
     /// the load. nil or an unknown word means Ask each time. Read it
     /// through effectiveUSBMode, never directly.
     var usbMode: String?
@@ -72,7 +72,7 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
     // MARK: - Guest operating system (Ubuntu, 2026-10-19)
 
     /// Which operating system this VM installs and runs. Plain text for the
-    /// same reason as usbMode. nil, or a word this AVM doesn't know, means
+    /// same reason as usbMode. nil, or a word this Guest House doesn't know, means
     /// Windows: every VM made before Ubuntu support is a Windows VM. Read
     /// it through guestOS, never directly.
     var guestOSName: String?
@@ -80,7 +80,7 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
     // MARK: - Windows edition (2026-10-25)
 
     /// Which edition Windows Setup installs: a WindowsEdition raw value.
-    /// Plain text for the same reason as usbMode. nil, or a word this AVM
+    /// Plain text for the same reason as usbMode. nil, or a word this Guest House
     /// doesn't know, means the install pipeline's own default (Windows 11
     /// Pro), exactly as before the setup wizard asked. Read it through
     /// windowsEdition, never directly.
@@ -112,7 +112,7 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
 
     // MARK: - Clipboard (2026-10-25)
 
-    /// Share the clipboard with the guest, through the SPICE agent AVM
+    /// Share the clipboard with the guest, through the SPICE agent Guest House
     /// installs (AVMPasteboard). nil means on, the default; false keeps the
     /// two clipboards apart. Read it through sharesClipboard.
     var shareClipboard: Bool?
@@ -164,7 +164,7 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
     var remoteDesktopPasswordMark: String?
 
     /// true: the machine has a USB camera fed by the Mac's camera
-    /// (2026-10-27, AVM's QEMU usb-camera). Off unless chosen. Read it
+    /// (2026-10-27, Guest House's QEMU usb-camera). Off unless chosen. Read it
     /// through sharesCamera.
     var shareCamera: Bool?
 
@@ -180,7 +180,7 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
     /// What happens when a braille display comes back within a minute of
     /// leaving Windows. "send" (or nil): it follows the user's earlier choice
     /// back to Windows, as a Monarch needs when it switches modes. "ask":
-    /// AVM asks, as for any braille display, because unplugging it to take
+    /// Guest House asks, as for any braille display, because unplugging it to take
     /// it back from Windows looks the same. Read it through
     /// brailleFollowsBack.
     var brailleFollowThrough: String?
@@ -192,7 +192,7 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
     /// for saying which one, even when it isn't connected.
     var windowsKeyboardID: String?
     var windowsKeyboardName: String?
-    /// true: an Apple ISO keyboard, whose § and ` keys AVM swaps back
+    /// true: an Apple ISO keyboard, whose § and ` keys Guest House swaps back
     /// (HIDKeyMap.isoSwapped). nil: a PC or ANSI keyboard, as it is.
     var windowsKeyboardAppleISO: Bool?
     /// Windows apps in the Mac's Command-Tab list (WindowsApps.swift,
@@ -231,7 +231,7 @@ struct VMConfiguration: Identifiable, Codable, Hashable {
 
     // MARK: - Screen readers in Windows (2026-10-26)
 
-    /// Screen readers AVM installs during Windows setup: ScreenReader raw
+    /// Screen readers Guest House installs during Windows setup: ScreenReader raw
     /// values. nil or empty means none, Narrator only, as before. Read it
     /// through windowsScreenReaders.
     var windowsScreenReaderNames: [String]?
@@ -368,7 +368,7 @@ extension VMConfiguration {
 
 extension VMConfiguration {
 
-    /// Application Support/AVM/VMs, where every VM lives unless the user
+    /// Application Support/<identifier>/VMs, where every VM lives unless the user
     /// chose another folder. Spelled "VMs", as VMStore's layout of record
     /// has it (the lowercase "vms" some older code used is the same folder
     /// on a case-insensitive disk).
@@ -420,10 +420,12 @@ extension VMConfiguration {
         // Only on the Mac's own volume (2026-11-05, second audit): on a share
         // or a drive that keeps ownership, the uid is whoever made the folder
         // on another computer, and machines that ran yesterday were refused.
-        if parent.lastPathComponent == "AVM Virtual Machines" {
+        // Both names (2026-11-12): machines made before the app was renamed sit
+        // in the folder named after AVM.
+        if ["Guest House Virtual Machines", "AVM" + " Virtual Machines"].contains(parent.lastPathComponent) {
             var info = stat(), users = stat()
             if lstat(parent.path, &info) == 0, stat("/Users", &users) == 0, info.st_dev == users.st_dev, info.st_uid != getuid() {
-                throw MachineFolderError(errorDescription: "The folder \(parent.path) belongs to another account on this Mac, so AVM won't keep machines in it. Next: move the machine to a folder of your own.")
+                throw MachineFolderError(errorDescription: "The folder \(parent.path) belongs to another account on this Mac, so Guest House won't keep machines in it. Next: move the machine to a folder of your own.")
             }
         }
         chmod(dir.path, 0o700)
@@ -489,13 +491,13 @@ extension VMConfiguration {
         if let drive = storageDriveName {
             return "\(name) is stored on the drive \(drive), which isn't connected. Next: connect \(drive), then try again."
         }
-        return "AVM can't find the folder that holds \(name), at \(storageFolderPath ?? "its saved location"). Next: if it's on an external drive, connect the drive, then try again. If the drive is connected under another name, such as its name and a 1, eject it, then connect it again."
+        return "Guest House can't find the folder that holds \(name), at \(storageFolderPath ?? "its saved location"). Next: if it's on an external drive, connect the drive, then try again. If the drive is connected under another name, such as its name and a 1, eject it, then connect it again."
     }
 }
 
 // MARK: - Guest operating system
 
-/// The operating systems AVM installs. Raw values are the words
+/// The operating systems Guest House installs. Raw values are the words
 /// guestOSName stores.
 enum GuestOS: String {
     case windows
@@ -522,7 +524,7 @@ enum GuestOS: String {
     /// Runs on Apple's Virtualization framework, not QEMU (MacGuest.swift).
     case macOS
 
-    /// The name AVM says and shows for the running guest: "Enter Ubuntu",
+    /// The name Guest House says and shows for the running guest: "Enter Ubuntu",
     /// "Ubuntu keyboard on", "Send the keyboard to Ubuntu?".
     var displayName: String {
         switch self {
@@ -538,7 +540,7 @@ enum GuestOS: String {
         }
     }
 
-    /// Every guest but Windows and macOS: AVM's Linux install and run path
+    /// Every guest but Windows and macOS: Guest House's Linux install and run path
     /// (account, Orca, install markers, stall watch).
     var isLinux: Bool { self != .windows && self != .macOS }
 
@@ -550,7 +552,7 @@ enum GuestOS: String {
     var remoteDesktopIsGNOME: Bool { self == .almalinux || self == .rocky }
 
     /// The shared folder's guest service, spice-webdavd, is there, so
-    /// Settings offers a shared folder: on Rocky, AlmaLinux's, which AVM
+    /// Settings offers a shared folder: on Rocky, AlmaLinux's, which Guest House
     /// installs (UbuntuInstallPipeline.rockyWebDAV, 2026-10-31).
     var hasSharedFolderService: Bool { self != .macOS }
 }
@@ -596,7 +598,7 @@ enum WindowsEdition: String, CaseIterable, Identifiable {
     /// file's /IMAGE/NAME must say: the wanted name if the disc has it, or
     /// else the image with that edition's id. A French disc calls Windows 11
     /// Home "Windows 11 Famille", and matching by the English name alone
-    /// refused every such disc, the one AVM downloads in the Mac's language
+    /// refused every such disc, the one Guest House downloads in the Mac's language
     /// among them. Nil when the disc has no such edition.
     nonisolated static func imageName(for wanted: String, among images: [(name: String, editionID: String?)]) -> String? {
         if images.contains(where: { $0.name == wanted }) { return wanted }
@@ -665,8 +667,8 @@ struct RememberedUSBDevice: Codable, Hashable, Identifiable {
     }
 
     /// true means use in Windows, false means keep on the Mac. nil means an
-    /// unknown word from a newer AVM, which callers treat as not
-    /// remembered, so AVM asks.
+    /// unknown word from a newer Guest House, which callers treat as not
+    /// remembered, so Guest House asks.
     var usesWindows: Bool? {
         switch decision {
         case "windows": return true
@@ -684,7 +686,7 @@ struct RememberedUSBDevice: Codable, Hashable, Identifiable {
 
 // MARK: - Screen readers (2026-10-26)
 
-/// Screen readers AVM can install in Windows during setup. Raw values are
+/// Screen readers Guest House can install in Windows during setup. Raw values are
 /// the words windowsScreenReaderNames stores.
 nonisolated enum ScreenReader: String, CaseIterable, Identifiable, Sendable {
     case nvda

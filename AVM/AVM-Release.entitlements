@@ -5,7 +5,7 @@
   com.apple.security.cs.disable-library-validation: Tools/build-installer.sh
   signs every library and framework in the app with the one Developer ID,
   so library validation can stay on, and nothing signed by anyone else can
-  be loaded into AVM (which the root USB helper trusts). Debug builds keep
+  be loaded into Guest House (which the root USB helper trusts). Debug builds keep
   AVM.entitlements, because their sysroot libraries are signed ad hoc.
 -->
 <plist version="1.0">

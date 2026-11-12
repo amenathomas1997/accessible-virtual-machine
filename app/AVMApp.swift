@@ -1,5 +1,5 @@
 // AVMApp.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 
 import SwiftUI
 import AppKit
@@ -56,17 +56,17 @@ struct AVMApp: App {
     @ObservedObject private var macGuest = MacGuestRunner.shared
     @ObservedObject private var backgroundMode = BackgroundMode.shared
 
-    /// AVM's FIRST app delegate (added 2026-07-26). See AVMAppDelegate below
+    /// Guest House's FIRST app delegate (added 2026-07-26). See AVMAppDelegate below
     /// for why one became necessary.
     @NSApplicationDelegateAdaptor(AVMAppDelegate.self) private var appDelegate
 
     /// --build-install-media (InstallMediaJob.swift) builds install media
     /// with no window and exits before anything else starts; any other
     /// launch carries on as always. --audit-accessibility
-    /// (AccessibilityAudit.swift, 2026-10-26) checks AVM's own screens the
+    /// (AccessibilityAudit.swift, 2026-10-26) checks Guest House's own screens the
     /// same way, window-less as far as the user can tell, and exits.
     init() {
-        // A client that goes away mid-reply must not take AVM down
+        // A client that goes away mid-reply must not take Guest House down
         // (2026-10-28, control-socket fuzz): a write to a closed socket
         // raises SIGPIPE, whose default ends the process, machines and all.
         // Ignored here, that write fails with EPIPE, which every socket
@@ -84,6 +84,11 @@ struct AVMApp: App {
         KeyboardTestJob.playAudioIfAsked()
         KeyboardTestJob.serveFolderIfAsked()
         SaveResumeTestJob.runIfAsked()
+        // fork-only
+        // Machines and settings from when this was AVM (2026-11-12,
+        // FromAVM.swift), before the list, the log or the updater exist.
+        FromAVM.carryOver()
+        // /fork-only
     }
 
     var body: some Scene {
@@ -94,9 +99,9 @@ struct AVMApp: App {
         }
         .windowStyle(.automatic)
         .commands {
-            // AVM's own Settings, Command-Comma (2026-10-30), from the
+            // Guest House's own Settings, Command-Comma (2026-10-30), from the
             // Settings scene below; Background and Startup moved into it.
-            // Remove the default New Window menu item — AVM is single-window.
+            // Remove the default New Window menu item — Guest House is single-window.
             CommandGroup(replacing: .newItem) { }
             // A way to the list from any window (2026-10-28, fifth audit):
             // with only a machine's window up, nothing could open it, and
@@ -104,7 +109,7 @@ struct AVMApp: App {
             // SwiftUI's window opener to comeForward and DashboardCommand.
             CommandGroup(before: .windowList) { ShowDashboardCommand() }
 
-            // Check for Updates… (application menu, after About AVM) — ADDED
+            // Check for Updates… (application menu, after About Guest House) — ADDED
             // 2026-08-16. Placement is the macOS convention and therefore the
             // first place a VoiceOver user will look; this is an APP
             // operation, so it does not belong in the Virtual Machine menu
@@ -121,11 +126,11 @@ struct AVMApp: App {
                     updater.checkForUpdates()
                 }
                 .disabled(!updater.canCheckForUpdates)
-                // Remove AVM… (2026-10-30, RemoveAVM.swift): the helper and
+                // Remove Guest House… (2026-10-30, RemoveAVM.swift): the helper and
                 // login item with it, which dragging to the Trash leaves.
                 // Permissions… (2026-10-30, Permissions.swift).
                 Button("Permissions…") { PermissionsCenter.shared.show() }
-                Button("Remove AVM…") { RemoveAVM.ask() }
+                Button("Remove Guest House…") { RemoveAVM.ask() }
             }
 
             // Save Diagnostic Log… (File menu) — STAGE D (2026-08-06). The
@@ -252,18 +257,18 @@ struct AVMApp: App {
             // handlers keep their own guards and spoken refusals as defense
             // in depth.
             //
-            // The shortcuts only fire when AVM has key focus OUTSIDE focus
+            // The shortcuts only fire when Guest House has key focus OUTSIDE focus
             // lock (inside lock, keys forward to the guest), which is exactly
             // the intended flow. For Cmd-Shift-E and Cmd-Shift-S in
             // particular this is correct by construction — inside Windows,
             // those chords should be the guest's Win+Shift+E / Win+Shift+S
-            // (File Explorer / snipping), not AVM commands.
+            // (File Explorer / snipping), not Guest House commands.
             //
             // STAGE C (2026-08-03): the menu-action log lines below were
             // promoted from NSLog to AVMLog.write — a chord that "did
             // nothing" is a classic field report, and the file log is what
             // Stage D's diagnostic bundle will carry. Privacy check: these
-            // lines name AVM menu commands and VM state only, never guest
+            // lines name Guest House menu commands and VM state only, never guest
             // keystrokes, so the key-naming prohibition does not apply.
             // 6. Attach USB Device… / Detach USB Device… (no key combos) —
             //    Detach became Return Devices to Mac… (2026-10-29,
@@ -333,7 +338,7 @@ struct AVMApp: App {
             #endif
             CommandMenu("Virtual Machine") {
                 Button("Start Virtual Machine") {
-                    AVMLog.write("AVM: Start Virtual Machine menu — posting start request to ContentView.")
+                    AVMLog.write("Guest House: Start Virtual Machine menu — posting start request to ContentView.")
                     DashboardCommand.post(.avmStartVMFromMenu, object: nil)
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
@@ -343,7 +348,7 @@ struct AVMApp: App {
                     Menu("Start") {
                         ForEach(vmStore.configurations) { config in
                             Button(config.name) {
-                                AVMLog.write("AVM: Start submenu — posting start request for '\(config.name)' to ContentView.")
+                                AVMLog.write("Guest House: Start submenu — posting start request for '\(config.name)' to ContentView.")
                                 DashboardCommand.post(.avmStartVMFromMenu, object: config.id)
                             }
                         }
@@ -355,7 +360,7 @@ struct AVMApp: App {
                     // A macOS machine has its own window and keyboard model
                     // (2026-10-26, MacGuest.swift).
                     if macGuest.runningID != nil && !activity.isRunningOrPaused {
-                        AVMLog.write("AVM: Enter macOS menu — giving the macOS machine the keyboard.")
+                        AVMLog.write("Guest House: Enter macOS menu — giving the macOS machine the keyboard.")
                         macGuest.enter()
                         return
                     }
@@ -363,20 +368,20 @@ struct AVMApp: App {
                     // the current machine (the one last in front) is running
                     // or paused. Its window comes forward with the keyboard.
                     guard let manager = VMManager.shared else {
-                        AVMLog.write("AVM: Enter Windows menu — no VMManager; beeping.")
+                        AVMLog.write("Guest House: Enter Windows menu — no VMManager; beeping.")
                         NSSound.beep()
                         return
                     }
                     switch manager.state {
                     case .running, .paused:
-                        AVMLog.write("AVM: Enter Windows menu — entering the current machine.")
+                        AVMLog.write("Guest House: Enter Windows menu — entering the current machine.")
                         if let id = MachineSessions.shared.currentID {
                             MachineSessions.shared.enter(id)
                         } else {
                             focusLock.lock()
                         }
                     default:
-                        AVMLog.write("AVM: Enter Windows menu — VM not running/paused (state=\(manager.state)); beeping.")
+                        AVMLog.write("Guest House: Enter Windows menu — VM not running/paused (state=\(manager.state)); beeping.")
                         NSSound.beep()
                     }
                 }
@@ -387,14 +392,14 @@ struct AVMApp: App {
                 // reaches the macOS machine for 10 seconds. MacGuest.swift.
                 if macGuest.runningID != nil {
                     Button("Pass Command-F5 to macOS") {
-                        AVMLog.write("AVM: Pass Command-F5 menu — system keys to the macOS machine for 10 seconds.")
+                        AVMLog.write("Guest House: Pass Command-F5 menu — system keys to the macOS machine for 10 seconds.")
                         macGuest.passSystemKeysBriefly()
                     }
                     .keyboardShortcut("v", modifiers: [.command, .option, .shift])
                 }
 
                 Button("Speak Status") {
-                    AVMLog.write("AVM: Speak Status menu — posting request to ContentView.")
+                    AVMLog.write("Guest House: Speak Status menu — posting request to ContentView.")
                     DashboardCommand.post(.avmSpeakStatusFromMenu, object: nil)
                 }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
@@ -411,7 +416,7 @@ struct AVMApp: App {
                             Announcer.shared.announce(manager.screenNeedsWindowWords ?? "\(manager.machineName)'s screen couldn't be read. Next: make sure it's running, then try again.", tone: .failure)
                             return
                         }
-                        AVMLog.write("AVM: Read Screen — \(text.split(separator: "\n").count) line(s) read.")
+                        AVMLog.write("Guest House: Read Screen — \(text.split(separator: "\n").count) line(s) read.")
                         Announcer.shared.announce(text.isEmpty ? "No text on \(manager.machineName)'s screen." : text, tone: .info, logAs: "Read Screen's text")
                     }
                 }
@@ -445,7 +450,7 @@ struct AVMApp: App {
                 .keyboardShortcut("i", modifiers: [.command, .option, .shift])
                 .disabled(!activity.isRunning)
 
-                // Repair for AVM (2026-10-31, GuestRepair.swift): a Fedora,
+                // Repair for Guest House (2026-10-31, GuestRepair.swift): a Fedora,
                 // AlmaLinux, Rocky or openSUSE machine from before 0.4.19.
                 // Check This Machine (2026-11-01, MachineCheck.swift).
                 Button("Check This Machine") {
@@ -481,7 +486,7 @@ struct AVMApp: App {
                 }
                 .disabled(!activity.isRunning)
 
-                Button("Repair \(focusLock.guestName) for AVM…") {
+                Button("Repair \(focusLock.guestName) for Guest House…") {
                     Task { @MainActor in
                         guard let manager = VMManager.shared else { return }
                         await manager.repairForAVM()
@@ -526,8 +531,8 @@ struct AVMApp: App {
                         guard !manager.isCheckingKeyboard else { return }
                         Announcer.shared.announce("Checking \(manager.machineName)'s keyboard.", tone: .info)
                         if let layout = await manager.keyboardLayoutIfNotUS() {
-                            AVMLog.write("AVM: Type Clipboard — not typed: the machine's keyboard layout is \(layout)")
-                            Announcer.shared.announce("\(manager.machineName)'s keyboard isn't a US one, and AVM can only type on a US keyboard, so nothing was typed. Next: enter \(manager.machineName) and type it yourself, or paste it once you're signed in.", tone: .failure)
+                            AVMLog.write("Guest House: Type Clipboard — not typed: the machine's keyboard layout is \(layout)")
+                            Announcer.shared.announce("\(manager.machineName)'s keyboard isn't a US one, and Guest House can only type on a US keyboard, so nothing was typed. Next: enter \(manager.machineName) and type it yourself, or paste it once you're signed in.", tone: .failure)
                             return
                         }
                         Announcer.shared.announce("Typing \(text.count) characters into \(manager.machineName). Press Command-Shift-V again to stop.", tone: .info)
@@ -563,7 +568,7 @@ struct AVMApp: App {
                 .disabled(!activity.isRunning)
 
                 Button("Attach USB Device…") {
-                    AVMLog.write("AVM: Attach USB Device menu — posting request to ContentView.", category: "USBHelper")
+                    AVMLog.write("Guest House: Attach USB Device menu — posting request to ContentView.", category: "USBHelper")
                     DashboardCommand.post(.avmAttachUSBFromMenu, object: nil)
                 }
                 // A shortcut (2026-10-27): sending a device that stayed on
@@ -631,7 +636,7 @@ struct AVMApp: App {
                     Menu("Export Virtual Machine") {
                         ForEach(vmStore.configurations) { config in
                             Button("\(config.name)…") {
-                                AVMLog.write("AVM: Export submenu — posting export request for '\(config.name)' to ContentView.")
+                                AVMLog.write("Guest House: Export submenu — posting export request for '\(config.name)' to ContentView.")
                                 DashboardCommand.post(.avmExportVMFromMenu, object: config.id)
                             }
                         }
@@ -639,27 +644,27 @@ struct AVMApp: App {
                 } else {
                     Button("Export Virtual Machine…") {
                         guard let config = vmStore.configurations.first else { return }
-                        AVMLog.write("AVM: Export Virtual Machine menu — posting export request for '\(config.name)' to ContentView.")
+                        AVMLog.write("Guest House: Export Virtual Machine menu — posting export request for '\(config.name)' to ContentView.")
                         DashboardCommand.post(.avmExportVMFromMenu, object: config.id)
                     }
                     .disabled(vmStore.configurations.isEmpty)
                 }
 
                 Button("Import Virtual Machine…") {
-                    AVMLog.write("AVM: Import Virtual Machine menu — posting import request to ContentView.")
+                    AVMLog.write("Guest House: Import Virtual Machine menu — posting import request to ContentView.")
                     DashboardCommand.post(.avmImportVMFromMenu, object: nil)
                 }
 
                 Divider()
 
                 Button("Reclaim Disk Space…") {
-                    AVMLog.write("AVM: Reclaim Disk Space menu — posting reclaim request to ContentView.")
+                    AVMLog.write("Guest House: Reclaim Disk Space menu — posting reclaim request to ContentView.")
                     DashboardCommand.post(.avmReclaimFromMenu, object: nil)
                 }
             }
 
             // Help menu (2026-10-24, suggested by Victor Tsaran). The system's
-            // own Help item only said help isn't available for AVM. This
+            // own Help item only said help isn't available for Guest House. This
             // replaces it with one item that opens the README, where the
             // help is. It goes straight to the README rather than the
             // repository's main page, so someone who's stuck lands where
@@ -668,17 +673,17 @@ struct AVMApp: App {
             // never received it (tested 2026-10-24). The search field is the
             // system's and stays.
             CommandGroup(replacing: .help) {
-                // Take the AVM Tour (2026-10-31, Tour.swift).
-                Button("Take the AVM Tour") {
+                // Take the Guest House Tour (2026-10-31, Tour.swift).
+                Button("Take the Guest House Tour") {
                     Tour.show()
                 }
-                // What's New in AVM (2026-10-30, AVMUpdater.swift).
-                Button("What's New in AVM") {
+                // What's New in Guest House (2026-10-30, AVMUpdater.swift).
+                Button("What's New in Guest House") {
                     ReleaseNotes.showRecent()
                 }
                 // The machine list from its kept copy (2026-11-05, second audit):
                 // an unreadable configurations.json was copied aside and the
-                // next save replaced it, with nothing in AVM to bring it back.
+                // next save replaced it, with nothing in Guest House to bring it back.
                 Button("Restore the Machine List from a Copy…") {
                     VMStore.shared?.restoreListFromCopy()
                 }
@@ -686,38 +691,38 @@ struct AVMApp: App {
                 Button("Report a Problem…") {
                     ProblemReporter.reportAProblem()
                 }
-                Button("AVM README on GitHub") {
-                    AVMLog.write("AVM: Help menu — opening the README on GitHub.")
+                Button("Guest House README on GitHub") {
+                    AVMLog.write("Guest House: Help menu — opening the README on GitHub.")
                     if let url = URL(string: "https://github.com/amenathomas1997/accessible-virtual-machine#readme") {
                         NSWorkspace.shared.open(url)
                     }
                 }
                 // Open Source Licenses (2026-10-29, seventh audit): the
-                // bundled software's license texts and AVM's offer of their
+                // bundled software's license texts and Guest House's offer of their
                 // source code, in Resources/Licenses, opened in the Finder.
                 Button("Open Source Licenses") {
                     let folder = Bundle.main.resourceURL?.appendingPathComponent("Licenses", isDirectory: true)
                     if let folder, FileManager.default.fileExists(atPath: folder.path) {
-                        AVMLog.write("AVM: Help menu — opening the Licenses folder.")
+                        AVMLog.write("Guest House: Help menu — opening the Licenses folder.")
                         NSWorkspace.shared.open(folder)
                     } else {
-                        Announcer.shared.announce("This build of AVM has no Licenses folder. The license texts and the source offer are in THIRD-PARTY-NOTICES.txt in AVM's repository on GitHub.", tone: .info)
+                        Announcer.shared.announce("This build of Guest House has no Licenses folder. The license texts and the source offer are in THIRD-PARTY-NOTICES.txt in Guest House's repository on GitHub.", tone: .info)
                     }
                 }
             }
         }
 
-        // AVM's menu bar item while Run in the Background is on
-        // (2026-10-28, BackgroundMode.swift): the way back to AVM when it
+        // Guest House's menu bar item while Run in the Background is on
+        // (2026-10-28, BackgroundMode.swift): the way back to Guest House when it
         // isn't in Command-Tab or the Dock.
-        MenuBarExtra("AVM", systemImage: "pc", isInserted: Binding(
+        MenuBarExtra("Guest House", systemImage: "pc", isInserted: Binding(
             get: { backgroundMode.runInBackground },
             set: { _ in })) {
             BackgroundMenu()
         }
 
-        // AVM's own Settings (2026-10-30, AppPreferencesView.swift): the
-        // AVM menu's Settings item, Command-Comma from any AVM window.
+        // Guest House's own Settings (2026-10-30, AppPreferencesView.swift): the
+        // Guest House menu's Settings item, Command-Comma from any Guest House window.
         Settings {
             AppPreferencesView()
                 .environmentObject(vmStore)
@@ -728,19 +733,19 @@ struct AVMApp: App {
 
 // MARK: - App delegate
 
-/// AVM's first app delegate, added 2026-07-26 for ONE reason: the Caps Lock
+/// Guest House's first app delegate, added 2026-07-26 for ONE reason: the Caps Lock
 /// remap needs a lifecycle, and SwiftUI's App protocol has no hook that fires
 /// at quit.
 ///
 /// WHY THIS WAS NECESSARY (verified by grep 2026-07-26, not assumed):
-///   FocusLockManager.cleanup() exists and has ZERO callers. AVM had no
+///   FocusLockManager.cleanup() exists and has ZERO callers. Guest House had no
 ///   NSApplicationDelegate, no
 ///   applicationWillTerminate, no lifecycle hooks of any kind. Nothing ran at
 ///   quit. For the Caps Lock remap that is not a cosmetic gap: quitting while
 ///   locked would strand the mapping EVERY TIME — not just on a crash — and
 ///   the user's Caps Lock would stay dead on their Mac, system-wide, with no
 ///   caps, no screen-reader modifier, and nothing connecting the symptom to
-///   AVM. A blind user would experience their whole machine as broken.
+///   Guest House. A blind user would experience their whole machine as broken.
 ///
 /// SCOPE IS DELIBERATELY MINIMAL. This delegate does exactly two things, both
 /// Caps Lock. It does NOT wire up the two orphaned cleanup() methods, even
@@ -754,9 +759,9 @@ struct AVMApp: App {
 ///     completion to land, which is why CapsLockRemapper's hidutil calls are
 ///     synchronous Process invocations rather than async.
 ///   - recoverAtLaunch covers what termination cannot: crash, force quit,
-///     power loss. It is gated on a UserDefaults flag, so if AVM did exit
+///     power loss. It is gated on a UserDefaults flag, so if Guest House did exit
 ///     cleanly it touches NOTHING — that is what protects a user who runs
-///     their own persistent Caps Lock remap from having AVM wipe it at launch.
+///     their own persistent Caps Lock remap from having Guest House wipe it at launch.
 ///   Reboot also clears any hidutil mapping, which is the last-resort remedy
 ///   and belongs in the tester guide's troubleshooting section.
 ///
@@ -776,37 +781,37 @@ struct AVMApp: App {
 final class AVMAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSLog("AVM: AppDelegate — applicationDidFinishLaunching; running Caps Lock recovery check.")
+        NSLog("Guest House: AppDelegate — applicationDidFinishLaunching; running Caps Lock recovery check.")
         // No window tabs (2026-11-10, audit of that day #41): a tab bar's
         // "+" would make a second list window, with every command answered
         // twice, and "Prefer tabs: Always" tabbed machines' windows together.
         NSWindow.allowsAutomaticWindowTabbing = false
-        // One AVM at a time (2026-11-08, fourth audit #10): each process
+        // One Guest House at a time (2026-11-08, fourth audit #10): each process
         // reads configurations.json once and writes the whole list back, so
         // a second copy (one left in Downloads, a relaunch overlapping a slow
         // quit) silently undid the first's changes, and both took the control
         // socket and ran the hourly backup. Test runs and `ctl` pass
-        // arguments and are not AVM proper; a test support folder means a
+        // arguments and are not Guest House proper; a test support folder means a
         // test's own copy. The copy already open is brought forward.
         if CommandLine.arguments.count == 1, ProcessInfo.processInfo.environment["AVM_TEST_SUPPORT_DIR"] == nil,
            let bundleID = Bundle.main.bundleIdentifier,
            let other = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
                .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated }) {
-            AVMLog.write("AVM: another AVM (pid \(other.processIdentifier), \(other.bundleURL?.path ?? "?")) is already open; bringing it forward and quitting this one")
+            AVMLog.write("Guest House: another Guest House (pid \(other.processIdentifier), \(other.bundleURL?.path ?? "?")) is already open; bringing it forward and quitting this one")
             other.activate()
             // Not NSApp.terminate: applicationWillTerminate would put the
-            // other AVM's Caps Lock back and quit its Windows apps.
+            // other Guest House's Caps Lock back and quit its Windows apps.
             exit(0)
         }
         MainActor.assumeIsolated {
             // Not in a test run (2026-10-29, sixth audit): it shares the
-            // user's AVM settings, and restored Caps Lock under the user's
-            // own AVM while its keyboard was in Windows, or turned VoiceOver
+            // user's Guest House settings, and restored Caps Lock under the user's
+            // own Guest House while its keyboard was in Windows, or turned VoiceOver
             // back on while the user was in a macOS machine.
             let testRun = CommandLine.arguments.contains { $0.hasPrefix("--test-") || $0 == "--run-in-guest" }
             if !testRun {
                 CapsLockRemapper.shared.recoverAtLaunch()
-                // The Mac's VoiceOver back on if AVM ended while it was off for a
+                // The Mac's VoiceOver back on if Guest House ended while it was off for a
                 // macOS machine (2026-10-26).
                 MacVoiceOver.recoverAtLaunch()
             }
@@ -816,6 +821,9 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
             SleepCoordinator.shared.start()
             ControlServer.shared.start()
             if !testRun { Self.forgetReceiver() }
+            // fork-only
+            if !testRun { FromAVM.report() }
+            // /fork-only
             // Windows apps in Command-Tab (2026-10-29, WindowsApps.swift);
             // not for a test run, whose machines aren't the user's.
             if !testRun { WindowsApps.shared.start() }
@@ -825,15 +833,15 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
             if !testRun {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     for config in VMStore.shared?.configurations ?? [] where config.guestOS != .macOS && VMManager.hasOrphanedQEMU(config.id) {
-                        Announcer.shared.announce("\(config.name) is still running from before AVM last closed, and AVM can't reach it. Starting it stops it, as a power cut would.", tone: .failure)
+                        Announcer.shared.announce("\(config.name) is still running from before Guest House last closed, and Guest House can't reach it. Starting it stops it, as a power cut would.", tone: .failure)
                     }
                 }
             }
             // Run in the background and the second display (2026-10-28).
             BackgroundMode.shared.start()
             // Permissions (2026-10-30, Permissions.swift): the window opens
-            // only when something needed isn't allowed, and not while AVM is
-            // quiet since login (it opens when the user opens AVM).
+            // only when something needed isn't allowed, and not while Guest House is
+            // quiet since login (it opens when the user opens Guest House).
             if !testRun {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     MainActor.assumeIsolated {
@@ -844,18 +852,18 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// AVM opened again (Finder, Spotlight, the Dock) while it's in the
+    /// Guest House opened again (Finder, Spotlight, the Dock) while it's in the
     /// background: it comes forward (BackgroundMode).
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         MainActor.assumeIsolated {
             // Or quiet since login (2026-10-30): the user's first opening
-            // brings AVM and its list.
+            // brings Guest House and its list.
             BackgroundMode.shared.openedByUser()
         }
         return true
     }
 
-    /// Opened at login to start a machine (2026-10-30): AVM stays out of
+    /// Opened at login to start a machine (2026-10-30): Guest House stays out of
     /// sight until the user opens it (BackgroundMode.startQuietly). macOS
     /// marks a login item's launch with keyAELaunchedAsLogInItem; a Mac
     /// started in the last few minutes counts too, in case a login item
@@ -869,11 +877,11 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
             if loginItem {
                 BackgroundMode.shared.startQuietly(because: "as a login item")
             } else if ProcessInfo.processInfo.systemUptime < 300, BackgroundMode.shared.opensAtLogin {
-                // Only with Open at Login on, so opening AVM by hand just
-                // after the Mac starts, without it, still shows AVM.
+                // Only with Open at Login on, so opening Guest House by hand just
+                // after the Mac starts, without it, still shows Guest House.
                 BackgroundMode.shared.startQuietly(because: "within five minutes of the Mac starting, with Open at Login on")
             } else {
-                AVMLog.write("AVM: launch event \(event.map { "\($0.eventID)" } ?? "none"), not a login item")
+                AVMLog.write("Guest House: launch event \(event.map { "\($0.eventID)" } ?? "none"), not a login item")
             }
         }
     }
@@ -886,12 +894,12 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        NSLog("AVM: AppDelegate — applicationWillTerminate; restoring Caps Lock if applied.")
+        NSLog("Guest House: AppDelegate — applicationWillTerminate; restoring Caps Lock if applied.")
         MainActor.assumeIsolated {
             CapsLockRemapper.shared.restoreForTermination()
-            // The Windows apps' Mac apps go with AVM (2026-10-29).
+            // The Windows apps' Mac apps go with Guest House (2026-10-29).
             WindowsApps.shared.quitAll()
-            // The Mac's VoiceOver back on if AVM turned it off for a macOS
+            // The Mac's VoiceOver back on if Guest House turned it off for a macOS
             // machine (2026-10-26, MacVoiceOver in MacGuest.swift).
             MacVoiceOver.restoreAfterGuest(beforeQuitting: true)
             // The focus lock's own teardown (2026-10-25): its hot key, its
@@ -901,11 +909,11 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
             FocusLockManager.shared?.cleanup()
             Announcer.shared.waitUntilQuiet(seconds: 8)
         }
-        // An update is being installed: this AVM's helper exits now, after
-        // the machines have given their devices back, so the new AVM starts
+        // An update is being installed: this Guest House's helper exits now, after
+        // the machines have given their devices back, so the new Guest House starts
         // its own (AVMUpdater.swift, updaterWillRelaunchApplication).
         if UpdateAnnouncer.relaunchingForUpdate {
-            NSLog("AVM: Updates — quitting for the update; asking the USB helper to exit.")
+            NSLog("Guest House: Updates — quitting for the update; asking the USB helper to exit.")
             USBHelperClient.askHelperToExitNow(wait: 3)
         }
     }
@@ -921,18 +929,18 @@ final class AVMAppDelegate: NSObject, NSApplicationDelegate {
         if let file = try? AVMPaths.supportDirectory().appendingPathComponent("receiver-devices.json") {
             try? FileManager.default.removeItem(at: file)
         }
-        AVMLog.write("AVM: the iPhone Receiver's setting and paired devices were removed.")
+        AVMLog.write("Guest House: the iPhone Receiver's setting and paired devices were removed.")
     }
 }
 
 // MARK: - Closing the window with a VM running (2026-10-25)
 
-/// AVM has one window, and the running VM's session lives in it. Closing it
+/// Guest House has one window, and the running VM's session lives in it. Closing it
 /// (Command-W, the close button) used to tear that session down, which
 /// pulled the plug on the guest with no question, nothing spoken, and USB
 /// devices left in the VM (code audit). While a VM is active, Close now
 /// asks the quit question instead (QuitCoordinator), and the window stays
-/// open unless AVM really quits. Installed as the window's delegate,
+/// open unless Guest House really quits. Installed as the window's delegate,
 /// forwarding everything else to the delegate SwiftUI set.
 /// The Virtual Machine menu's commands are carried out by the dashboard,
 /// which listens for them (2026-10-28, fourth audit): with no dashboard
@@ -955,7 +963,7 @@ enum DashboardCommand {
         // with one device and Reclaim with nothing to reclaim just speak.
         let opensWindow: Set<Notification.Name> = [.avmAttachUSBFromMenu, .avmBluetoothDevices, .avmMachineDevices, .avmInstallApps]
         if opensWindow.contains(name), MainWindowCloseGuard.hasOpenSheet {
-            Announcer.shared.announce("A window is open in AVM's list. Close it, then choose the command again.", tone: .info)
+            Announcer.shared.announce("A window is open in Guest House's list. Close it, then choose the command again.", tone: .info)
             MainWindowCloseGuard.bringMainWindowForward()
             return
         }
@@ -976,16 +984,16 @@ enum DashboardCommand {
         // that explains everything else said nothing.
         if name == .avmSpeakStatusFromMenu {
             let status = DashboardStatus.spoken()
-            AVMLog.write("AVM: Speak Status (no dashboard) — \(status)")
+            AVMLog.write("Guest House: Speak Status (no dashboard) — \(status)")
             Announcer.shared.announce(status, tone: .info)
             return
         }
         guard BackgroundMode.shared.canOpenDashboard else {
-            AVMLog.write("AVM: a menu command with no dashboard, and no way to open one")
-            Announcer.shared.announce("AVM's list of virtual machines isn't open. Press Command Shift L to open it, then choose the command again.", tone: .info)
+            AVMLog.write("Guest House: a menu command with no dashboard, and no way to open one")
+            Announcer.shared.announce("Guest House's list of virtual machines isn't open. Press Command Shift L to open it, then choose the command again.", tone: .info)
             return
         }
-        AVMLog.write("AVM: a menu command with no dashboard; opening it first")
+        AVMLog.write("Guest House: a menu command with no dashboard; opening it first")
         pending.append((name, object, Date()))
         BackgroundMode.shared.comeForward()
     }
@@ -996,7 +1004,7 @@ enum DashboardCommand {
         let waiting = pending.filter { Date().timeIntervalSince($0.asked) < patience }
         // Dropped ones are logged and said (sixth audit): they vanished.
         if waiting.count < pending.count {
-            AVMLog.write("AVM: \(pending.count - waiting.count) menu command(s) waited too long for the dashboard and were dropped")
+            AVMLog.write("Guest House: \(pending.count - waiting.count) menu command(s) waited too long for the dashboard and were dropped")
             Announcer.shared.announce("The list of virtual machines took too long to open, so the command you chose wasn't carried out. Choose it again.", tone: .info)
         }
         pending = []
@@ -1012,12 +1020,12 @@ enum DashboardCommand {
 final class MainWindowCloseGuard: NSObject, NSWindowDelegate {
     static let shared = MainWindowCloseGuard()
     private weak var original: NSWindowDelegate?
-    /// AVM's main window, the list of machines.
+    /// Guest House's main window, the list of machines.
     private weak var mainWindow: NSWindow?
 
     func install(on window: NSWindow) {
         mainWindow = window
-        // Out of sight while AVM is quiet since login (2026-10-30): kept,
+        // Out of sight while Guest House is quiet since login (2026-10-30): kept,
         // not closed, so the user's first opening shows it.
         if BackgroundMode.shared.quietUntilOpened {
             window.orderOut(nil)
@@ -1035,7 +1043,7 @@ final class MainWindowCloseGuard: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
-    /// False when AVM has no main window (macOS restored none at launch).
+    /// False when Guest House has no main window (macOS restored none at launch).
     static var hasMainWindow: Bool { shared.mainWindow != nil }
     /// A sheet (Settings, the Setup Wizard, a picker) is open on the list.
     static var hasOpenSheet: Bool { shared.mainWindow?.attachedSheet != nil }
@@ -1046,7 +1054,7 @@ final class MainWindowCloseGuard: NSObject, NSWindowDelegate {
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if QuitCoordinator.vmIsActive {
-            AVMLog.write("AVM: Close window — a VM is active; asking the quit question.")
+            AVMLog.write("Guest House: Close window — a VM is active; asking the quit question.")
             QuitCoordinator.closingWindow = true
             NSApp.terminate(nil)
             QuitCoordinator.closingWindow = false
@@ -1090,13 +1098,13 @@ struct WindowAccessor: NSViewRepresentable {
 /// Asks first, Cancel the default (same rule as Reset and Delete: one
 /// ambiguous key press must never cost a blind user their work):
 ///   - Shut Down <guest> and Quit: the quit is cancelled, the guest is
-///     shut down as Stop does, and AVM quits once it has. The wait can be
-///     minutes during an update, so AVM stays usable meanwhile (Force Stop
+///     shut down as Stop does, and Guest House quits once it has. The wait can be
+///     minutes during an update, so Guest House stays usable meanwhile (Force Stop
 ///     works, and Quit again offers Quit Now); holding macOS in a
 ///     terminate-later state that long would freeze the app instead.
 ///   - Quit Now: like pulling the plug.
 /// Either way, USB devices go back to the Mac first, and QEMU is gone
-/// before AVM exits (VMManager.terminateForQuit). Every outcome is spoken.
+/// before Guest House exits (VMManager.terminateForQuit). Every outcome is spoken.
 @MainActor
 enum QuitCoordinator {
 
@@ -1121,7 +1129,7 @@ enum QuitCoordinator {
     static var closingWindow = false
 
     /// A quit question, in front and heard (2026-10-28, fourth audit): with
-    /// AVM in the background, or the Mac shutting down from another app,
+    /// Guest House in the background, or the Mac shutting down from another app,
     /// the alert belonged to an app that wasn't active, so it wasn't
     /// focused and VoiceOver didn't read it, and the Mac waited on it.
     /// Not private (2026-11-09, fifth audit #32): SendToMachine's questions
@@ -1135,7 +1143,7 @@ enum QuitCoordinator {
         // Said when VoiceOver won't read the alert itself (fifth audit):
         // with the keyboard locked in a machine VoiceOver is usually off,
         // and the Mac's own shut-down question went unheard; with
-        // VoiceOver on it reads the alert once AVM is in front, and saying
+        // VoiceOver on it reads the alert once Guest House is in front, and saying
         // it as well was heard twice.
         // With its answers (2026-10-29, sixth audit): the question alone
         // left the user to guess what Return did and how to reach the rest.
@@ -1145,12 +1153,12 @@ enum QuitCoordinator {
             : ""
         var timer: Timer?
         // Only with VoiceOver off (2026-10-29, seventh audit): on, it reads
-        // the alert itself once AVM is in front, lock or no lock, and the
+        // the alert itself once Guest House is in front, lock or no lock, and the
         // Command F5 advice would have turned it off.
         if !NSWorkspace.shared.isVoiceOverEnabled {
             Announcer.shared.announce(alert.messageText + choices, tone: .info)
         } else {
-            // Said after all if AVM wasn't let in front (sixth audit): macOS
+            // Said after all if Guest House wasn't let in front (sixth audit): macOS
             // can refuse an activation, and VoiceOver doesn't read an alert
             // that isn't focused, so the Mac's restart waited on silence.
             let check = Timer(timeInterval: 1.5, repeats: false) { _ in
@@ -1169,7 +1177,7 @@ enum QuitCoordinator {
     }
 
     /// True when this quit is the Mac shutting down, restarting or logging
-    /// out, not the user quitting AVM.
+    /// out, not the user quitting Guest House.
     private static var macIsShuttingDown: Bool { macStop != nil }
 
     /// What the Mac is doing, and the menu item that does it again
@@ -1209,8 +1217,8 @@ enum QuitCoordinator {
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Quit and Stop")
             guard ask(alert) == .alertSecondButtonReturn else {
-                AVMLog.write("AVM: Quit — cancelled while a macOS machine was being made.")
-                stopCancelled("AVM keeps making the macOS machine.")
+                AVMLog.write("Guest House: Quit — cancelled while a macOS machine was being made.")
+                stopCancelled("Guest House keeps making the macOS machine.")
                 UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
             }
         }
@@ -1219,38 +1227,38 @@ enum QuitCoordinator {
         // same place, or the next import, clears away. Cancel is the default.
         if let activity = MachineArchiveController.shared.activity {
             let alert = NSAlert()
-            alert.messageText = "AVM is \(activity). Quit anyway?"
-            alert.informativeText = "Quitting stops it part way. The machine itself is untouched. The half-made copy is hidden, never mistaken for a whole one, and AVM clears it away the next time you export or import."
+            alert.messageText = "Guest House is \(activity). Quit anyway?"
+            alert.informativeText = "Quitting stops it part way. The machine itself is untouched. The half-made copy is hidden, never mistaken for a whole one, and Guest House clears it away the next time you export or import."
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Quit and Stop")
             guard ask(alert) == .alertSecondButtonReturn else {
-                AVMLog.write("AVM: Quit — cancelled while \(activity).")
-                stopCancelled("AVM goes on \(activity).")
+                AVMLog.write("Guest House: Quit — cancelled while \(activity).")
+                stopCancelled("Guest House goes on \(activity).")
                 UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
             }
-            AVMLog.write("AVM: Quit — chosen while \(activity).")
+            AVMLog.write("Guest House: Quit — chosen while \(activity).")
         }
         // A restore point being put back (2026-11-05 audit). Cancel is the default.
         if let machine = RestorePoints.restoring {
             let alert = NSAlert()
-            alert.messageText = "AVM is putting \(machine) back to a restore point. Quit anyway?"
+            alert.messageText = "Guest House is putting \(machine) back to a restore point. Quit anyway?"
             alert.informativeText = "Quitting part way can leave \(machine)'s disk back but not its firmware settings and TPM, and Windows may then ask for its BitLocker recovery key. It takes a minute or less."
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Quit Anyway")
             guard ask(alert) == .alertSecondButtonReturn else {
-                AVMLog.write("AVM: Quit — cancelled while a restore point was put back.")
-                stopCancelled("AVM goes on putting \(machine) back.")
+                AVMLog.write("Guest House: Quit — cancelled while a restore point was put back.")
+                stopCancelled("Guest House goes on putting \(machine) back.")
                 UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
             }
-            AVMLog.write("AVM: Quit — chosen while a restore point was put back.")
+            AVMLog.write("Guest House: Quit — chosen while a restore point was put back.")
         }
-        // A macOS machine runs inside AVM itself (2026-10-26): quitting
+        // A macOS machine runs inside Guest House itself (2026-10-26): quitting
         // ends it at once, so ask.
         if MacGuestRunner.shared.runningID != nil {
             let alert = NSAlert()
-            alert.messageText = "macOS is still running. Quit AVM?"
+            alert.messageText = "macOS is still running. Quit Guest House?"
             alert.informativeText = "Quitting turns the macOS machine off at once, like pulling the plug; unsaved work in it is lost. To shut it down properly first, choose Cancel, then Shut Down in its window."
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Cancel")
@@ -1275,14 +1283,14 @@ enum QuitCoordinator {
                 MacGuestRunner.shared.forceStop()
             case .alertThirdButtonReturn where saveable:
                 // Stopped while the question was up (2026-10-29, sixth
-                // audit): nothing is left to save. With no other machine AVM
+                // audit): nothing is left to save. With no other machine Guest House
                 // just quits; with one, that machine's question follows
                 // (seventh audit: it was cancelled in silence).
                 if MacGuestRunner.shared.runningID == nil {
                     if !otherActive { return .terminateNow }
                 } else if !MacGuestRunner.shared.canSave {
                     // A save began meanwhile (avmctl): it finishes first.
-                    Announcer.shared.announce("macOS is being saved. Quit AVM again when it's done.", tone: .info)
+                    Announcer.shared.announce("macOS is being saved. Quit Guest House again when it's done.", tone: .info)
                     stopCancelled("macOS is being saved.")
                     UpdateAnnouncer.relaunchingForUpdate = false; return .terminateCancel
                 } else if !otherActive {
@@ -1305,7 +1313,7 @@ enum QuitCoordinator {
                     MacGuestRunner.shared.saveAndStop { saved in
                         if saved { NSApp.terminate(nil) } else { UpdateAnnouncer.relaunchingForUpdate = false }
                     }
-                    stopCancelled("macOS is being saved first, and AVM asks about the other machine when it's done.")
+                    stopCancelled("macOS is being saved first, and Guest House asks about the other machine when it's done.")
                     // Deferred, not refused (2026-11-09, fourth audit #14): the
                     // flag stays, so this quit still stops the old helper.
                     return .terminateCancel
@@ -1337,17 +1345,17 @@ enum QuitCoordinator {
             let startingNames = active.filter { $0.vmState == .starting }.map(\.configuration.name).sorted()
             let alert = NSAlert()
             if quitWhenShutDown {
-                alert.messageText = "AVM is waiting for \(guest) to shut down. Quit now?"
+                alert.messageText = "Guest House is waiting for \(guest) to shut down. Quit now?"
             } else if starting {
-                alert.messageText = "\(guest) \(several ? "are" : "is") starting. Quit AVM?"
+                alert.messageText = "\(guest) \(several ? "are" : "is") starting. Quit Guest House?"
             } else {
-                alert.messageText = "\(guest) \(several ? "are" : "is") still running. Quit AVM?"
+                alert.messageText = "\(guest) \(several ? "are" : "is") still running. Quit Guest House?"
             }
             let them = several ? "them" : guest
-            let closeNote = closingWindow ? "Closing AVM's window quits AVM, which ends \(them) too. " : ""
+            let closeNote = closingWindow ? "Closing Guest House's window quits Guest House, which ends \(them) too. " : ""
             alert.informativeText = starting
                 ? closeNote + "Quit Now stops \(them) while starting. If one is building install media, that work is lost and starts again next time."
-                : closeNote + "Quit Now turns \(them) off at once, like pulling the plug, and unsaved work in \(them) is lost. Shut Down and Quit shuts \(them) down first, and AVM quits when \(several ? "all have" : "it has") finished. That can take a few minutes during an update."
+                : closeNote + "Quit Now turns \(them) off at once, like pulling the plug, and unsaved work in \(them) is lost. Shut Down and Quit shuts \(them) down first, and Guest House quits when \(several ? "all have" : "it has") finished. That can take a few minutes during an update."
                     + (startingNames.isEmpty ? "" : " \(ListFormatter.localizedString(byJoining: startingNames)) \(startingNames.count > 1 ? "are" : "is") still starting, and stops at once either way.")
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Cancel")
@@ -1372,7 +1380,7 @@ enum QuitCoordinator {
             let quitNow = starting ? choice == .alertSecondButtonReturn : choice == .alertThirdButtonReturn
             let saveAndQuit = saveable && choice.rawValue == NSApplication.ModalResponse.alertThirdButtonReturn.rawValue + 1
             if saveAndQuit {
-                AVMLog.write("AVM: Quit — Save and Quit chosen for \(active.count) machine(s).")
+                AVMLog.write("Guest House: Quit — Save and Quit chosen for \(active.count) machine(s).")
                 Task { @MainActor in
                     let given = active.flatMap { session in USBRedirectController.shared.devices(for: session.manager).map { (device: $0, manager: session.manager) } }
                     await releaseUSBDevices()
@@ -1381,7 +1389,7 @@ enum QuitCoordinator {
                         if !(await session.saveAndStop()) { allDone = false }
                     }
                     // Starting and shutting-down machines too (2026-10-28,
-                    // fifth audit): left out, AVM quit with their QEMU still
+                    // fifth audit): left out, Guest House quit with their QEMU still
                     // running, headless, holding the disk. Read now, not
                     // from before the question (sixth audit): a machine
                     // avmctl started meanwhile was left running headless.
@@ -1395,7 +1403,7 @@ enum QuitCoordinator {
                         // The Mac's restart is cancelled by that reply, and
                         // said (sixth audit), as Shut Down and Cancel say it.
                         if let stop {
-                            Announcer.shared.announce("The Mac's \(stop.word) is stopped while \(left) \(names.count > 1 ? "shut" : "shuts") down. When AVM has quit, choose \(stop.item) again.", tone: .info)
+                            Announcer.shared.announce("The Mac's \(stop.word) is stopped while \(left) \(names.count > 1 ? "shut" : "shuts") down. When Guest House has quit, choose \(stop.item) again.", tone: .info)
                         }
                         beginShutDownThenQuit(guest: left)
                         return
@@ -1420,22 +1428,22 @@ enum QuitCoordinator {
                 return .terminateLater
             }
             if shutDown {
-                AVMLog.write("AVM: Quit — Shut Down and Quit chosen.")
+                AVMLog.write("Guest House: Quit — Shut Down and Quit chosen.")
                 // Said (2026-10-28, fourth audit): answering this cancels the
                 // Mac's own shut down, restart or log out, and the Mac stayed
                 // on with nothing said.
                 if let stop {
-                    Announcer.shared.announce("The Mac's \(stop.word) is stopped while \(guest) \(several ? "shut" : "shuts") down. When AVM has quit, choose \(stop.item) again.", tone: .info)
+                    Announcer.shared.announce("The Mac's \(stop.word) is stopped while \(guest) \(several ? "shut" : "shuts") down. When Guest House has quit, choose \(stop.item) again.", tone: .info)
                 }
                 beginShutDownThenQuit(guest: guest)
                 // Deferred, not refused (2026-11-09, fourth audit #14): cleared
                 // here, the quit that follows the shutdown left the old helper
-                // running under the relaunched AVM. A failed shutdown clears it.
+                // running under the relaunched Guest House. A failed shutdown clears it.
                 return .terminateCancel
             } else if quitNow {
-                AVMLog.write("AVM: Quit — Quit Now chosen with \(active.count) machine(s) active.")
+                AVMLog.write("Guest House: Quit — Quit Now chosen with \(active.count) machine(s) active.")
             } else {
-                AVMLog.write("AVM: Quit — cancelled with \(active.count) machine(s) active.")
+                AVMLog.write("Guest House: Quit — cancelled with \(active.count) machine(s) active.")
                 // Said (2026-10-28, fifth audit): Cancel here cancels the
                 // Mac's own shut down, and nothing told the user.
                 if let stop {
@@ -1456,7 +1464,7 @@ enum QuitCoordinator {
                 for session in sessions { session.terminateForQuit() }
                 if sessions.isEmpty { for manager in managers { manager.terminateForQuit() } }
                 // A moment for a cancelled install media build to end
-                // (2026-10-29, seventh audit): its tool outlived AVM, with
+                // (2026-10-29, seventh audit): its tool outlived Guest House, with
                 // the installer ISO mounted and the scratch folder kept.
                 let deadline = Date().addingTimeInterval(8)
                 for manager in managers {
@@ -1474,21 +1482,21 @@ enum QuitCoordinator {
         guard !quitWhenShutDown else {
             // Already shutting down for a quit; the alert's Cancel or
             // this choice both mean keep waiting.
-            Announcer.shared.announce("Still waiting for \(guest) to shut down. AVM quits when it has.", tone: .info)
+            Announcer.shared.announce("Still waiting for \(guest) to shut down. Guest House quits when it has.", tone: .info)
             return
         }
         let sessions = Array(MachineSessions.shared.sessions.values)
         guard !sessions.isEmpty else {
             // Called from inside applicationShouldTerminate: quit on the
             // next turn, not re-entrantly (2026-10-25, code audit).
-            AVMLog.write("AVM: Quit — no session to shut down; quitting.")
+            AVMLog.write("Guest House: Quit — no session to shut down; quitting.")
             DispatchQueue.main.async { NSApp.terminate(nil) }
             return
         }
         quitWhenShutDown = true
-        Announcer.shared.announce("AVM will quit when \(guest) \(sessions.count > 1 ? "have" : "has") shut down.", tone: .info)
+        Announcer.shared.announce("Guest House will quit when \(guest) \(sessions.count > 1 ? "have" : "has") shut down.", tone: .info)
         Task { @MainActor in
-            // Each machine shuts down at the same time; AVM waits for all.
+            // Each machine shuts down at the same time; Guest House waits for all.
             var failures: [String] = []
             await withTaskGroup(of: String?.self) { group in
                 for session in sessions {
@@ -1516,14 +1524,14 @@ enum QuitCoordinator {
             quitWhenShutDown = false
             guard failures.isEmpty else {
                 UpdateAnnouncer.relaunchingForUpdate = false // fourth audit #14
-                AVMLog.write("AVM: Quit — shutdown for quit failed: \(failures.joined(separator: "; "))")
+                AVMLog.write("Guest House: Quit — shutdown for quit failed: \(failures.joined(separator: "; "))")
                 Announcer.shared.announce(
-                    "AVM did not quit: \(failures.joined(separator: ". ")). Next: try Quit again, and choose Quit Now if one is not responding.",
+                    "Guest House did not quit: \(failures.joined(separator: ". ")). Next: try Quit again, and choose Quit Now if one is not responding.",
                     tone: .failure
                 )
                 return
             }
-            AVMLog.write("AVM: Quit — every machine has shut down; quitting.")
+            AVMLog.write("Guest House: Quit — every machine has shut down; quitting.")
             NSApp.terminate(nil)
         }
     }
@@ -1533,7 +1541,7 @@ enum QuitCoordinator {
     private static func releaseUSBDevices() async {
         let devices = USBRedirectController.shared.redirectedDevices
         guard !devices.isEmpty else { return }
-        AVMLog.write("AVM: Quit — giving \(devices.count) USB device(s) back to the Mac.", category: "USBHelper")
+        AVMLog.write("Guest House: Quit — giving \(devices.count) USB device(s) back to the Mac.", category: "USBHelper")
         // A race, not a task group: a group waits for every child, and a
         // detach stuck in XPC can't be cancelled, so the limit would never
         // apply. Whichever finishes first resumes; the other is ignored.
@@ -1548,7 +1556,7 @@ enum QuitCoordinator {
             Task { @MainActor in
                 try? await Task.sleep(for: usbReleaseLimit)
                 if once.resume(continuation) {
-                    AVMLog.write("AVM: Quit — USB release took longer than \(usbReleaseLimit); quitting anyway.", category: "USBHelper")
+                    AVMLog.write("Guest House: Quit — USB release took longer than \(usbReleaseLimit); quitting anyway.", category: "USBHelper")
                 }
             }
         }
@@ -1587,7 +1595,7 @@ struct ShowDashboardCommand: View {
         .keyboardShortcut("l", modifiers: [.command, .shift])
         .onAppear {
             MainWindowCloseGuard.openMainWindow = { openWindow(id: "main") }
-            AVMLog.write("AVM: the dashboard opener is known from the Window menu")
+            AVMLog.write("Guest House: the dashboard opener is known from the Window menu")
         }
     }
 }

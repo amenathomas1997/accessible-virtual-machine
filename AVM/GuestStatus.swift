@@ -1,5 +1,5 @@
 // GuestStatus.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Speak Updates and Disk (2026-10-30, the user's request): how full the
 // machine's disk is and how many updates are waiting, asked of the guest

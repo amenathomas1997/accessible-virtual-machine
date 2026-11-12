@@ -1,5 +1,5 @@
 // MachineDisplays.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // A display for a machine (2026-10-28, tester idea, "like the keyboard for
 // Windows"). In a machine's Settings, Monitor: the monitor its window always
@@ -64,7 +64,7 @@ enum MachineDisplays {
         }
         if config.displayID != nil, chosenScreen(config) == nil {
             let display = config.displayName ?? "Its monitor"
-            AVMLog.write("AVM: \(config.name)'s monitor isn't connected; opening elsewhere")
+            AVMLog.write("Guest House: \(config.name)'s monitor isn't connected; opening elsewhere")
             Announcer.shared.announce("\(display) isn't connected, so \(config.name) opened on another monitor. It moves to \(display) when you connect it.", tone: .info)
         }
     }
@@ -75,7 +75,7 @@ enum MachineDisplays {
     static func displaysChanged(_ window: NSWindow, for config: VMConfiguration) -> Bool {
         guard let screen = chosenScreen(config), window.screen != screen else { return false }
         fill(window, on: screen)
-        AVMLog.write("AVM: \(config.name) moved to its display")
+        AVMLog.write("Guest House: \(config.name) moved to its display")
         Announcer.shared.announce("\(config.name) moved to \(screen.localizedName).", tone: .info)
         return true
     }

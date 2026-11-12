@@ -1,10 +1,10 @@
 // WindowsISODownloader.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // The Windows ISO download assistant (2026-10-25, roadmap item 9). The
 // download itself happens on Microsoft's own page, in the user's browser:
-// that page sits behind Microsoft's bot checks, and AVM does not try to
-// get around them. Everything around that step is AVM's:
+// that page sits behind Microsoft's bot checks, and Guest House does not try to
+// get around them. Everything around that step is Guest House's:
 //   - It opens Microsoft's Windows 11 for ARM page (the tester guide's
 //     section 2 walks through it).
 //   - It watches the folder the browser saves into (Downloads, unless the
@@ -13,7 +13,7 @@
 //     with a screen reader over 30 to 90 minutes.
 //   - When an ISO arrives and stops growing, it checks the file: the ISO
 //     9660 signature, a sensible size, and its SHA-256 against the table
-//     Microsoft publishes on that page, which also tells AVM the language.
+//     Microsoft publishes on that page, which also tells Guest House the language.
 //   - It offers the file as the new VM's installer.
 // The page is read with a plain request only for its checksum table. If
 // that fails, the check falls back to size and format, and says so.
@@ -28,7 +28,7 @@ final class WindowsISODownloader: ObservableObject {
 
     enum Phase: Equatable {
         case idle
-        /// The page is open and AVM is watching the folder.
+        /// The page is open and Guest House is watching the folder.
         case watching
         /// A download is growing in the folder.
         case downloading
@@ -42,7 +42,7 @@ final class WindowsISODownloader: ObservableObject {
     @Published private(set) var bytesSoFar: Int64 = 0
     /// The download window was closed with Keep Watching in Background
     /// (2026-10-27, tester feedback: Stop Watching sounded like it
-    /// cancelled the download, and nothing more was said). AVM goes on
+    /// cancelled the download, and nothing more was said). Guest House goes on
     /// speaking the progress, and picks the file itself when it's ready.
     @Published var inBackground = false
     /// Picks a ready ISO as the installer, for a download that finished
@@ -84,7 +84,7 @@ final class WindowsISODownloader: ObservableObject {
     func start() {
         stopped = false
         // Each folder readable first (2026-10-28, fourth audit): one macOS
-        // wouldn't let AVM read listed as empty, so a download of an hour
+        // wouldn't let Guest House read listed as empty, so a download of an hour
         // went by with no progress and no word.
         let unreadable = watchedFolders.filter { (try? FileManager.default.contentsOfDirectory(atPath: $0.path)) == nil }
         if !unreadable.isEmpty {
@@ -92,11 +92,11 @@ final class WindowsISODownloader: ObservableObject {
         }
         // Only the chosen folder is a failure (2026-10-28, fifth audit): the
         // other places are watched in case the browser saves there, and a
-        // Desktop AVM may not read sent the user to System Settings while
+        // Desktop Guest House may not read sent the user to System Settings while
         // the download to Downloads was followed fine.
         if unreadable.contains(where: { $0.standardizedFileURL == folder.standardizedFileURL }) {
             let name = folder.lastPathComponent
-            Announcer.shared.announce("AVM can't look in your \(name) folder, so it can't follow the download there. Next: in System Settings, Privacy and Security, Files and Folders, allow AVM to see \(name), or choose the ISO yourself once it has downloaded.", tone: .failure)
+            Announcer.shared.announce("Guest House can't look in your \(name) folder, so it can't follow the download there. Next: in System Settings, Privacy and Security, Files and Folders, allow Guest House to see \(name), or choose the ISO yourself once it has downloaded.", tone: .failure)
         }
         snapshotExisting()
         lastSpokenGB = 0
@@ -105,7 +105,7 @@ final class WindowsISODownloader: ObservableObject {
         NSWorkspace.shared.open(Self.pageURL)
         AVMLog.write("ISOAssistant: opened Microsoft's page; watching \(watchedFolders.map(\.path).joined(separator: ", "))")
         Announcer.shared.announce(
-            "Microsoft's download page is open in your browser. Choose Windows 11 multi-edition ISO for Arm64, then your language, then the 64-bit download. Section 2 of the tester guide walks through the page. AVM is watching \(folder.lastPathComponent) and tells you how the download is going.",
+            "Microsoft's download page is open in your browser. Choose Windows 11 multi-edition ISO for Arm64, then your language, then the 64-bit download. Section 2 of the tester guide walks through the page. Guest House is watching \(folder.lastPathComponent) and tells you how the download is going.",
             tone: .info
         )
         Task { await loadPublishedHashes() }
@@ -123,10 +123,10 @@ final class WindowsISODownloader: ObservableObject {
         watchTask?.cancel()
         watchTask = nil
         // A watch going on in the background ends with a word (2026-10-28,
-        // code review: closing the wizard ended it silently after AVM had
+        // code review: closing the wizard ended it silently after Guest House had
         // promised to choose the file).
         if inBackground, phase == .watching || phase == .downloading || phase == .verifying {
-            Announcer.shared.announce("AVM stopped watching for the Windows download: the Setup Wizard closed. Open it again to carry on.", tone: .info)
+            Announcer.shared.announce("Guest House stopped watching for the Windows download: the Setup Wizard closed. Open it again to carry on.", tone: .info)
         }
         // .verifying too (2026-10-28, code review): stopped during the
         // check, it stayed there with no way to start again.
@@ -276,7 +276,7 @@ final class WindowsISODownloader: ObservableObject {
     private func report(size: Int64) {
         if phase == .watching {
             phase = .downloading
-            Announcer.shared.announce("The download has started. AVM tells you every gigabyte.", tone: .info)
+            Announcer.shared.announce("The download has started. Guest House tells you every gigabyte.", tone: .info)
         }
         bytesSoFar = size
         let gb = Int(size / 1_000_000_000)
@@ -314,10 +314,10 @@ final class WindowsISODownloader: ObservableObject {
                             "ISOAssistant: SHA-256 matches the published \(language) value")
                 }
                 if hashes.isEmpty {
-                    return ("AVM couldn't read Microsoft's checksum list, so it only checked that the file reads as an ISO. If the download was cut short, the machine's first start says so.",
+                    return ("Guest House couldn't read Microsoft's checksum list, so it only checked that the file reads as an ISO. If the download was cut short, the machine's first start says so.",
                             "ISOAssistant: no published hashes; ISO signature checked; SHA-256 \(digest)")
                 }
-                return ("It reads as an ISO, but it doesn't match a checksum on Microsoft's page. That can happen just after Microsoft updates the download, or it may be a different file. When the machine first starts, AVM checks that it is a Windows 11 for ARM installer.",
+                return ("It reads as an ISO, but it doesn't match a checksum on Microsoft's page. That can happen just after Microsoft updates the download, or it may be a different file. When the machine first starts, Guest House checks that it is a Windows 11 for ARM installer.",
                         "ISOAssistant: SHA-256 \(digest) matches no published value")
             }.value
             AVMLog.write(logLine)
@@ -332,18 +332,18 @@ final class WindowsISODownloader: ObservableObject {
             let verified = verdict.hasPrefix("It matches")
             // One that matches none of Microsoft's checksums isn't chosen for
             // the user (2026-11-01 audit): it may be a damaged download.
-            let mismatch = !verified && !verdict.hasPrefix("AVM couldn't read")
+            let mismatch = !verified && !verdict.hasPrefix("Guest House couldn't read")
             if mismatch {
-                Announcer.shared.announce("\(iso.lastPathComponent) finished. \(verdict) AVM didn't choose it. If you trust it, choose Use This Installer.", tone: .failure)
+                Announcer.shared.announce("\(iso.lastPathComponent) finished. \(verdict) Guest House didn't choose it. If you trust it, choose Use This Installer.", tone: .failure)
             } else if inBackground, let onReady {
                 onReady(iso)
-                Announcer.shared.announce("\(iso.lastPathComponent) is ready. \(verdict) AVM chose it as the installer; choose Create Virtual Machine when you're ready.", tone: verified ? .success : .info)
+                Announcer.shared.announce("\(iso.lastPathComponent) is ready. \(verdict) Guest House chose it as the installer; choose Create Virtual Machine when you're ready.", tone: verified ? .success : .info)
             } else {
                 Announcer.shared.announce("\(iso.lastPathComponent) is ready. \(verdict) Choose Use This Installer.", tone: verified ? .success : .info)
             }
         } catch {
             guard !stopped else { return }
-            let message = (error as? AssistantError)?.message ?? "AVM couldn't read the downloaded file: \(error.localizedDescription)"
+            let message = (error as? AssistantError)?.message ?? "Guest House couldn't read the downloaded file: \(error.localizedDescription)"
             phase = .failed(message)
             AVMLog.write("ISOAssistant: \(message)")
             Announcer.shared.announce(message, tone: .failure)

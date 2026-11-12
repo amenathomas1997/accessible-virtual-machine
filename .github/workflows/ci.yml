@@ -1,5 +1,5 @@
 # ci.yml
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
 # Runs on every push and pull request (2026-10-26):
 #   - the logic tests (Package.swift: password hashing, the log
@@ -65,7 +65,7 @@ jobs:
           # The helper's launchd plist and both entitlements files too
           # (2026-10-29, seventh audit). Linux has no plutil; plistlib is
           # the same check.
-          for f in AVM/Info.plist Resources/com.fullcircleat.AVM.usbhelper.plist AVM/AVM.entitlements AVM/AVM-Release.entitlements; do
+          for f in AVM/Info.plist Resources/com.fullcircleat.GuestHouse.usbhelper.plist AVM/AVM.entitlements AVM/AVM-Release.entitlements; do
             python3 -c "import plistlib, sys; plistlib.load(open(sys.argv[1], 'rb')); print('ok:', sys.argv[1])" "$f" || exit 1
           done
       - name: Sysroot patches are named for a UTM patch

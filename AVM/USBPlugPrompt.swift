@@ -1,6 +1,6 @@
 //
 //  USBPlugPrompt.swift
-//  AVM
+//  Guest House
 //
 //  USB increment 2b, piece 4: the plug-in alert, the spoken lines, and
 //  acting on the answer (step 4): remembering it, and sending the device
@@ -18,8 +18,8 @@
 //    for always-ask devices.
 //  - A device with no name is "a USB device from <maker>", or "an
 //    unnamed USB device" when the maker isn't reported either.
-//  - While the user is in Windows (focus lock on), or AVM is in the
-//    background, the alert waits. AVM speaks one short line instead,
+//  - While the user is in Windows (focus lock on), or Guest House is in the
+//    background, the alert waits. Guest House speaks one short line instead,
 //    and shows the alert when the user is back. Alerts come one at a
 //    time, in plug-in order.
 //  - When the user comes back, the alert waits until Announcer has
@@ -28,10 +28,10 @@
 //    question is dropped. Other unplugs stay quiet.
 //  - The alert starts from the top (Allison, 2026-10-12). With keyboard
 //    navigation on, a standard alert puts focus on its second button,
-//    Send to Windows, where Space would send the device. AVM moves
+//    Send to Windows, where Space would send the device. Guest House moves
 //    focus to Keep on Mac once the alert is up. VoiceOver then reads
-//    the title and message by itself. AVM once asked VoiceOver to read
-//    them too, and they were heard twice, so AVM doesn't.
+//    the title and message by itself. Guest House once asked VoiceOver to read
+//    them too, and they were heard twice, so Guest House doesn't.
 //
 //  Step 4 design of record (agreed with Allison 2026-10-12):
 //  - Sending goes through USBRedirectController.attach. USBHelperClient
@@ -41,10 +41,10 @@
 //  - A remembered "keep on the Mac" is silent. The watcher handles it.
 //  - Remember saves this device's choice in this VM's settings, replacing
 //    any earlier choice for the same device.
-//  - Windows paused: the send is held. AVM says "Windows is paused. AVM
+//  - Windows paused: the send is held. Guest House says "Windows is paused. Guest House
 //    will send <name> when Windows resumes." On resume it is sent:
 //    VMManager's state hook calls vmRunning(). If the
-//    device is unplugged first, AVM says so and drops it. If Windows
+//    device is unplugged first, Guest House says so and drops it. If Windows
 //    stops instead, it is dropped quietly.
 //  - Sends run one at a time, so two devices never race for a port.
 //
@@ -73,7 +73,7 @@ final class USBPlugPrompt {
 
     private var waiting: [USBPlugQuestion] = []
     private var onScreen: USBPlugQuestion?
-    /// Why the open alert was closed by AVM rather than the user.
+    /// Why the open alert was closed by Guest House rather than the user.
     private var closeReason: String?
     private var showScheduled = false
 
@@ -163,11 +163,11 @@ final class USBPlugPrompt {
 
         let name = Self.sentenceName(question)
         if userIsInWindows {
-            say("\(name) plugged in. AVM will ask about it when you're back on the Mac.")
+            say("\(name) plugged in. Guest House will ask about it when you're back on the Mac.")
         } else if NSApp.isActive == false {
-            say("\(name) plugged in. AVM will ask about it when you switch back to AVM.")
+            say("\(name) plugged in. Guest House will ask about it when you switch back to Guest House.")
         } else if anotherIsOpen {
-            say("\(name) plugged in. AVM will ask about it next.")
+            say("\(name) plugged in. Guest House will ask about it next.")
         }
         scheduleShow()
     }
@@ -301,7 +301,7 @@ final class USBPlugPrompt {
             return
         }
         if NSApp.isActive == false {
-            log("alert held: AVM is not the active app")
+            log("alert held: Guest House is not the active app")
             return
         }
         showScheduled = true
@@ -313,7 +313,7 @@ final class USBPlugPrompt {
                 waited += Self.speechPoll
             }
             if waited > .zero {
-                self.log("alert waited \(waited) for AVM's speech to finish\(waited >= Self.longestSpeechWait ? " (gave up waiting)" : "")")
+                self.log("alert waited \(waited) for Guest House's speech to finish\(waited >= Self.longestSpeechWait ? " (gave up waiting)" : "")")
             }
             // See the run loop note in the header.
             RunLoop.main.perform(inModes: [.common]) {
@@ -328,7 +328,7 @@ final class USBPlugPrompt {
     private func showNext() {
         guard onScreen == nil, waiting.isEmpty == false else { return }
         guard userIsInWindows == false, NSApp.isActive else {
-            log("not showing yet: the user left the Mac or AVM before the alert could open")
+            log("not showing yet: the user left the Mac or Guest House before the alert could open")
             return
         }
         var question = waiting.removeFirst()
@@ -356,7 +356,7 @@ final class USBPlugPrompt {
             if remember { self.remember(question, usesWindows: true) }
             send(question, because: "chosen in the alert")
         default:
-            log("alert closed by AVM: \(closeReason ?? "unknown reason")")
+            log("alert closed by Guest House: \(closeReason ?? "unknown reason")")
         }
         closeReason = nil
         scheduleShow()
@@ -394,7 +394,7 @@ final class USBPlugPrompt {
     }
 
     /// Escape picks Keep on Mac. NSAlert only maps Escape to a button
-    /// named Cancel, so AVM catches it while this alert is the modal one.
+    /// named Cancel, so Guest House catches it while this alert is the modal one.
     private func installEscape(for alert: NSAlert) {
         let alertWindow = alert.window
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -438,7 +438,7 @@ final class USBPlugPrompt {
             heldForResume.append(question)
             log("send held: Windows is paused; \(question.identity) waits for resume (\(why))")
             let guest = Self.guestName(for: question.vmID)
-            say("\(guest) is paused. AVM will send \(Self.titleName(question)) when \(guest) resumes.")
+            say("\(guest) is paused. Guest House will send \(Self.titleName(question)) when \(guest) resumes.")
             return
         }
         log("sending \(question.identity) to Windows (\(why))")
@@ -648,12 +648,12 @@ final class USBPlugPrompt {
         case .failed:
             let reason = gate.bounces > 0 ? "it kept disconnecting" : "\(Self.guestName(for: gate.question.vmID)) didn't take it"
             log("send gate closed: \(device) not sent (\(tries))")
-            say("AVM couldn't send \(name) to \(Self.guestName(for: gate.question.vmID)). Reason: \(reason). Next: try Attach USB Device.", tone: .failure)
+            say("Guest House couldn't send \(name) to \(Self.guestName(for: gate.question.vmID)). Reason: \(reason). Next: try Attach USB Device.", tone: .failure)
         case .stopped:
             log("send gate closed: \(device); the VM stopped")
         case .notApproved:
             log("send gate closed: \(device) not sent; the USB helper wasn't approved within 5 minutes")
-            say("\(name) stayed on the Mac: AVM's USB helper hasn't been allowed. Next: in System Settings, General, Login Items and Extensions, allow AVM, then plug \(name) in again.", tone: .failure)
+            say("\(name) stayed on the Mac: Guest House's USB helper hasn't been allowed. Next: in System Settings, General, Login Items and Extensions, allow Guest House, then plug \(name) in again.", tone: .failure)
         case .saving:
             // Said (sixth audit): a machine taking a restore point keeps
             // running, and the device stayed on the Mac with no word.
@@ -668,7 +668,7 @@ final class USBPlugPrompt {
             if USBHotPlugWatcher.shared.vmID == gate.question.vmID {
                 heldForResume.append(gate.question)
                 log("send gate closed: \(device) waits for \(guest) to resume (\(tries))")
-                say("\(guest) is paused. AVM will send \(name) when \(guest) resumes.")
+                say("\(guest) is paused. Guest House will send \(name) when \(guest) resumes.")
             } else {
                 log("send gate closed: \(device) not sent; \(guest) is paused and isn't the machine watched, so nothing would send it at resume (\(tries))")
                 say("\(guest) is paused, so \(name) stays on the Mac.")
@@ -699,7 +699,7 @@ final class USBPlugPrompt {
         guard let store = VMStore.shared,
               var config = store.configurations.first(where: { $0.id == question.vmID }) else {
             log("remember failed: saved settings for VM \(question.vmID.uuidString) are not available")
-            say("AVM could not remember your choice for \(Self.titleName(question)). Reason: this virtual machine's settings could not be read. Next: choose again the next time you plug it in.", tone: .failure)
+            say("Guest House could not remember your choice for \(Self.titleName(question)). Reason: this virtual machine's settings could not be read. Next: choose again the next time you plug it in.", tone: .failure)
             return
         }
         let id = question.identity
@@ -717,7 +717,7 @@ final class USBPlugPrompt {
 
     // MARK: Coming back to the Mac
 
-    /// Shows waiting alerts when focus lock turns off or AVM becomes
+    /// Shows waiting alerts when focus lock turns off or Guest House becomes
     /// the active app. Re-subscribes if a new FocusLockManager appeared.
     private func watchForReturn() {
         if let lock = FocusLockManager.shared, lock !== watchedLock {
@@ -800,7 +800,7 @@ final class USBPlugPrompt {
             return "This is a mouse or trackpad. \(macLoses)"
         case .soundOutput:
             // "May": with VoiceOver on, any USB output asks (2026-10-29,
-            // seventh audit), because AVM can't read which output VoiceOver
+            // seventh audit), because Guest House can't read which output VoiceOver
             // itself uses.
             return "Your Mac may be playing sound through this device, VoiceOver's speech included. If you send it to \(guest), the Mac loses that sound until you unplug it or shut down \(guest)."
         case .unknownInput:

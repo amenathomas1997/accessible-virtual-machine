@@ -2,19 +2,19 @@
 //  main.swift
 //  AVMUSBHelper
 //
-//  The root USB helper for AVM. Runs as a launchd daemon registered
-//  by AVM through SMAppService, on demand, and exits when idle.
+//  The root USB helper for Guest House. Runs as a launchd daemon registered
+//  by Guest House through SMAppService, on demand, and exits when idle.
 //
 //  Scope contract (handoff 46, decision 1b): claim, stream, release,
 //  report. Nothing else. No enumeration, no policy, no persistence,
-//  no speech. AVM does the talking. This process supplies honest
+//  no speech. Guest House does the talking. This process supplies honest
 //  state.
 //
 //  Increment 1 (2026-09-12): attach, detach and status are real.
 //  The claim / stream / release path is probe3's, compiled in as
 //  usbstream.c and reached through the bridging header. Each device
 //  gets its own serial queue that runs the blocking pump; state
-//  changes go back to AVM through the client protocol.
+//  changes go back to Guest House through the client protocol.
 //
 //  The listener, the code signing gate and the idle exit were proven
 //  live on 2026-09-07 and are unchanged.
@@ -27,7 +27,7 @@ import SystemConfiguration
 import Security
 import os.log
 // MARK: - Identity
-/// Bumped whenever the helper's behavior changes so AVM can tell a
+/// Bumped whenever the helper's behavior changes so Guest House can tell a
 /// stale helper from a current one.
 let helperBuildVersion = AVMUSBHelperNames.helperBuildVersion
 let log = OSLog(subsystem: AVMUSBHelperNames.machServiceName, category: "helper")
@@ -35,10 +35,10 @@ let log = OSLog(subsystem: AVMUSBHelperNames.machServiceName, category: "helper"
 /// chatty, and a root process should not narrate USB traffic into the
 /// unified log by default.
 let verboseStreamLogging = false
-/// Who may talk to this helper: AVM, signed by the same team that
+/// Who may talk to this helper: Guest House, signed by the same team that
 /// signed this helper. A Debug helper carries the development
-/// certificate and trusts Debug AVM; a Developer ID helper trusts only
-/// Developer ID AVM from its own team, so a release helper still never
+/// certificate and trusts Debug Guest House; a Developer ID helper trusts only
+/// Developer ID Guest House from its own team, so a release helper still never
 /// trusts the development team.
 ///
 /// Read from the helper's own signature (2026-10-25). The two team IDs
@@ -52,7 +52,7 @@ let clientTeamID: String? = ownTeamIdentifier()
 /// helper signed with one requires it of the client too (2026-10-25,
 /// security audit): the team's development certificates carry the same
 /// team in subject.OU, so without this a release helper would also serve a
-/// development build of AVM, which is debuggable (get-task-allow) and so
+/// development build of Guest House, which is debuggable (get-task-allow) and so
 /// can be driven by any process the user runs.
 let developerIDMarker = "certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
 let helperIsDeveloperID: Bool = signatureSatisfies("anchor apple generic and " + developerIDMarker)
@@ -64,7 +64,7 @@ let clientRequirement: String? = clientTeamID.map { team in
         + (helperIsDeveloperID ? " and " + developerIDMarker : "")
         // Build 5 (0.2.0) is the first without disable-library-validation
         // (2026-11-09, fifth audit #20): an older signed copy could have code
-        // injected and speak to this root helper as AVM. XPC honours this
+        // injected and speak to this root helper as Guest House. XPC honours this
         // clause and compares it as a number (tested with signed bundles).
         + " and info[CFBundleVersion] >= \"5\""
 }
@@ -186,7 +186,7 @@ final class IdleWatch {
 let idle = IdleWatch()
 // MARK: - Device registry
 /// One held device: its identity, where it is in its life, the C
-/// stream behind it, and which AVM connection asked for it.
+/// stream behind it, and which Guest House connection asked for it.
 final class DeviceEntry {
     let device: AVMUSBDeviceIdentity
     let socketPath: String
@@ -205,8 +205,8 @@ final class DeviceEntry {
     /// Already told to stop because its user left the screen (2026-11-09,
     /// fifth audit #38), so a release that hangs isn't asked for every 3 s.
     var stoppedForConsole = false
-    /// The user whose AVM attached this device. One root helper serves
-    /// every user on the Mac (fast user switching), so another user's AVM
+    /// The user whose Guest House attached this device. One root helper serves
+    /// every user on the Mac (fast user switching), so another user's Guest House
     /// must not see or release it (2026-10-25, code audit).
     let ownerUID: uid_t
     init(device: AVMUSBDeviceIdentity, socketPath: String, connection: NSXPCConnection?) {
@@ -249,7 +249,7 @@ final class DeviceRegistry {
         }
         // Only for the person at the screen (2026-10-26, security audit),
         // as the keyboard hold already was: with fast user switching, a
-        // background user's AVM must not take a device the person at the
+        // background user's Guest House must not take a device the person at the
         // screen just plugged in.
         var consoleUID: uid_t = 0
         guard SCDynamicStoreCopyConsoleUser(nil, &consoleUID, nil) != nil, consoleUID == uid else {
@@ -376,7 +376,7 @@ final class DeviceRegistry {
             guard let stream = entry.stream else {
                 // Still attaching on its own queue (2026-11-09, fifth audit
                 // #39): done when that comes back (finishAttach). Refused
-                // here, an AVM quitting mid-attach left the device held.
+                // here, a Guest House quitting mid-attach left the device held.
                 if entry.state == .attaching {
                     entry.detachReply = reply
                     return
@@ -398,7 +398,7 @@ final class DeviceRegistry {
         entry.detachReply = reply
         report(entry, detail: nil)
         // If the pump does not come back, answer anyway rather than
-        // leave AVM waiting forever. The device stays listed as
+        // leave Guest House waiting forever. The device stays listed as
         // releasing so status stays honest.
         let timeout = DispatchWorkItem {
             if let pending = entry.detachReply {
@@ -470,11 +470,11 @@ final class DeviceRegistry {
     }
     // MARK: Release on disconnect (2026-10-25, code audit)
 
-    /// Releases every device the given connection attached. AVM's client
+    /// Releases every device the given connection attached. Guest House's client
     /// treats dropping its connection as the release path for all its
-    /// devices (USBHelperClient), but nothing here did it: after AVM
+    /// devices (USBHelperClient), but nothing here did it: after Guest House
     /// crashed, or Unregister, the helper kept streaming a braille display
-    /// or keyboard into a VM nobody controlled, and the relaunched AVM
+    /// or keyboard into a VM nobody controlled, and the relaunched Guest House
     /// couldn't list it to detach. Each device goes through the same stop
     /// as Detach, so it returns to the Mac.
     func releaseAll(ownedBy connection: NSXPCConnection) {
@@ -535,7 +535,7 @@ final class DeviceRegistry {
                    entry.device.displayName, step, detail)
         case AVM_USB_EVENT_ATTACHED.rawValue:
             // Not over a release already begun (2026-11-09, third audit of
-            // the day #17): AVM then said "is now in the machine" of a device
+            // the day #17): Guest House then said "is now in the machine" of a device
             // on its way back.
             guard entry.state != .releasing else {
                 os_log("attached %{public}@ while releasing; ignored", log: log, type: .default, entry.device.description)
@@ -582,7 +582,7 @@ final class DeviceRegistry {
             os_log("unknown stream event %{public}u for %{public}@", log: log, type: .error, event, entry.device.description)
         }
     }
-    /// Tell the AVM that asked for this device where it is now.
+    /// Tell the Guest House that asked for this device where it is now.
     private func report(_ entry: DeviceEntry, detail: String?) {
         guard let connection = entry.connection else {
             os_log("no client to report %{public}@ state %{public}d to", log: log, type: .default,
@@ -627,7 +627,7 @@ private func streamEventCallback(_ context: UnsafeMutableRawPointer?,
 // MARK: - The exported service
 final class HelperService: NSObject, AVMUSBHelperProtocol {
     /// The connection this service object belongs to, so stateChanged
-    /// callbacks can reach the right AVM.
+    /// callbacks can reach the right Guest House.
     weak var connection: NSXPCConnection?
     func attach(_ device: AVMUSBDeviceIdentity,
                 streamSocketPath: String,
@@ -685,12 +685,12 @@ final class HelperService: NSObject, AVMUSBHelperProtocol {
         reply()
     }
 
-    /// Restart USB Helper (2026-10-27). AVM returns its devices to the Mac
+    /// Restart USB Helper (2026-10-27). Guest House returns its devices to the Mac
     /// first; whatever is still held is let go when the process ends.
     /// libusb is stopped on the registry's queue, as for the idle exit.
     func restart(reply: @escaping () -> Void) {
         // Only the person at the screen (2026-10-28, security review): a
-        // background user's AVM must not drop the console user's devices.
+        // background user's Guest House must not drop the console user's devices.
         var consoleUID: uid_t = 0
         guard let uid = connection?.effectiveUserIdentifier,
               SCDynamicStoreCopyConsoleUser(nil, &consoleUID, nil) != nil, consoleUID == uid else {
@@ -717,7 +717,7 @@ final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
                   shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
         // The gate. macOS checks the caller's code signature against
         // this requirement before any message is delivered. A caller
-        // that is not AVM, signed by our team, never gets a reply.
+        // that is not Guest House, signed by our team, never gets a reply.
         guard let clientRequirement else {
             os_log("helper has no Team ID in its own signature; refusing connection (pid %{public}d)",
                    log: log, type: .error, newConnection.processIdentifier)

@@ -1,5 +1,5 @@
 // ContentView.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 
 import SwiftUI
 import Combine
@@ -152,20 +152,20 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .avmStartVMFromMenu)) { note in
             if let id = note.object as? UUID {
                 guard let config = vmStore.configurations.first(where: { $0.id == id }) else {
-                    AVMLog.write("AVM: Start-from-menu — requested machine \(id) is no longer configured; announcing.")
+                    AVMLog.write("Guest House: Start-from-menu — requested machine \(id) is no longer configured; announcing.")
                     Announcer.shared.announce(
                         "That virtual machine is no longer in your list. Nothing was started.",
                         tone: .failure
                     )
                     return
                 }
-                AVMLog.write("AVM: Start-from-menu — starting '\(config.name)' (named in the Start submenu).")
+                AVMLog.write("Guest House: Start-from-menu — starting '\(config.name)' (named in the Start submenu).")
                 startVM(config: config)
                 return
             }
             let configs = vmStore.configurations
             guard let config = configs.first, configs.count == 1 else {
-                AVMLog.write("AVM: Start-from-menu — \(configs.count) configuration(s); cannot pick one. Beeping.")
+                AVMLog.write("Guest House: Start-from-menu — \(configs.count) configuration(s); cannot pick one. Beeping.")
                 NSSound.beep()
                 errorMessage = configs.isEmpty
                     ? "No virtual machine is set up yet. Use the Setup Wizard first."
@@ -175,7 +175,7 @@ struct ContentView: View {
                 if let message = errorMessage { Announcer.shared.announce(message, tone: .info) }
                 return
             }
-            AVMLog.write("AVM: Start-from-menu — starting '\(config.name)'.")
+            AVMLog.write("Guest House: Start-from-menu — starting '\(config.name)'.")
             startVM(config: config)
         }
         // Reclaim Disk Space from the menu (2026-08-15, design of record
@@ -186,14 +186,14 @@ struct ContentView: View {
         // Orphans found: open the sheet, which re-scans on appear.
         .onReceive(NotificationCenter.default.publisher(for: .avmReclaimFromMenu)) { _ in
             // The list wasn't readable at launch (2026-10-28, fifth audit):
-            // AVM didn't look, so it mustn't say it found nothing.
+            // Guest House didn't look, so it mustn't say it found nothing.
             if vmStore.reclaimIsOff {
-                Announcer.shared.announce("AVM couldn't read your list of virtual machines when it opened, so Reclaim Disk Space is off until that's fixed. Next: report the problem from the Help menu.", tone: .failure)
+                Announcer.shared.announce("Guest House couldn't read your list of virtual machines when it opened, so Reclaim Disk Space is off until that's fixed. Next: report the problem from the Help menu.", tone: .failure)
                 return
             }
             let orphans = vmStore.findOrphans()
             guard !orphans.isEmpty else {
-                AVMLog.write("AVM: Reclaim-from-menu — scan found no orphans; announcing.")
+                AVMLog.write("Guest House: Reclaim-from-menu — scan found no orphans; announcing.")
                 Announcer.shared.announce(
                     "No leftover files found. Nothing to reclaim.",
                     tone: .info
@@ -203,10 +203,10 @@ struct ContentView: View {
             // Not behind another sheet (audit of 2026-11-10 #38): its own
             // waited there, unsaid, until the first was closed.
             if MainWindowCloseGuard.hasOpenSheet {
-                Announcer.shared.announce("AVM found leftover files, but a window is open in AVM's list. Close it, then choose Reclaim Disk Space again.", tone: .info)
+                Announcer.shared.announce("Guest House found leftover files, but a window is open in Guest House's list. Close it, then choose Reclaim Disk Space again.", tone: .info)
                 return
             }
-            AVMLog.write("AVM: Reclaim-from-menu — scan found \(orphans.count) orphan(s); opening sheet.")
+            AVMLog.write("Guest House: Reclaim-from-menu — scan found \(orphans.count) orphan(s); opening sheet.")
             showingReclaim = true
         }
         .sheet(isPresented: $showingSetup) {
@@ -247,18 +247,18 @@ struct ContentView: View {
         // several open the picker in detach mode.
         .onReceive(NotificationCenter.default.publisher(for: .avmAttachUSBFromMenu)) { _ in
             guard let manager = VMManager.shared, case .running = manager.state else {
-                AVMLog.write("AVM: Attach-USB-from-menu — VM not running; announcing.", category: "USBHelper")
+                AVMLog.write("Guest House: Attach-USB-from-menu — VM not running; announcing.", category: "USBHelper")
                 Announcer.shared.announce("The virtual machine is not running. Start it, then attach a USB device.", tone: .failure)
                 return
             }
             let redirected = Set(USBRedirectController.shared.redirectedDevices)
             let devices = USBDeviceEnumerator.all().filter { !redirected.contains($0) }
             guard !devices.isEmpty else {
-                AVMLog.write("AVM: Attach-USB-from-menu — no devices to offer; announcing.", category: "USBHelper")
+                AVMLog.write("Guest House: Attach-USB-from-menu — no devices to offer; announcing.", category: "USBHelper")
                 Announcer.shared.announce("No USB devices are plugged in. Next: plug one in and try again.", tone: .info)
                 return
             }
-            AVMLog.write("AVM: Attach-USB-from-menu — \(devices.count) device(s); opening picker.", category: "USBHelper")
+            AVMLog.write("Guest House: Attach-USB-from-menu — \(devices.count) device(s); opening picker.", category: "USBHelper")
             usbPicker = USBPickerRequest(mode: .attach, devices: devices, machine: VMManager.shared)
         }
         .onReceive(NotificationCenter.default.publisher(for: .avmMachineDevices)) { _ in
@@ -294,7 +294,7 @@ struct ContentView: View {
         .sheet(item: $bluetoothWindow) { request in
             BluetoothDevicesView(machine: request.machine)
         }
-        // The machine chosen to start when AVM opens (2026-10-28), once.
+        // The machine chosen to start when Guest House opens (2026-10-28), once.
         .onAppear {
             MainWindowCloseGuard.openMainWindow = { openWindow(id: "main") }
             // Menu commands chosen while there was no dashboard (2026-10-28).
@@ -307,7 +307,7 @@ struct ContentView: View {
         // names only, the same things the file log already records.
         .onReceive(NotificationCenter.default.publisher(for: .avmSpeakStatusFromMenu)) { _ in
             let status = spokenStatus()
-            AVMLog.write("AVM: Speak Status — \(status)")
+            AVMLog.write("Guest House: Speak Status — \(status)")
             Announcer.shared.announce(status, tone: .info)
         }
         // Export and Import (2026-10-26). A machine is "running" for export
@@ -339,7 +339,7 @@ struct ContentView: View {
     /// Same start path as the dashboard's per-VM Start button (see
     /// DashboardContent.startVM). `takesKeyboard` false: the machine's
     /// window opens without taking the Mac's keyboard (a machine started
-    /// when AVM opens that has a keyboard for Windows, 2026-10-28).
+    /// when Guest House opens that has a keyboard for Windows, 2026-10-28).
     private func startVM(config: VMConfiguration, takesKeyboard: Bool = true) {
         // Not while its files are being copied (2026-10-26).
         if MachineArchiveController.shared.refusesWhileBusy(config) { return }
@@ -378,7 +378,7 @@ struct ContentView: View {
 ///   NOW: every control is its own element, and headings form a lean outline
 ///   for the VoiceOver heading rotor (VO-Command-H), in Allison's chosen
 ///   order — machines first, status after:
-///     h1  Accessible Virtual Machine        (app title)
+///     h1  Guest House                       (app title)
 ///     h2    <each VM's name>                (one per machine)
 ///     h3  Status                            (section, BELOW the VM list)
 ///   "Your Virtual Machines" remains VISIBLE text but carries NO heading
@@ -424,7 +424,7 @@ private struct DashboardContent: View {
     var body: some View {
         VStack(spacing: 24) {
 
-            Text("Accessible Virtual Machine")
+            Text("Guest House")
                 .font(.largeTitle)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityHeading(.h1)
@@ -497,25 +497,25 @@ private struct DashboardContent: View {
 
                 // Restart USB Helper (2026-10-27): for a USB device that stays
                 // on the Mac when it shouldn't.
-                // AVM's own Settings (2026-10-30, AppPreferencesView.swift),
+                // Guest House's own Settings (2026-10-30, AppPreferencesView.swift),
                 // where Background and Startup now is. Command-Comma is the
-                // AVM menu's Settings item.
-                Button("AVM Settings…") {
+                // Guest House menu's Settings item.
+                Button("Guest House Settings…") {
                     AppPreferences.open()
                 }
-                .accessibilityHint("Updates, opening AVM at login, running in the background, the Caps Lock key and the USB helper. Command-Comma.")
+                .accessibilityHint("Updates, opening Guest House at login, running in the background, the Caps Lock key and the USB helper. Command-Comma.")
 
                 Button("Restart USB Helper") {
                     Task { await USBRedirectController.shared.restartHelper() }
                 }
-                .accessibilityHint("Returns USB devices to the Mac and restarts the part of AVM that sends them to a virtual machine. Use it if a device won't go across.")
+                .accessibilityHint("Returns USB devices to the Mac and restarts the part of Guest House that sends them to a virtual machine. Use it if a device won't go across.")
 
                 // Import (2026-10-26): here too, because on a new Mac an
                 // exported machine is what the user has instead of a wizard.
                 Button("Import Virtual Machine…") {
                     MachineArchiveController.shared.importMachine(into: vmStore)
                 }
-                .accessibilityHint("Brings back a virtual machine AVM exported, from a folder ending in .avmvm")
+                .accessibilityHint("Brings back a virtual machine Guest House exported, from a folder ending in .avmvm")
 
                 if let current = machines.current {
                     // Named (2026-10-28, fifth audit): with two machines
@@ -525,7 +525,7 @@ private struct DashboardContent: View {
                     }
                     .accessibilityHint("Opens this virtual machine's settings. Command-Option-Comma.")
                     // Command-Option-Comma (2026-10-30): Command-Comma is
-                    // AVM's own Settings now, as in every Mac app.
+                    // Guest House's own Settings now, as in every Mac app.
                     .keyboardShortcut(",", modifiers: [.command, .option])
                 }
             }
@@ -798,7 +798,7 @@ private struct DashboardContent: View {
         // session in any non-stopped state refuses with a spoken reason.
         if let session = machines.session(for: config.id),
            session.vmState != .stopped {
-            AVMLog.write("AVM: Delete refused for '\(config.name)' — VM is not stopped.")
+            AVMLog.write("Guest House: Delete refused for '\(config.name)' — VM is not stopped.")
             Announcer.shared.announce(
                 "Cannot delete \(config.name) while it is running. Stop the virtual machine first.",
                 tone: .failure
@@ -806,13 +806,13 @@ private struct DashboardContent: View {
             return
         }
 
-        // Nor one still running from before AVM last closed (2026-11-10,
+        // Nor one still running from before Guest House last closed (2026-11-10,
         // audit of that day #18): its folder went to the Trash with QEMU
         // still writing in it, and with the entry gone nothing could ever
         // end that QEMU. Export refuses the same.
         if config.guestOS != .macOS, VMManager.hasOrphanedQEMU(config.id) {
-            AVMLog.write("AVM: Delete refused for '\(config.name)' — a QEMU from before AVM last closed still runs it.")
-            Announcer.shared.announce("\(config.name) is still running from before AVM last closed, so it was not deleted. Next: start it, shut it down, then delete it.", tone: .failure)
+            AVMLog.write("Guest House: Delete refused for '\(config.name)' — a QEMU from before Guest House last closed still runs it.")
+            Announcer.shared.announce("\(config.name) is still running from before Guest House last closed, so it was not deleted. Next: start it, shut it down, then delete it.", tone: .failure)
             return
         }
 
@@ -820,7 +820,7 @@ private struct DashboardContent: View {
         // the dialog would say there are no files and the entry would go,
         // leaving the files on the drive. Refuse, and say what to do.
         if config.storageIsMissing {
-            AVMLog.write("AVM: Delete refused for '\(config.name)' — storage folder missing.")
+            AVMLog.write("Guest House: Delete refused for '\(config.name)' — storage folder missing.")
             Announcer.shared.announce(
                 "\(config.storageMissingMessage) \(config.name) was not deleted.",
                 tone: .failure
@@ -849,7 +849,7 @@ private struct DashboardContent: View {
                 Announcer.shared.announce("\(config.name) started while you were asked, so it was not deleted. Shut it down first.", tone: .failure)
                 return
             }
-            AVMLog.write("AVM: Delete confirmed for '\(config.name)'.")
+            AVMLog.write("Guest House: Delete confirmed for '\(config.name)'.")
             do {
                 let freed = try vmStore.deleteMovingFilesToTrash(config)
                 if freed > 0 {
@@ -879,7 +879,7 @@ private struct DashboardContent: View {
                 // #16): the check above ran before it, and this delete can't
                 // be undone, with QEMU writing to the disk it removes.
                 if machines.session(for: config.id).map({ $0.vmState != .stopped }) ?? false || macGuest.runningID == config.id {
-                    AVMLog.write("AVM: Delete refused for '\(config.name)' — it started during the permanent-delete question.")
+                    AVMLog.write("Guest House: Delete refused for '\(config.name)' — it started during the permanent-delete question.")
                     Announcer.shared.announce("\(config.name) was not deleted. Reason: it started while you were asked. Next: shut it down, then delete it again.", tone: .failure)
                     return
                 }
@@ -896,7 +896,7 @@ private struct DashboardContent: View {
                 )
             }
         } else {
-            AVMLog.write("AVM: Delete cancelled for '\(config.name)'.")
+            AVMLog.write("Guest House: Delete cancelled for '\(config.name)'.")
         }
     }
 
@@ -993,16 +993,16 @@ private struct DashboardContent: View {
         .accessibilityHint("Makes a new machine just like this template, which stays as it is. Asks for its name. To change the template itself, turn off Use as a Template in its Settings.")
     }
 
-    // MARK: Start when AVM opens (2026-10-28, BackgroundMode.swift)
+    // MARK: Start when Guest House opens (2026-10-28, BackgroundMode.swift)
 
     private func autoStartToggle(_ config: VMConfiguration) -> some View {
-        Toggle("Start When AVM Opens", isOn: Binding(
+        Toggle("Start When Guest House Opens", isOn: Binding(
             get: { background.autoStartID == config.id },
             set: { BackgroundMode.shared.setAutoStart(config, $0) }))
         .lineLimit(1)
         .fixedSize()
-        .accessibilityLabel("Start \(config.name) when AVM opens")
-        .accessibilityHint("One machine at most. With Open AVM When You Log In, in AVM Settings, it starts when you log in.")
+        .accessibilityLabel("Start \(config.name) when Guest House opens")
+        .accessibilityHint("One machine at most. With Open Guest House When You Log In, in Guest House Settings, it starts when you log in.")
     }
 
     // MARK: Export (2026-10-26)
@@ -1524,7 +1524,7 @@ func confirmForceStop(guest: String) -> Bool {
     alert.addButton(withTitle: "Cancel")
     alert.addButton(withTitle: "Force Stop")
     let confirmed = alert.runModal() == .alertSecondButtonReturn
-    AVMLog.write("AVM: Force Stop \(confirmed ? "confirmed" : "cancelled").")
+    AVMLog.write("Guest House: Force Stop \(confirmed ? "confirmed" : "cancelled").")
     return confirmed
 }
 
@@ -1580,7 +1580,7 @@ struct FlowLayout: Layout {
 @MainActor
 enum DashboardStatus {
     static func spoken() -> String {
-        guard let store = VMStore.shared, let focusLock = FocusLockManager.shared else { return "AVM is still opening." }
+        guard let store = VMStore.shared, let focusLock = FocusLockManager.shared else { return "Guest House is still opening." }
         return spoken(store: store, machines: MachineSessions.shared, focusLock: focusLock)
     }
 

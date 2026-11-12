@@ -329,7 +329,7 @@ static int connect_unix(const char *path, uid_t owner, pid_t peer_pid, char *ste
     }
     /* And QEMU itself (2026-10-28, security review): the same user's
      * other processes could put a listener at that path and be handed
-     * the seized device by this root process. AVM says which pid
+     * the seized device by this root process. Guest House says which pid
      * listens; 0 means it couldn't (then only the user is checked). */
     if (peer_pid > 0 && (getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &got_pid, &pid_len) != 0
                          || got_pid != peer_pid)) {

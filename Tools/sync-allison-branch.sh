@@ -9,9 +9,16 @@
 # by hand.
 #
 # What changes on the way, and nothing else:
-#   - bundle ID com.fullcircleat.AVM -> com.alllisonmeloy.AVM, and the USB
-#     helper's launchd plist renamed to match; the same for the labels
-#     that start with it (com.fullcircleat.avm-clipboard, in macOS guests);
+#   - the name (2026-11-12): this fork is Guest House, hers is AVM. The
+#     app's product name, "Guest House" and "GuestHouse" in every text
+#     file, and the few lines the rename reworded by hand, go back to
+#     hers; FromAVM.swift and the // fork-only blocks in Swift files
+#     (what brings an AVM copy's machines across) are left out, and
+#     the # fork-only blocks in Tools/*.sh;
+#   - bundle ID com.fullcircleat.GuestHouse -> com.alllisonmeloy.AVM, and
+#     the USB helper's launchd plist renamed to match; the same for the
+#     labels that start with it (com.fullcircleat.avm-clipboard, in macOS
+#     guests), and for a tree from before the rename (com.fullcircleat.AVM);
 #   - team 9G2D7CDZ5D -> 4NZJSBJ32X;
 #   - amenathomas1997/... repository and CocoaSpice links -> allisonfm85/...;
 #   - SUFeedURL and SUPublicEDKey, appcast.xml, and the version numbers:
@@ -139,12 +146,22 @@ say "== Putting back Allison's identity"
 if [ -f "Tools/$SELF" ]; then
     git rm -q --cached "Tools/$SELF" && rm -f "Tools/$SELF"
 fi
-if [ -f Resources/com.fullcircleat.AVM.usbhelper.plist ]; then
-    git mv -f Resources/com.fullcircleat.AVM.usbhelper.plist Resources/com.alllisonmeloy.AVM.usbhelper.plist
+for mine in com.fullcircleat.AVM com.fullcircleat.GuestHouse; do
+    if [ -f "Resources/$mine.usbhelper.plist" ]; then
+        git mv -f "Resources/$mine.usbhelper.plist" Resources/com.alllisonmeloy.AVM.usbhelper.plist
+    fi
+done
+# What brings an AVM copy's machines across to Guest House: not hers.
+if [ -f AVM/FromAVM.swift ]; then
+    git rm -q --cached AVM/FromAVM.swift && rm -f AVM/FromAVM.swift
 fi
 # (Nothing to change, as in a tree that already has her identity, is fine.)
+# Fork-only Swift and shell first: the blocks name this fork's old identifier.
+{ git grep -lzI -e "# fork-only" -- 'Tools/*.sh' || true; } | xargs -0 perl -0pi -e 's{^[ \t]*# fork-only\n.*?^[ \t]*# /fork-only\n}{}gms'
+{ git grep -lzI -e "// fork-only" -- '*.swift' || true; } | xargs -0 perl -0pi -e 's{^[ \t]*// fork-only\n.*?^[ \t]*// /fork-only\n}{}gms'
 { git grep -lzI -e "com.fullcircleat" -e "9G2D7CDZ5D" -e "amenathomas1997" -e "fullcircleat-avm" -- . ':!*.msi' || true; } \
     | xargs -0 sed -i '' \
+        -e 's/com\.fullcircleat\.GuestHouse/com.alllisonmeloy.AVM/g' \
         -e 's/com\.fullcircleat\.AVM/com.alllisonmeloy.AVM/g' \
         -e 's/com\.fullcircleat\.avm-/com.alllisonmeloy.avm-/g' \
         -e 's/9G2D7CDZ5D/4NZJSBJ32X/g' \
@@ -156,6 +173,39 @@ git show "$HER:appcast.xml" > appcast.xml
 python3 - "$(git show "$HER:AVM/Info.plist")" "$(git show "$HER:AVM.xcodeproj/project.pbxproj")" <<'PY'
 import re, sys, pathlib
 her_plist, her_pbx = sys.argv[1], sys.argv[2]
+
+# Her name. The reworded lines first, then the name wherever it stands.
+NAME = [
+    ('Text("Guest House")', 'Text("Accessible Virtual Machine")'),
+    ("h1  Guest House                       (app title)", "h1  Accessible Virtual Machine        (app title)"),
+    ('ExpectedHeading(text: "Guest House"', 'ExpectedHeading(text: "Accessible Virtual Machine"'),
+    ("- **Guest House** is the app title", "- **Accessible Virtual Machine** is the app title"),
+    ("Guest House lets you install and run Windows 11 on your", "AVM (Accessible Virtual Machine) lets you install and run Windows 11 on your"),
+    ("This is the working roadmap for Guest House.", "This is the working roadmap for AVM (Accessible Virtual Machine)."),
+    ("Guest House: third-party notices", "AVM, Accessible Virtual Machine: third-party notices"),
+    ("Guest House — accessible virtual machines", "AVM — Accessible Virtual Machine"),
+    ('["Guest House Virtual Machines", "AVM" + " Virtual Machines"].contains(parent.lastPathComponent)', 'parent.lastPathComponent == "AVM Virtual Machines"'),
+    ("        // Both names (2026-11-12): machines made before the app was renamed sit\n        // in the folder named after AVM.\n", ""),
+    ("PRODUCT_MODULE_NAME = AVM;\n\t\t\t\t", ""),
+    ('PRODUCT_NAME = "Guest House";', 'PRODUCT_NAME = "$(TARGET_NAME)";'),
+    ('path = "Guest House.app";', "path = AVM.app;"),
+    (" A Guest House", " An AVM"), (" a Guest House", " an AVM"), ("(a Guest House", "(an AVM"),
+    ("Guest House", "AVM"), ("GuestHouse", "AVM"),
+]
+import subprocess
+for name in subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True).stdout.split("\n"):
+    path = pathlib.Path(name)
+    if not name or not path.is_file() or path.suffix in (".msi", ".png", ".icns"):
+        continue
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        continue
+    new = text
+    for mine, hers in NAME:
+        new = new.replace(mine, hers)
+    if new != text:
+        path.write_text(new, encoding="utf-8")
 
 # Her feed and key; everything else in Info.plist stays as this fork has it.
 plist = pathlib.Path("AVM/Info.plist")
@@ -189,7 +239,7 @@ for path in pathlib.Path(".").rglob("*.md"):
 PY
 
 say "== Checking"
-LEFT="$(git grep -nI -e "fullcircleat" -e "9G2D7CDZ5D" -e "amenathomas" -e "Full Circle" -e "fork-only" -e "upstream-only" -- . ':!*.msi' || true)"
+LEFT="$(git grep -nI -e "fullcircleat" -e "9G2D7CDZ5D" -e "amenathomas" -e "Full Circle" -e "fork-only" -e "upstream-only" -e "Guest House" -e "GuestHouse" -e "FromAVM" -- . ':!*.msi' || true)"
 [ -z "$LEFT" ] || fail "This fork's identity is still in the branch:
 $LEFT" "Add the case to this script, then run it again."
 xmllint --noout appcast.xml Resources/autounattend.xml || fail "An XML file isn't valid after the sync."

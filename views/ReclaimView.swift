@@ -1,5 +1,5 @@
 // ReclaimView.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // The "Reclaim Disk Space" sheet (2026-08-15). Cleans up orphaned VM
 // directories — the debris the pre-fix delete (issue #5) left behind on
@@ -64,7 +64,7 @@ struct ReclaimView: View {
                 Text("No leftover files found. Nothing to reclaim.")
                     .font(.body)
             } else {
-                Text("These folders were left behind by earlier versions of AVM and do not belong to any virtual machine in your list. Check the ones you want to move to the Trash.")
+                Text("These folders were left behind by earlier versions of Guest House and do not belong to any virtual machine in your list. Check the ones you want to move to the Trash.")
                     .font(.body)
                     .fixedSize(horizontal: false, vertical: true)
 

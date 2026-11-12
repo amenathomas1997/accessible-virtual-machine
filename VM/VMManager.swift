@@ -1,5 +1,5 @@
 // VMManager.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 // Launches QEMU as a child process (Process) and controls it via QMP.
 // Optionally launches swtpm before QEMU to provide TPM 2.0 emulation for Windows 11.
 // SPICE display is exposed on a Unix socket for CocoaSpice to connect to.
@@ -67,7 +67,7 @@
 //
 // INSTALL MEDIA PIPELINE (wired in — the unattended-install integration):
 //   When a configuration has an installISOPath and the VM runtime dir does NOT
-//   yet contain the AVM-built media (install-avm.iso + autounattend.img),
+//   yet contain Guest House's own media (install-avm.iso + autounattend.img),
 //   startVM runs WindowsInstallPipeline FIRST — the six-stage build that
 //   produces a modified bootable ISO (winpeshl.ini /legacy ConX bypass +
 //   $WinPEDriver$ virtio drivers) and the FAT answer image. The pipeline's
@@ -141,7 +141,7 @@
 //   reads the image with bundled mdir (MTOOLS_SKIP_CHECK=1; DYLD_LIBRARY_PATH
 //   deliberately stripped — it poisons mtools); if the marker is present,
 //   startVM skips the media build, does NOT attach install-avm.iso, and does
-//   NOT start the boot keypress task — so a fresh AVM start after a completed
+//   NOT start the boot keypress task — so a fresh Guest House start after a completed
 //   install boots the installed disk instead of re-entering Setup and letting
 //   the answer file WIPE it (which happened in anger on 2026-07-11 before this
 //   guard existed). Mid-session guest reboots were already safe — the keypress
@@ -335,7 +335,7 @@ final class VMManager: ObservableObject {
         }
     }
 
-    /// True while AVM itself is starting an Ubuntu VM again after its
+    /// True while Guest House itself is starting an Ubuntu VM again after its
     /// install powered off (restartAfterInstall). SessionGate
     /// reads it so it doesn't end the session in that moment.
     @Published private(set) var restartingAfterInstall = false
@@ -372,7 +372,7 @@ final class VMManager: ObservableObject {
         case .running:
             // The machine the watcher follows sends what it held while it was
             // paused, whichever machine is in front (2026-10-28, fourth
-            // audit: only the front one did, so "AVM will send X when A
+            // audit: only the front one did, so "Guest House will send X when A
             // resumes" wasn't kept for a machine behind another).
             if let id = activeConfiguration?.id, USBHotPlugWatcher.shared.vmID == id {
                 USBPlugPrompt.shared.vmRunning()
@@ -424,7 +424,7 @@ final class VMManager: ObservableObject {
 
     /// When this run booted from install media; nil when the VM started an
     /// installed system. Windows Setup and Ubuntu's installer report no
-    /// progress of their own, so Speak Status says what AVM does know:
+    /// progress of their own, so Speak Status says what Guest House does know:
     /// how long the install has run, whether Windows Setup has reached the
     /// stage the install watchdog detects, and how much the virtual disk
     /// holds so far.
@@ -471,7 +471,7 @@ final class VMManager: ObservableObject {
     /// Called when the install-media pipeline's validation gate returns a
     /// WARNING (e.g. the requested edition isn't on the ISO). Return true to
     /// proceed, false to abort the VM start. The UI can set this to present a
-    /// VoiceOver alert. If unset, AVM notes the warning in the console and
+    /// VoiceOver alert. If unset, Guest House notes the warning in the console and
     /// proceeds (matching the pipeline's own headless default).
     var installWarningHandler: ((String) async -> Bool)?
 
@@ -525,9 +525,9 @@ final class VMManager: ObservableObject {
     var gpuScreenshot: (() async -> Data?)?
 
     /// What's said when there's no picture of a machine that draws on its
-    /// graphics chip: AVM reads that from its window (Windows3D.swift).
+    /// graphics chip: Guest House reads that from its window (Windows3D.swift).
     var screenNeedsWindowWords: String? {
-        drawsOnGPU ? "AVM reads \(machineName)'s screen from its window, as its graphics chip draws it. Next: open its window, then try again." : nil
+        drawsOnGPU ? "Guest House reads \(machineName)'s screen from its window, as its graphics chip draws it. Next: open its window, then try again." : nil
     }
     private var vmSocketDir: URL?
     /// The QEMU guest agent's socket (GuestAgent.swift), in vmSocketDir.
@@ -619,13 +619,13 @@ final class VMManager: ObservableObject {
 
     /// Kills any QEMU process orphaned from a prior run that is still holding
     /// THIS VM's disk image or sockets, so a stale process (e.g. after an Xcode
-    /// SIGKILL or an AVM crash, where deinit/terminate never ran) cannot block a
+    /// SIGKILL or a Guest House crash, where deinit/terminate never ran) cannot block a
     /// fresh launch with a "Failed to get write lock" / QMP timeout.
     ///
     /// Scoped strictly to this VM's UUID — every orphan's argv contains the UUID
     /// via its disk path and socket paths — so starting one VM never kills an
     /// unrelated VM that happens to be running.
-    /// Machines still running from before AVM last closed: they're invisible
+    /// Machines still running from before Guest House last closed: they're invisible
     /// to it, so they're mentioned at launch (2026-11-01 audit).
     nonisolated static func hasOrphanedQEMU(_ vmID: UUID) -> Bool {
         let pgrep = Process()
@@ -673,11 +673,11 @@ final class VMManager: ObservableObject {
 
         for pid in pids {
             avmLog("reapOrphanedQEMU: killing orphaned QEMU pid \(pid) for \(uuid)")
-            appendConsole("AVM: Found orphaned QEMU (pid \(pid)) from a previous run — terminating it.\n")
+            appendConsole("Guest House: Found orphaned QEMU (pid \(pid)) from a previous run — terminating it.\n")
             kill(pid, SIGKILL)
         }
         // Said aloud (2026-11-01 audit): this is a power cut for that machine.
-        Announcer.shared.announce("This machine was still running from before AVM last closed, so AVM had to stop it, as a power cut would, to start it again.", tone: .failure)
+        Announcer.shared.announce("This machine was still running from before Guest House last closed, so Guest House had to stop it, as a power cut would, to start it again.", tone: .failure)
 
         usleep(500_000)
     }
@@ -717,13 +717,13 @@ final class VMManager: ObservableObject {
         } else {
             for pid in pids {
                 avmLog("reapOrphanedSwtpm: killing orphaned swtpm pid \(pid) for \(uuid)")
-                appendConsole("AVM: Found orphaned swtpm (pid \(pid)) from a previous run — terminating it.\n")
+                appendConsole("Guest House: Found orphaned swtpm (pid \(pid)) from a previous run — terminating it.\n")
                 kill(pid, SIGKILL)
             }
             usleep(300_000)
             // Only after killing an orphan (2026-11-09, fourth audit #26): done
             // every time, it pulled the lock from under a live swtpm belonging
-            // to another AVM copy running this machine.
+            // to another Guest House copy running this machine.
             if let vmDir = try? configuration.directoryURL() {
                 let lockPath = vmDir
                     .appendingPathComponent("tpm-state")
@@ -804,7 +804,7 @@ final class VMManager: ObservableObject {
         } else {
             data = Data()
             avmLog("prepareNVRAM: WARNING — edk2-arm-vars.fd not bundled; writing a blank 64MB NVRAM")
-            appendConsole("AVM: WARNING — edk2-arm-vars.fd missing; using blank NVRAM.\n")
+            appendConsole("Guest House: WARNING — edk2-arm-vars.fd missing; using blank NVRAM.\n")
         }
         if data.count < pflashSize { data.append(Data(count: pflashSize - data.count)) }
         do {
@@ -888,7 +888,7 @@ final class VMManager: ObservableObject {
                 return true
             }
             avmLog("checkInstallCompleteMarker: no autounattend.img yet — fresh VM, normal install path")
-            // A reinstall took the volume with it (2026-10-28): what AVM saw
+            // A reinstall took the volume with it (2026-10-28): what Guest House saw
             // on it before is forgotten, so an interrupted reinstall starts
             // again from the DVD.
             if var saved = VMStore.shared?.configurations.first(where: { $0.id == configuration.id }), saved.installMarkerSeen == true {
@@ -932,7 +932,7 @@ final class VMManager: ObservableObject {
             if activeConfiguration?.id == configuration.id { activeConfiguration?.installMarkerSeen = true }
         }
         // No marker on a volume that reads fine, on a machine whose marker
-        // AVM has seen before, with a disk holding gigabytes (2026-10-28,
+        // Guest House has seen before, with a disk holding gigabytes (2026-10-28,
         // code review): the volume is a drive Windows can see and empty,
         // and attaching the installer to this disk would run the answer
         // file over it. Installed, said loudly. Only once seen: during an
@@ -948,21 +948,21 @@ final class VMManager: ObservableObject {
         let seenBefore = stored.map(\.installMarkerSeen) ?? configuration.installMarkerSeen
         if !found, seenBefore == true, diskLooksInstalled(runtimeDir: runtimeDir) {
             avmLog("checkInstallCompleteMarker: NO marker, but it was seen before and the disk has data — treating as installed; the install media is NOT attached")
-            appendConsole("AVM: the install marker is missing from the UNATTEND volume, but \(configuration.guestOS.displayName) was installed before and the disk holds data, so it's treated as installed.\n")
+            appendConsole("Guest House: the install marker is missing from the UNATTEND volume, but \(configuration.guestOS.displayName) was installed before and the disk holds data, so it's treated as installed.\n")
             return true
         }
         return found
     }
 
     /// After the marker: Windows' own steps run with no time limit, so a
-    /// waiting installer would sit at "Getting ready" for good after AVM
+    /// waiting installer would sit at "Getting ready" for good after Guest House
     /// said Setup was underway (2026-10-26, code audit). The setup report
     /// is read every 5 minutes; with no first sign-in 60 minutes on, it's
     /// said once.
     ///
     /// Until then it says how it's going every 10 minutes, and when the
     /// first sign-in is done, that Windows is installed (2026-10-27, tester
-    /// feedback: the silence read as AVM not working). With a Microsoft
+    /// feedback: the silence read as Guest House not working). With a Microsoft
     /// account, Windows stops at its sign-in pages for the user, so those
     /// updates say so.
     private func watchForFirstSignIn(configuration: VMConfiguration, runtimeDir: URL, installStart: Date, quietAfterAnHour: Bool = false) async {
@@ -1078,7 +1078,7 @@ final class VMManager: ObservableObject {
         return listing.output.uppercased()
     }
 
-    /// Ensure the AVM-built install media (install-avm.iso + autounattend.img)
+    /// Ensure Guest House's own install media (install-avm.iso + autounattend.img)
     /// exists in the runtime dir for a VM that has an install ISO configured.
     /// Runs the six-stage WindowsInstallPipeline (off the main actor — it's
     /// @concurrent internally; progress hops back here) on the FIRST start; on
@@ -1100,7 +1100,7 @@ final class VMManager: ObservableObject {
         // builds failed aloud.
         if let earlier = Self.mediaBuilds[configuration.id] {
             avmLog("ensureInstallMedia: an earlier Start is still building this machine's install media; waiting for it")
-            Announcer.shared.announce("\(configuration.name)'s install media is still being built from its last Start. AVM waits for that to finish.", tone: .info)
+            Announcer.shared.announce("\(configuration.name)'s install media is still being built from its last Start. Guest House waits for that to finish.", tone: .info)
             _ = try? await earlier.value
             guard buildIsWanted else { throw CancellationError() }
         }
@@ -1110,7 +1110,7 @@ final class VMManager: ObservableObject {
         let answerImage = runtimeDir.appendingPathComponent("autounattend.img")
         if fm.fileExists(atPath: rebuiltISO.path), fm.fileExists(atPath: answerImage.path) {
             avmLog("ensureInstallMedia: reusing existing install media in \(runtimeDir.path)")
-            appendConsole("AVM: Using previously built install media.\n")
+            appendConsole("Guest House: Using previously built install media.\n")
             return
         }
 
@@ -1130,7 +1130,7 @@ final class VMManager: ObservableObject {
         }
 
         avmLog("ensureInstallMedia: building install media from \(iso)")
-        appendConsole("AVM: Building unattended install media. This can take several minutes on some Macs.\n")
+        appendConsole("Guest House: Building unattended install media. This can take several minutes on some Macs.\n")
         installProgress = "Preparing the Windows install media."
 
         let pipeline = WindowsInstallPipeline()
@@ -1139,7 +1139,7 @@ final class VMManager: ObservableObject {
             // a Force Stop (2026-10-28, fifth audit).
             guard let self, self.buildIsWanted else { return }
             self.installProgress = progress.spoken
-            self.appendConsole("AVM: \(progress.visible)\n")
+            self.appendConsole("Guest House: \(progress.visible)\n")
             // Said (2026-10-28, fourth audit): only Speak Status read it, and
             // a build of several minutes was silent from Start to "ready".
             Announcer.shared.announce(progress.spoken, tone: .info)
@@ -1156,10 +1156,10 @@ final class VMManager: ObservableObject {
             // Said here: this is thrown before the pipeline's own spoken
             // failures, and the dashboard only shows it (2026-10-26, code
             // audit).
-            Announcer.shared.announce("\(configuration.name) can't install Windows: AVM no longer has the password for your Windows account. Next: make a new virtual machine with the same installer.", tone: .failure)
+            Announcer.shared.announce("\(configuration.name) can't install Windows: Guest House no longer has the password for your Windows account. Next: make a new virtual machine with the same installer.", tone: .failure)
             throw PipelineError.stageFailed(
                 stage: .buildAnswerImage,
-                reason: "AVM no longer has the password for the Windows account, which it forgets once the install media is built. Next: make a new virtual machine with the same installer."
+                reason: "Guest House no longer has the password for the Windows account, which it forgets once the install media is built. Next: make a new virtual machine with the same installer."
             )
         }
 
@@ -1202,7 +1202,7 @@ final class VMManager: ObservableObject {
                     await MainActor.run {
                         guard let self, self.buildIsWanted else { return }
                         self.installProgress = message
-                        self.appendConsole("AVM: \(message)\n")
+                        self.appendConsole("Guest House: \(message)\n")
                         Announcer.shared.announce(message, tone: isProblem ? .failure : .info)
                     }
                 }
@@ -1245,12 +1245,12 @@ final class VMManager: ObservableObject {
             // Not after a Force Stop during the build (2026-10-28, code
             // review): the next check ends the start.
             guard buildIsWanted else { return }
-            appendConsole("AVM: Install media ready.\n")
+            appendConsole("Guest House: Install media ready.\n")
             installProgress = "Install media ready."
             // What to expect, said before the silence starts (2026-10-27,
             // tester feedback: minutes of nothing read as broken).
             Announcer.shared.announce(
-                "Install media ready. Windows Setup is starting, and it runs by itself: about 20 to 40 minutes, with a few restarts. Windows doesn't speak while it installs, so long silences are normal. AVM will tell you how it's going every 10 minutes.",
+                "Install media ready. Windows Setup is starting, and it runs by itself: about 20 to 40 minutes, with a few restarts. Windows doesn't speak while it installs, so long silences are normal. Guest House will tell you how it's going every 10 minutes.",
                 tone: .success
             )
         } catch {
@@ -1262,7 +1262,7 @@ final class VMManager: ObservableObject {
                 throw CancellationError()
             }
             avmLog("ensureInstallMedia: pipeline FAILED: \(error.localizedDescription)")
-            appendConsole("AVM: Install media build failed: \(error.localizedDescription)\n")
+            appendConsole("Guest House: Install media build failed: \(error.localizedDescription)\n")
             Announcer.shared.announce(
                 "Install media build failed. \(error.localizedDescription)",
                 tone: .failure
@@ -1286,7 +1286,7 @@ final class VMManager: ObservableObject {
     ///
     /// The completion line pre-explains the long silence that follows: the
     /// installer runs with no screen reader (there is nothing to answer), so
-    /// the user is told how long it takes and that AVM will speak when it is
+    /// the user is told how long it takes and that Guest House will speak when it is
     /// done (UBUNTU INSTALL END, handleQEMUProcessExit).
     private func ensureUbuntuInstallMedia(configuration: VMConfiguration, sourceISO: String, runtimeDir: URL) async throws {
         avmLog("ensureUbuntuInstallMedia: building install media from \(sourceISO)")
@@ -1295,7 +1295,7 @@ final class VMManager: ObservableObject {
         let guest = configuration.guestOS.displayName
         // Debian's and Fedora's netinstalls download the desktop.
         let duration = configuration.guestOS == .ubuntu ? "15 to 40" : "20 to 60"
-        appendConsole("AVM: Building unattended \(guest) install media.\n")
+        appendConsole("Guest House: Building unattended \(guest) install media.\n")
         installProgress = "Preparing the \(guest) install media."
 
         let pipeline = UbuntuInstallPipeline()
@@ -1303,7 +1303,7 @@ final class VMManager: ObservableObject {
             // Not after a Force Stop (2026-10-28, fifth audit).
             guard let self, self.buildIsWanted else { return }
             self.installProgress = spoken
-            self.appendConsole("AVM: \(visible)\n")
+            self.appendConsole("Guest House: \(visible)\n")
             Announcer.shared.announce(spoken, tone: .info)
         }
         do {
@@ -1318,10 +1318,10 @@ final class VMManager: ObservableObject {
             // Not after a Force Stop during the build (2026-10-28, code
             // review): the next check ends the start.
             guard buildIsWanted else { return }
-            appendConsole("AVM: Install media ready.\n")
+            appendConsole("Guest House: Install media ready.\n")
             installProgress = "Install media ready."
             Announcer.shared.announce(
-                "Install media ready. \(guest) is installing now, with no questions. This takes about \(duration) minutes, and \(guest) doesn't speak until it's done, so long silences are normal. AVM will tell you how it's going every 10 minutes, and when \(guest) is installed.",
+                "Install media ready. \(guest) is installing now, with no questions. This takes about \(duration) minutes, and \(guest) doesn't speak until it's done, so long silences are normal. Guest House will tell you how it's going every 10 minutes, and when \(guest) is installed.",
                 tone: .success
             )
         } catch {
@@ -1331,7 +1331,7 @@ final class VMManager: ObservableObject {
                 throw CancellationError()
             }
             avmLog("ensureUbuntuInstallMedia: pipeline FAILED: \(error.localizedDescription)")
-            appendConsole("AVM: Install media build failed: \(error.localizedDescription)\n")
+            appendConsole("Guest House: Install media build failed: \(error.localizedDescription)\n")
             Announcer.shared.announce(
                 "Install media build failed. \(error.localizedDescription)",
                 tone: .failure
@@ -1359,7 +1359,7 @@ final class VMManager: ObservableObject {
         // Said, not only written to a console nobody reads (2026-10-28,
         // fourth audit): no view sets a handler.
         Announcer.shared.announce(reason, tone: .info)
-        appendConsole("AVM: WARNING — \(reason) Proceeding.\n")
+        appendConsole("Guest House: WARNING — \(reason) Proceeding.\n")
         avmLog("handleInstallWarning: no UI handler set; proceeding past: \(reason)")
         return true
     }
@@ -1370,7 +1370,7 @@ final class VMManager: ObservableObject {
         avmLog("startVM: called for \(configuration.name)")
         // Not while Reinstall Windows swaps its disk (2026-11-05, second audit).
         if WindowsReinstall.preparing.contains(configuration.id) {
-            throw AVMError.refused("\(configuration.name) is being prepared to reinstall Windows. Next: wait for AVM to say it's ready, then start it.")
+            throw AVMError.refused("\(configuration.name) is being prepared to reinstall Windows. Next: wait for Guest House to say it's ready, then start it.")
         }
 
         // Nor during a Restore (2026-11-09, audit of 0.4.41 #5): the disk's lock
@@ -1378,7 +1378,7 @@ final class VMManager: ObservableObject {
         // and swtpm under the TPM swap.
         if RestorePoints.restoringIDs.contains(configuration.id) {
             // Said here: thrown this early, nothing else speaks it.
-            let refusal = "\(configuration.name) is being put back to a restore point. Next: wait for AVM to say it's back, then start it."
+            let refusal = "\(configuration.name) is being put back to a restore point. Next: wait for Guest House to say it's back, then start it."
             Announcer.shared.announce(refusal, tone: .failure)
             throw AVMError.refused(refusal)
         }
@@ -1389,10 +1389,10 @@ final class VMManager: ObservableObject {
         }
 
         guard let qemuURL = qemuBinaryURL else {
-            let msg = "qemu-system-aarch64 was not found in AVM.app/Contents/Resources."
+            let msg = "qemu-system-aarch64 was not found in Guest House.app/Contents/Resources."
             avmLog("startVM: \(msg)")
             state = .error(msg)
-            Announcer.shared.announce("The virtual machine can't start: part of AVM is missing (QEMU). Next: install AVM again.", tone: .failure)
+            Announcer.shared.announce("The virtual machine can't start: part of Guest House is missing (QEMU). Next: install Guest House again.", tone: .failure)
             throw AVMError.binaryNotFound("qemu-system-aarch64")
         }
         avmLog("startVM: found QEMU executable at \(qemuURL.path)")
@@ -1421,7 +1421,7 @@ final class VMManager: ObservableObject {
 
         activeConfiguration = configuration
         state = .starting
-        appendConsole("AVM: Starting VM \"\(configuration.name)\"…\n")
+        appendConsole("Guest House: Starting VM \"\(configuration.name)\"…\n")
 
         // FAILED-START CLEANUP (2026-10-25, code audit): every step from
         // here can throw, and used to leave the state at .starting with
@@ -1500,18 +1500,18 @@ final class VMManager: ObservableObject {
         // the answer file wipe the installed disk.
         // One disk (2026-11-05, second audit): QEMU boots diskImagePath while
         // restore points, growth and the installed check use the folder's
-        // disk.qcow2. Two different files that both exist is a machine AVM
+        // disk.qcow2. Two different files that both exist is a machine Guest House
         // can't reason about, so it says so rather than guess.
         if !configuration.diskImagePath.isEmpty {
             let booted = URL(fileURLWithPath: configuration.diskImagePath).resolvingSymlinksInPath().standardizedFileURL.path
             let folderDisk = runtimeDir.appendingPathComponent("disk.qcow2").resolvingSymlinksInPath().standardizedFileURL.path
             if booted.caseInsensitiveCompare(folderDisk) != .orderedSame,
                FileManager.default.fileExists(atPath: booted), FileManager.default.fileExists(atPath: folderDisk) {
-                throw AVMError.refused("\(configuration.name)'s settings name a disk, \(booted), that isn't the one in its folder, \(folderDisk), so AVM won't start it. Next: report the problem from the Help menu.")
+                throw AVMError.refused("\(configuration.name)'s settings name a disk, \(booted), that isn't the one in its folder, \(folderDisk), so Guest House won't start it. Next: report the problem from the Help menu.")
             }
         }
         if diskIsOffloaded(runtimeDir: runtimeDir) {
-            throw AVMError.refused("\(configuration.name)'s disk has been moved off this Mac by iCloud or another file provider, so AVM won't start it: starting would treat it as a new machine. Next: in Finder, download \(runtimeDir.path), then start it again, and keep machines out of folders iCloud syncs.")
+            throw AVMError.refused("\(configuration.name)'s disk has been moved off this Mac by iCloud or another file provider, so Guest House won't start it: starting would treat it as a new machine. Next: in Finder, download \(runtimeDir.path), then start it again, and keep machines out of folders iCloud syncs.")
         }
         var installComplete = checkInstallCompleteMarker(configuration: configuration, runtimeDir: runtimeDir)
         var setupMayNotFinish = false
@@ -1537,9 +1537,9 @@ final class VMManager: ObservableObject {
                 ? try await QEMUSavedState.plan(configuration: configuration, runtimeDir: runtimeDir)
                 : nil
         } catch {
-            // A saved state AVM can't read (2026-10-28, fifth audit): booted
+            // A saved state Guest House can't read (2026-10-28, fifth audit): booted
             // fresh, the next Start loaded it over that session's work.
-            throw AVMError.refused("AVM can't tell whether \(configuration.name) is saved with its apps open, so it didn't start. Next: try again; if this keeps happening, report the problem from the Help menu.")
+            throw AVMError.refused("Guest House can't tell whether \(configuration.name) is saved with its apps open, so it didn't start. Next: try again; if this keeps happening, report the problem from the Help menu.")
         }
         let resuming = resumePlan != nil
         // After each wait in this part (2026-11-10, fourth audit of
@@ -1561,7 +1561,7 @@ final class VMManager: ObservableObject {
 
         if installComplete {
             avmLog("startVM: install-complete marker PRESENT — skipping media build/attach and boot keypress")
-            appendConsole("AVM: \(configuration.guestOS.displayName) is already installed on this VM. Booting from the installed disk; install media will not be attached.\n")
+            appendConsole("Guest House: \(configuration.guestOS.displayName) is already installed on this VM. Booting from the installed disk; install media will not be attached.\n")
             if configuration.guestOS.isLinux {
                 removeFinishedUbuntuMedia(runtimeDir: runtimeDir)
             } else {
@@ -1589,7 +1589,7 @@ final class VMManager: ObservableObject {
                     // 2026-11-10 #4): the two said opposite things.
                     if !saidBefore, !setupMayNotFinish {
                         FileManager.default.createFile(atPath: carryOnSaid.path, contents: nil)
-                        Announcer.shared.announce("Windows Setup is carrying on in \(configuration.name) from where it was stopped. AVM says how it's going every 10 minutes, and when Windows is signed in.", tone: .info)
+                        Announcer.shared.announce("Windows Setup is carrying on in \(configuration.name) from where it was stopped. Guest House says how it's going every 10 minutes, and when Windows is signed in.", tone: .info)
                     }
                     stopInstallWatchdog()
                     // Awake for the rest of Setup too (review of #11).
@@ -1676,10 +1676,10 @@ final class VMManager: ObservableObject {
             avmLog("startVM: launching swtpm")
             try await launchSwtpm(binaryURL: swtpmURL, socketPath: tpmPath, runtimeDir: runtimeDir)
             tpmArgs = buildTPMArguments(socketPath: tpmPath)
-            appendConsole("AVM: swtpm started for TPM 2.0 emulation.\n")
+            appendConsole("Guest House: swtpm started for TPM 2.0 emulation.\n")
         } else {
             avmLog("startVM: swtpm not found, skipping TPM")
-            appendConsole("AVM: swtpm not found in bundle — TPM emulation disabled.\n")
+            appendConsole("Guest House: swtpm not found in bundle — TPM emulation disabled.\n")
         }
 
         // The firmware's variable store, before the arguments that use it.
@@ -1728,7 +1728,7 @@ final class VMManager: ObservableObject {
         // STAGE C (2026-08-03): the full argument list no longer floods the
         // in-app console — it is unsanitized (home paths) and noisy for
         // testers. The sanitized copy lives in the diagnostic log (line above).
-        appendConsole("AVM: QEMU arguments recorded in the diagnostic log.\n")
+        appendConsole("Guest House: QEMU arguments recorded in the diagnostic log.\n")
 
         // Local Network permission first (2026-10-26), so macOS asks while
         // the Mac has the keyboard, not in the middle of Windows Setup.
@@ -1753,7 +1753,7 @@ final class VMManager: ObservableObject {
 
         state = .running
         startedAt = Date()
-        appendConsole("AVM: VM is running.\n")
+        appendConsole("Guest House: VM is running.\n")
         beginQMPEventMonitoring()
         // Before the guest makes a sound, and after a resume too: QEMU doesn't
         // save these.
@@ -1817,7 +1817,7 @@ final class VMManager: ObservableObject {
         // prompt is the other half of the reinstall hazard.
         if installComplete {
             avmLog("startVM: boot keypress task NOT started (install-complete marker present)")
-            // An installed system (2026-10-25, code audit): after AVM's
+            // An installed system (2026-10-25, code audit): after Guest House's
             // restart following an Ubuntu install, this is the same manager,
             // so Speak Status would still describe the finished install.
             installStartedAt = nil
@@ -1852,7 +1852,7 @@ final class VMManager: ObservableObject {
 
     /// Force Stop or Quit Now during a start (2026-10-28, code review): the
     /// start used to carry on past them and launch QEMU for a session that
-    /// had ended, or one that outlived AVM. Checked before each launch and
+    /// had ended, or one that outlived Guest House. Checked before each launch and
     /// before "running"; a start cut short ends as a failed one, quietly.
     private func ensureStillStarting() throws {
         guard case .starting = state else {
@@ -1971,7 +1971,7 @@ final class VMManager: ObservableObject {
         }
         // Ended for certain (2026-11-09, review of the fifth audit's fixes):
         // these were already force-stopped, and a swtpm that ignored its
-        // SIGTERM refused every Start until AVM quit.
+        // SIGTERM refused every Start until Guest House quit.
         for process in processes where process.isRunning { kill(process.processIdentifier, SIGKILL) }
         for _ in 0..<20 where processes.contains(where: \.isRunning) {
             try? await Task.sleep(for: .milliseconds(50))
@@ -1986,7 +1986,7 @@ final class VMManager: ObservableObject {
     }
 
     func forceStopVM() {
-        // A Force Stop while AVM restarts Ubuntu after its install is the
+        // A Force Stop while Guest House restarts Ubuntu after its install is the
         // user's choice: the restart stands down (restartAfterInstall).
         if restartingAfterInstall { restartStoppedByUser = true }
         stopBootKeypressTask()
@@ -1994,7 +1994,7 @@ final class VMManager: ObservableObject {
         // The install media build too (2026-10-28, fifth audit): it ran on,
         // announcing its steps for a machine the user had turned off.
         mediaBuildTask?.cancel()
-        // DETACH + ESCALATE (2026-08-15): the VM is dead to AVM the moment a
+        // DETACH + ESCALATE (2026-08-15): the VM is dead to Guest House the moment a
         // force-stop is issued, so qemuProcess is nil'd IMMEDIATELY — the exit
         // handler's identity guard then ignores this generation's eventual
         // exit no matter when it fires (this pairing closes the reap-window
@@ -2026,7 +2026,7 @@ final class VMManager: ObservableObject {
         }
         cleanUp()
         state = .stopped
-        appendConsole("AVM: VM force-stopped.\n")
+        appendConsole("Guest House: VM force-stopped.\n")
     }
 
     func pauseVM() async throws {
@@ -2036,7 +2036,7 @@ final class VMManager: ObservableObject {
             try await sendQMPCommand("stop", arguments: nil)
         } catch {
             // No answer in time (2026-10-26, code audit): QEMU may still
-            // have paused, leaving AVM saying "running" over a frozen guest.
+            // have paused, leaving Guest House saying "running" over a frozen guest.
             // Asked what QEMU's state is, and it's let go again if paused.
             if let status = try? await sendQMPCommand("query-status", arguments: nil) as? [String: Any],
                (status["running"] as? Bool) == false {
@@ -2053,14 +2053,14 @@ final class VMManager: ObservableObject {
             return
         }
         state = .paused
-        appendConsole("AVM: VM paused.\n")
+        appendConsole("Guest House: VM paused.\n")
     }
 
     func resumeVM() async throws {
         guard case .paused = state else { return }
         try await sendQMPCommand("cont", arguments: nil)
         state = .running
-        appendConsole("AVM: VM resumed.\n")
+        appendConsole("Guest House: VM resumed.\n")
         // Keys the keyboard for Windows still holds (2026-11-09, third audit
         // of the day #23): a pause QEMU began itself (a guest sleep, a disk
         // error) refused their key-ups, and Windows repeated them after.
@@ -2072,7 +2072,7 @@ final class VMManager: ObservableObject {
     /// feature (Virtual Machine menu, Cmd-Shift-R), second member of that
     /// family after sendCtrlAltDel. Two jobs:
     /// 1. RECOVERY EXPERIMENT for the stochastic firmware reboot wedge (an
-    ///    upstream QEMU/edk2 bug — UTM issue #7648; AVM's serial-level
+    ///    upstream QEMU/edk2 bug — UTM issue #7648; Guest House's serial-level
     ///    evidence posted there 2026-07-12). Force-stop + restart is PROVEN
     ///    to recover. FIRST WILD DATA POINT (2026-08-15): system_reset did
     ///    NOT recover — firmware re-entered (fresh screen-clear sequences on
@@ -2087,17 +2087,17 @@ final class VMManager: ObservableObject {
     @discardableResult
     func resetVM() async -> Bool {
         guard case .running = state else {
-            appendConsole("AVM: Can't reset — the VM isn't running.\n")
+            appendConsole("Guest House: Can't reset — the VM isn't running.\n")
             return false
         }
         do {
             try await sendQMPCommand("system_reset", arguments: nil)
             avmLog("resetVM: system_reset sent")
-            appendConsole("AVM: Reset the virtual machine. It is restarting now.\n")
+            appendConsole("Guest House: Reset the virtual machine. It is restarting now.\n")
             return true
         } catch {
             avmLog("resetVM: failed: \(error)")
-            appendConsole("AVM: Resetting the virtual machine failed: \(error.localizedDescription)\n")
+            appendConsole("Guest House: Resetting the virtual machine failed: \(error.localizedDescription)\n")
             return false
         }
     }
@@ -2107,14 +2107,14 @@ final class VMManager: ObservableObject {
     /// Captures the current guest framebuffer to a PPM using QMP `screendump`.
     /// QEMU writes its OWN framebuffer to disk, independent of the SPICE display
     /// path / CocoaSpice — works regardless of GL state. Writes guest-screen.ppm
-    /// in the VM runtime dir (AVM-owned, no TCC prompt). Our QEMU was built WITHOUT
+    /// in the VM runtime dir (Guest House's own, no TCC prompt). Our QEMU was built WITHOUT
     /// libpng so PNG is unavailable; PPM is the dependency-free fallback (convert
     /// with `sips` on the host if needed).
     ///
     /// STAGE C (2026-08-03): the auto-firing DEBUG timer that drove this every
     /// 4 seconds is REMOVED (display investigation closed). The method itself
     /// is RETAINED as an on-demand diagnostic — the ability to answer "what is
-    /// the guest actually showing" without sight is core to AVM's support
+    /// the guest actually showing" without sight is core to Guest House's support
     /// story, and the install watchdog's captureWatchdogFrame uses the same
     /// QMP mechanism with its own file.
     ///
@@ -2289,7 +2289,7 @@ final class VMManager: ObservableObject {
                         let afterSetup = readers.isEmpty
                             ? "Windows will not speak on its own. When Setup is done, enter Windows and press Control Command Return to turn on Narrator."
                             : "Windows doesn't speak while it installs; \(readers.joined(separator: " or ")) talks once Windows signs in. If nothing talks then, enter Windows and press Control Command Return to turn on Narrator."
-                        self.appendConsole("AVM: Windows Setup is underway and will restart the virtual machine a few times. This takes a while. \(afterSetup)\n")
+                        self.appendConsole("Guest House: Windows Setup is underway and will restart the virtual machine a few times. This takes a while. \(afterSetup)\n")
                         Announcer.shared.announce(
                             "Windows Setup is underway and will restart the virtual machine a few times. This takes a while. \(afterSetup)",
                             tone: .success
@@ -2373,7 +2373,7 @@ final class VMManager: ObservableObject {
                     announcedThisRun = true
                     avmLog("installWatchdog: WEDGE DETECTED — announcing recovery guidance")
                     await MainActor.run {
-                        self.appendConsole("AVM: The Windows installation appears to be stuck (screen frozen with high CPU for about 3 minutes). To recover: stop the virtual machine, then start it again — Setup will start over from the beginning.\n")
+                        self.appendConsole("Guest House: The Windows installation appears to be stuck (screen frozen with high CPU for about 3 minutes). To recover: stop the virtual machine, then start it again — Setup will start over from the beginning.\n")
                         Announcer.shared.announce(
                             "The Windows installation appears to be stuck. To recover, stop the virtual machine, then start it again. Setup will start over from the beginning.",
                             tone: .failure
@@ -2455,9 +2455,9 @@ final class VMManager: ObservableObject {
                         avmLog("ubuntuStallWatch: AVMFAIL.TAG present and still running after 3 minutes — stopping the VM")
                         await MainActor.run {
                             self.forceStopVM()
-                            self.appendConsole("AVM: \(guest)'s installer stopped with an error. Its logs are on the virtual machine's UNATTEND disk.\n")
+                            self.appendConsole("Guest House: \(guest)'s installer stopped with an error. Its logs are on the virtual machine's UNATTEND disk.\n")
                             Announcer.shared.announce(
-                                "\(guest)'s install stopped with an error, and AVM turned the virtual machine off. Next: press Start to try the install again. If it stops again, report it with the diagnostic log.",
+                                "\(guest)'s install stopped with an error, and Guest House turned the virtual machine off. Next: press Start to try the install again. If it stops again, report it with the diagnostic log.",
                                 tone: .failure
                             )
                             // AVMFAIL.TAG is NOT removed here: QEMU may still
@@ -2483,7 +2483,7 @@ final class VMManager: ObservableObject {
                 if quietMinutes == quietMinutesToAnnounce {
                     avmLog("ubuntuStallWatch: STALL — no disk or serial activity for \(quietMinutes) minutes; announcing")
                     await MainActor.run {
-                        self.appendConsole("AVM: \(guest)'s install seems to have stopped: nothing has changed for 15 minutes.\n")
+                        self.appendConsole("Guest House: \(guest)'s install seems to have stopped: nothing has changed for 15 minutes.\n")
                         Announcer.shared.announce(
                             "\(guest)'s install seems to have stopped. Nothing has changed for 15 minutes. Next: save the diagnostic log from the File menu, then stop the virtual machine and start it again.",
                             tone: .failure
@@ -2595,7 +2595,7 @@ final class VMManager: ObservableObject {
     /// family, exposed as a menu command. This chord CANNOT be typed from the
     /// host: Alt is Option on a Mac keyboard, so the chord is Control+Option+
     /// Forward Delete — and Control+Option is the VoiceOver modifier, so
-    /// VoiceOver consumes it before AVM ever sees a keydown (verified by test
+    /// VoiceOver consumes it before Guest House ever sees a keydown (verified by test
     /// 2026-07-11: VO pings and nothing transits, even with the VO pass-through
     /// command). QMP injects at the virtual-hardware level via the usb-kbd
     /// device (same path as the boot keypress), bypassing macOS keyboard
@@ -2604,7 +2604,7 @@ final class VMManager: ObservableObject {
     @discardableResult
     func sendCtrlAltDel() async -> Bool {
         guard case .running = state else {
-            appendConsole("AVM: Can't send Ctrl Alt Delete — the VM isn't running.\n")
+            appendConsole("Guest House: Can't send Ctrl Alt Delete — the VM isn't running.\n")
             return false
         }
         do {
@@ -2616,11 +2616,11 @@ final class VMManager: ObservableObject {
                 ]
             ])
             avmLog("sendCtrlAltDel: sent")
-            appendConsole("AVM: Sent Ctrl Alt Delete to the VM.\n")
+            appendConsole("Guest House: Sent Ctrl Alt Delete to the VM.\n")
             return true
         } catch {
             avmLog("sendCtrlAltDel: failed: \(error)")
-            appendConsole("AVM: Sending Ctrl Alt Delete failed: \(error.localizedDescription)\n")
+            appendConsole("Guest House: Sending Ctrl Alt Delete failed: \(error.localizedDescription)\n")
             return false
         }
     }
@@ -2667,7 +2667,7 @@ final class VMManager: ObservableObject {
 
         // swtpm splits its options on every comma and has no escape, so a
         // VM folder with a comma in its path (2026-10-25, code audit) gets
-        // a comma-free link to its TPM state, in AVM's private socket
+        // a comma-free link to its TPM state, in Guest House's private socket
         // folder next to tpm.sock. Paths without commas are passed as is.
         var tpmStatePath = tpmStateDir.path
         if tpmStatePath.contains(",") {
@@ -2735,7 +2735,7 @@ final class VMManager: ObservableObject {
         args += ["-cpu", "host"]
 
         // UNIQUE HARDWARE IDENTITY (-uuid + -smbios) — REQUIRED. DO NOT REMOVE.
-        // Without these, every AVM VM presents QEMU's DEFAULT identity (including
+        // Without these, every Guest House VM presents QEMU's DEFAULT identity (including
         // the all-zeros system UUID shared by every default-configured QEMU VM in
         // the world). During OOBE's "Please keep your PC on" phase, Windows sends
         // a hardware hash derived from SMBIOS to Microsoft's Autopilot service —
@@ -2747,11 +2747,11 @@ final class VMManager: ObservableObject {
         // guest's own registry at HKLM\SOFTWARE\Microsoft\Provisioning\
         // Diagnostics\AutoPilot. A unique per-VM identity produces a unique
         // hardware hash that matches no tenant, so OOBE behaves like a genuinely
-        // new PC (stock consumer flow — AVM's deliberate OOBE policy).
+        // new PC (stock consumer flow — Guest House's deliberate OOBE policy).
         // The identity derives from the VM's existing UUID: deterministic (same
         // VM presents the same hardware every boot — Windows licensing/activation
         // cares), unique per VM, and no new state to store. The manufacturer/
-        // product strings are honest and make AVM VMs identifiable in the guest's
+        // product strings are honest and make Guest House VMs identifiable in the guest's
         // System Information.
         let vmUUID = configuration.id.uuidString
         args += ["-uuid", vmUUID]
@@ -2775,7 +2775,7 @@ final class VMManager: ObservableObject {
                 "-drive", "if=pflash,format=raw,file=\(Self.qemuOptionValue(nvramPath))"
             ]
         } else {
-            appendConsole("AVM: WARNING — \(firmwareName) not found in bundle.\n")
+            appendConsole("Guest House: WARNING — \(firmwareName) not found in bundle.\n")
         }
 
         // USB controller + INPUT DEVICES. usb-kbd is REQUIRED: without it the
@@ -2860,14 +2860,14 @@ final class VMManager: ObservableObject {
                     "-drive", "if=none,id=cdrom0,file=\(Self.qemuOptionValue(rebuiltISOPath)),format=raw,media=cdrom,readonly=on",
                     "-device", "usb-storage,drive=cdrom0,bus=usb.0,port=3,bootindex=0,removable=on,id=avm-dvd"
                 ]
-                avmLog("buildQEMUArguments: attached AVM-built install ISO at \(rebuiltISOPath)")
+                avmLog("buildQEMUArguments: attached Guest House's own install ISO at \(rebuiltISOPath)")
             } else {
                 // Should be unreachable (ensureInstallMedia runs first and throws
                 // on failure). Deliberately attach NOTHING rather than fall back
                 // to the original ISO — the original boots ConX, ignores the
                 // answer file, and strands a blind user in an interactive Setup.
                 avmLog("buildQEMUArguments: ERROR — install-avm.iso missing at \(rebuiltISOPath); attaching no install media")
-                appendConsole("AVM: ERROR — built install media is missing; not attaching install media.\n")
+                appendConsole("Guest House: ERROR — built install media is missing; not attaching install media.\n")
             }
         }
 
@@ -2890,7 +2890,7 @@ final class VMManager: ObservableObject {
                 "-device", "usb-storage,drive=unattend,bus=usb.0,port=4,removable=on,id=avm-unattend"
             ]
             avmLog("buildQEMUArguments: attached autounattend image at \(autounattendImagePath)")
-            appendConsole("AVM: Attached autounattend.xml image for unattended install.\n")
+            appendConsole("Guest House: Attached autounattend.xml image for unattended install.\n")
         } else {
             avmLog("buildQEMUArguments: no autounattend image at \(autounattendImagePath) — normal (attended) install")
         }
@@ -2937,7 +2937,7 @@ final class VMManager: ObservableObject {
             "-spice",
             // gl is ALWAYS given, off when not 3D: a QEMU built with OpenGL
             // (UTM's spice-display.c) reads it with no check for absence and
-            // crashed at start without it (2026-10-27, AVM 0.3.0: exit 11 in
+            // crashed at start without it (2026-10-27, Guest House 0.3.0: exit 11 in
             // qemu_spice_display_early_init, every machine without 3D).
             "unix=on,addr=\(spiceSocketPath),disable-ticketing=on,agent-mouse=on,gl=\(accelerated ? "es" : "off")"
         ]
@@ -3009,7 +3009,7 @@ final class VMManager: ObservableObject {
         avmLog("buildQEMUArguments: display = ramfb + \(accelerated ? "virtio-gpu-gl-pci (3D, the Mac's GPU)" : "virtio-gpu-pci") id=gpu0 (bisected pair, ramfb first — proven order; issue #4 mechanism record in header)")
 
         // SOUND (2026-10-27): QEMU plays the guest's sound to the Mac itself,
-        // through the default output audio unit (AVM's QEMU patch
+        // through the default output audio unit (Guest House's QEMU patch
         // qemu-10.0.12-utm+coreaudio-output-unit-and-microphone.patch, which follows
         // the Mac's output and its rate, so AirPods switching to hands-free
         // mode at 24 kHz don't silence it). It used to go through SPICE and
@@ -3023,11 +3023,11 @@ final class VMManager: ObservableObject {
         // asks for it. If speech crackles on a busy Mac, the buffers are the
         // first thing to grow. Sound no longer depends on the SPICE view, so
         // it also keeps playing while the machine's window is closed.
-        // THE MICROPHONE (2026-10-27): AVM's QEMU patch gives coreaudio a
+        // THE MICROPHONE (2026-10-27): Guest House's QEMU patch gives coreaudio a
         // recording side (the Mac's default microphone, opened only while
         // the guest records). Off unless chosen in Settings: no recording
         // voice at all, so the guest's microphone is silent.
-        // THE CAMERA (2026-10-27): AVM's QEMU patch adds usb-camera, a UVC
+        // THE CAMERA (2026-10-27): Guest House's QEMU patch adds usb-camera, a UVC
         // webcam fed by the Mac's camera, which Windows and Linux drive
         // with their own drivers. It opens the Mac's camera only while
         // something in the guest reads it. Root port 3 is the install
@@ -3043,7 +3043,7 @@ final class VMManager: ObservableObject {
         // (2026-10-28, SoundSmoothness): 2.5 ms x 2 crackled in Windows on
         // a tester's Mac, so balanced, 5 ms x 3, is the default.
         let output = configuration.soundSmoothness.buffer
-        // Its own output device when chosen (2026-10-30, out.dev in AVM's
+        // Its own output device when chosen (2026-10-30, out.dev in Guest House's
         // coreaudio patch); QEMU falls back to the default output when
         // that device isn't connected.
         let outputDevice = configuration.soundOutputUID.map { ",out.dev=\(SoundOutputDevices.qemuValue($0))" } ?? ""
@@ -3110,7 +3110,7 @@ final class VMManager: ObservableObject {
         // output to a file inside the VM runtime dir. Kept because: it was the
         // decisive evidence in the firmware-wedge diagnosis (the only
         // instrument that sees pre-BDS state); it writes only inside the
-        // AVM-owned runtime dir (no Desktop, no home-path exposure to the
+        // Guest House's own runtime dir (no Desktop, no home-path exposure to the
         // user's visible file space); and it is the natural firmware-level
         // feed for the Stage D diagnostic bundle. Cost: one small file per VM.
         // Appended to, and emptied here at each start as plain file: did
@@ -3142,7 +3142,7 @@ final class VMManager: ObservableObject {
 
     private func launchQEMU(executableURL: URL, arguments: [String]) throws {
         avmLog("launchQEMU: executable=\(executableURL.path) argc=\(arguments.count)")
-        appendConsole("AVM: Launching QEMU…\n")
+        appendConsole("Guest House: Launching QEMU…\n")
 
         let process = Process()
         process.executableURL = executableURL
@@ -3165,7 +3165,7 @@ final class VMManager: ObservableObject {
         // (2026-08-03): the old unsanitized, never-truncated
         // ~/Desktop/qemu_stderr.log write is REMOVED. It was redundant (same
         // bytes reach the file log through the username-sanitizing choke
-        // point) and it violated the trust story: AVM writes no loose files
+        // point) and it violated the trust story: Guest House writes no loose files
         // to the user's Desktop.
         let errHandle = errPipe.fileHandleForReading
         let gate = StderrGate()
@@ -3206,14 +3206,14 @@ final class VMManager: ObservableObject {
 
         qemuProcess = process
         avmLog("launchQEMU: QEMU process started, pid=\(process.processIdentifier)")
-        appendConsole("AVM: QEMU process started (pid \(process.processIdentifier)).\n")
+        appendConsole("Guest House: QEMU process started (pid \(process.processIdentifier)).\n")
     }
 
     func handleQEMUProcessExit(process: Process, exitCode: Int32) {
         // IDENTITY GUARD (2026-08-15): only the CURRENT generation's exit may
         // drive state. Proven incident (avm-2026-08-15-121410.log): a wedged
         // QEMU shrugged off forceStop's SIGTERM, so its handler never fired
-        // and AVM believed the VM stopped; on the NEXT start, reapOrphanedQEMU
+        // and Guest House believed the VM stopped; on the NEXT start, reapOrphanedQEMU
         // SIGKILLed the leftover, which FINALLY fired the OLD handler — it saw
         // state .starting, falsely announced "stopped unexpectedly," and its
         // cleanUp() tore down the NEW start's freshly launched swtpm. This
@@ -3249,7 +3249,7 @@ final class VMManager: ObservableObject {
             }
             state = .stopped
             avmLog("handleQEMUProcessExit: clean exit — state -> stopped")
-            appendConsole("AVM: QEMU exited normally.\n")
+            appendConsole("Guest House: QEMU exited normally.\n")
             // A shut down from inside the machine is said (2026-10-28,
             // fourth audit): Start, then Shut Down in Windows, closed the
             // window with no word, while a macOS machine says it.
@@ -3258,10 +3258,10 @@ final class VMManager: ObservableObject {
             }
             handleUbuntuInstallEnd(ubuntuEnd)
         } else if wasRunning {
-            let msg = "QEMU exited with code \(exitCode). Details are in AVM's diagnostic log."
+            let msg = "QEMU exited with code \(exitCode). Details are in Guest House's diagnostic log."
             state = .error(msg)
             avmLog("handleQEMUProcessExit: UNEXPECTED death while running — state -> error, announcing")
-            appendConsole("AVM: \(msg)\n")
+            appendConsole("Guest House: \(msg)\n")
             // ANNOUNCE: the VM dying mid-session is the worst silent failure
             // for a blind user — the machine just vanishes. Interrupt with
             // sound + system voice regardless of which app is frontmost.
@@ -3273,10 +3273,10 @@ final class VMManager: ObservableObject {
             // A crash while shutting down (2026-10-29, sixth audit) was said
             // as "has shut down", with the success sound. Not after a save's
             // own quit (seventh audit): the state is saved either way.
-            let msg = "QEMU exited with code \(exitCode) while shutting down. Details are in AVM's diagnostic log."
+            let msg = "QEMU exited with code \(exitCode) while shutting down. Details are in Guest House's diagnostic log."
             state = .error(msg)
             avmLog("handleQEMUProcessExit: nonzero exit while shutting down — state -> error, announcing")
-            appendConsole("AVM: \(msg)\n")
+            appendConsole("Guest House: \(msg)\n")
             Announcer.shared.announce("\(machineName) stopped unexpectedly while it was shutting down.", tone: .failure)
         } else {
             state = .stopped
@@ -3332,7 +3332,7 @@ final class VMManager: ObservableObject {
     /// exit is announced with what to do next.
     ///
     /// A STOP THE USER ASKED FOR WINS (code review, 2026-10-19): if Stop was
-    /// pressed as the install ended, the exit is the user's, so AVM says
+    /// pressed as the install ended, the exit is the user's, so Guest House says
     /// Ubuntu is installed and does not start it. Starting anyway would also
     /// leave stopGracefully, which waits to see .stopped, waiting forever.
     ///
@@ -3351,7 +3351,7 @@ final class VMManager: ObservableObject {
 
         case .failed(let runtimeDir, let guest):
             avmLog("handleUbuntuInstallEnd: AVMFAIL.TAG present — \(guest)'s installer reported an error")
-            appendConsole("AVM: \(guest)'s installer stopped with an error. Its logs are on the virtual machine's UNATTEND disk.\n")
+            appendConsole("Guest House: \(guest)'s installer stopped with an error. Its logs are on the virtual machine's UNATTEND disk.\n")
             Announcer.shared.announce(
                 "\(guest)'s install stopped with an error, and the virtual machine turned off. Next: press Start to try the install again. If it stops again, report it with the diagnostic log.",
                 tone: .failure
@@ -3360,7 +3360,7 @@ final class VMManager: ObservableObject {
 
         case .installedButUserStopped(let guest):
             avmLog("handleUbuntuInstallEnd: install complete, but the user pressed Stop — not starting it")
-            appendConsole("AVM: \(guest) is installed. It will start the next time you press Start.\n")
+            appendConsole("Guest House: \(guest) is installed. It will start the next time you press Start.\n")
             Announcer.shared.announce(
                 "\(guest) is installed. It will start the next time you press Start.",
                 tone: .success
@@ -3374,7 +3374,7 @@ final class VMManager: ObservableObject {
     private func restartAfterInstall(configuration: VMConfiguration) {
         avmLog("restartAfterInstall: Ubuntu install complete — starting the VM again")
         let guest = configuration.guestOS.displayName
-        appendConsole("AVM: \(guest) is installed. Starting it.\n")
+        appendConsole("Guest House: \(guest) is installed. Starting it.\n")
         Announcer.shared.announce(
             "\(guest) is installed. Starting it now. Orca will speak when the desktop is ready, in about a minute. Orca's key is Caps Lock.",
             tone: .success
@@ -3420,7 +3420,7 @@ final class VMManager: ObservableObject {
                 self.restartingAfterInstall = false
                 avmLog("restartAfterInstall: start FAILED: \(error.localizedDescription)")
                 Announcer.shared.announce(
-                    "\(guest) is installed, but AVM couldn't start it again. Reason: \(error is CancellationError ? "it was stopped." : error.localizedDescription) Next: press Start.",
+                    "\(guest) is installed, but Guest House couldn't start it again. Reason: \(error is CancellationError ? "it was stopped." : error.localizedDescription) Next: press Start.",
                     tone: .failure
                 )
             }
@@ -3461,7 +3461,7 @@ final class VMManager: ObservableObject {
     private func removeFinishedWindowsMedia(runtimeDir: URL) -> Bool {
         // Nothing changes while a saved state waits (2026-10-28, fourth
         // audit): it was saved with the DVD attached and can't load without
-        // it, and its Windows has the UNATTEND drive's FAT cached, so AVM
+        // it, and its Windows has the UNATTEND drive's FAT cached, so Guest House
         // doesn't edit that drive under it either.
         if FileManager.default.fileExists(atPath: QEMUSavedState.hint(in: runtimeDir).path) {
             avmLog("removeFinishedWindowsMedia: a saved state is waiting; keeping install-avm.iso and the UNATTEND drive as they are")
@@ -3474,7 +3474,7 @@ final class VMManager: ObservableObject {
         // its marker is written first, and NVDA, JAWS and the agents are
         // copied from the DVD after; stopped in between, the next Start
         // deleted the DVD and the steps silently skipped. A machine with no
-        // report at all was installed by an AVM from before the report, and
+        // report at all was installed by a Guest House from before the report, and
         // is finished (second review); the marker's own command now writes
         // "specialize-started" too, so a report this template began is
         // never empty (fourth audit: stopped between the marker and the
@@ -3490,7 +3490,7 @@ final class VMManager: ObservableObject {
             try FileManager.default.removeItem(at: iso)
             let gb = String(format: "%.1f", size.doubleValue / 1_000_000_000)
             avmLog("removeFinishedWindowsMedia: deleted install-avm.iso (install complete), \(gb) GB freed")
-            appendConsole("AVM: Windows is installed, so its \(gb) GB install disc copy was deleted.\n")
+            appendConsole("Guest House: Windows is installed, so its \(gb) GB install disc copy was deleted.\n")
         } catch {
             avmLog("removeFinishedWindowsMedia: couldn't delete install-avm.iso: \(error.localizedDescription)")
         }
@@ -3501,7 +3501,7 @@ final class VMManager: ObservableObject {
 
     /// Takes Windows Setup's drives out of the running machine once its
     /// first sign-in has finished (2026-10-29, the developer's Windows):
-    /// the UNATTEND drive stayed in for good, and the install DVD until AVM
+    /// the UNATTEND drive stayed in for good, and the install DVD until Guest House
     /// stopped the machine, and with them in BitLocker couldn't take
     /// effect. The DVD only in the install's own run, which can't be saved:
     /// a carry-on run starts without the camera because of its DVD, and a
@@ -3532,7 +3532,7 @@ final class VMManager: ObservableObject {
         }
         guard !removed.isEmpty else { return }
         avmLog("removeSetupDrives: took out \(removed.joined(separator: " and "))")
-        appendConsole("AVM: Windows is set up, so \(removed.joined(separator: " and ")) came out of the virtual machine.\n")
+        appendConsole("Guest House: Windows is set up, so \(removed.joined(separator: " and ")) came out of the virtual machine.\n")
         // With neither in Windows, its answer file and the DVD's copy go now
         // rather than at the next Start.
         if !unattendInSession, !dvdInSession { removeFinishedWindowsMedia(runtimeDir: runtimeDir) }
@@ -3626,7 +3626,7 @@ final class VMManager: ObservableObject {
         // its last line (2026-10-29, seventh audit): "NVDA installs when you
         // first sign in" was said weeks after the user had.
         guard announce else { return signedIn }
-        appendConsole("AVM: \(summary.message)\n")
+        appendConsole("Guest House: \(summary.message)\n")
         // The failure sound only for something missing (2026-10-28, second
         // review): before the first sign-in nothing has failed.
         Announcer.shared.announce(summary.message, tone: summary.failed ? .failure : (summary.signedIn ? .success : .info))
@@ -3651,7 +3651,7 @@ final class VMManager: ObservableObject {
     /// the first sign-in, so the install starts over from the DVD with the
     /// answers still on the volume: the marker and report go, and with them
     /// the firmware settings and TPM, which name the half-made Windows.
-    /// Without the answer file or the DVD (a Start by an earlier AVM removed
+    /// Without the answer file or the DVD (a Start by an earlier Guest House removed
     /// them), only Reinstall Windows gets out, and that is said; the watch
     /// for the first sign-in still runs, in case Windows does finish.
     enum InterruptedSetup { case notInterrupted, startingOver, cannotStartOver }
@@ -3673,7 +3673,7 @@ final class VMManager: ObservableObject {
             cannot()
             return .cannotStartOver
         }
-        // What AVM remembers first, then the marker, checked, and the
+        // What Guest House remembers first, then the marker, checked, and the
         // report last (its review): with the report gone and the marker
         // still there, the next Start took the half-made Windows as
         // installed without a word.
@@ -3694,7 +3694,7 @@ final class VMManager: ObservableObject {
             try? fm.removeItem(at: runtimeDir.appendingPathComponent(file))
         }
         avmLog("startOverInterruptedSetup: specialize was interrupted; marker and report removed, installing again from the DVD")
-        Announcer.shared.announce("Windows Setup in \(name) was stopped part way through a step Windows usually can't repeat, so AVM is installing Windows again from the start. Nothing of yours was in it yet.", tone: .info)
+        Announcer.shared.announce("Windows Setup in \(name) was stopped part way through a step Windows usually can't repeat, so Guest House is installing Windows again from the start. Nothing of yours was in it yet.", tone: .info)
         return .startingOver
     }
 
@@ -3716,11 +3716,11 @@ final class VMManager: ObservableObject {
               state == .starting else { return }   // not after a Force Stop (review of #19)
         do {
             _ = try await RestorePoints.create(vmDirectory: runtimeDir, label: "Fresh install", secureBoot: configuration.usesSecureBoot, diskBus: configuration.diskBus ?? "nvme")
-            appendConsole("AVM: Saved a restore point called Fresh install.\n")
-            Announcer.shared.announce("AVM saved a restore point called Fresh install, so you can return to a new Windows from Settings at any time.", tone: .info)
+            appendConsole("Guest House: Saved a restore point called Fresh install.\n")
+            Announcer.shared.announce("Guest House saved a restore point called Fresh install, so you can return to a new Windows from Settings at any time.", tone: .info)
         } catch {
             avmLog("saveFreshInstallRestorePoint: \(error.localizedDescription)")
-            Announcer.shared.announce("AVM couldn't save the Fresh install restore point. Reason: \(error.localizedDescription)", tone: .failure)
+            Announcer.shared.announce("Guest House couldn't save the Fresh install restore point. Reason: \(error.localizedDescription)", tone: .failure)
         }
     }
 
@@ -3753,11 +3753,11 @@ final class VMManager: ObservableObject {
             for old in automatic.dropFirst(1) {
                 try? await RestorePoints.delete(old, vmDirectory: runtimeDir)
             }
-            appendConsole("AVM: Saved this week's automatic restore point.\n")
-            Announcer.shared.announce("AVM saved this week's automatic restore point, so this week's updates can be undone from Settings.", tone: .info)
+            appendConsole("Guest House: Saved this week's automatic restore point.\n")
+            Announcer.shared.announce("Guest House saved this week's automatic restore point, so this week's updates can be undone from Settings.", tone: .info)
         } catch {
             avmLog("saveWeeklyRestorePoint: \(error.localizedDescription)")
-            Announcer.shared.announce("AVM couldn't save this week's automatic restore point. Reason: \(error.localizedDescription)", tone: .failure)
+            Announcer.shared.announce("Guest House couldn't save this week's automatic restore point. Reason: \(error.localizedDescription)", tone: .failure)
         }
     }
 
@@ -3824,9 +3824,9 @@ final class VMManager: ObservableObject {
     /// Asking the machine for its keyboard layout before typing.
     var isCheckingKeyboard = false
     var typingStopAsked = false
-    /// Repair for AVM is waiting for a password (GuestRepair.swift).
+    /// Repair for Guest House is waiting for a password (GuestRepair.swift).
     var isRepairing = false
-    /// How long with no sign of life before AVM says a machine looks stuck.
+    /// How long with no sign of life before Guest House says a machine looks stuck.
     static var stuckLimit: TimeInterval = StuckWatch.limit
 
     private var soundLevelsChanged = false
@@ -3925,13 +3925,13 @@ final class VMManager: ObservableObject {
         // A minute, not 5 seconds (2026-11-10, audit of that day #16): QEMU
         // listens early and answers only once the machine is built, and a
         // first launch after an update, or a busy Mac, ran past 5 seconds
-        // and failed the Start, as AVM's own live tests did three times.
+        // and failed the Start, as Guest House's own live tests did three times.
         // The read ends at once if QEMU exits or closes the socket.
         let greetingData = try await readQMPLine(timeout: 60)
         if let json = try? JSONDecoder().decode(QMPGreeting.self, from: greetingData) {
             let v = json.QMP.version.qemu
             qemuVersion = "\(v.major).\(v.minor).\(v.micro)"
-            appendConsole("AVM: Connected to QEMU \(qemuVersion) via QMP.\n")
+            appendConsole("Guest House: Connected to QEMU \(qemuVersion) via QMP.\n")
         }
         try await sendRawQMPCommand(#"{"execute":"qmp_capabilities"}"#)
         _ = try await readQMPLine(timeout: 60)
@@ -4130,14 +4130,14 @@ final class VMManager: ObservableObject {
     private func handleQMPLine(_ data: Data) {
         guard let event = try? JSONDecoder().decode(QMPEvent.self, from: data) else { return }
         avmLog("QMP event: \(event.event)")
-        appendConsole("AVM: QMP event: \(event.event)\n")
+        appendConsole("Guest House: QMP event: \(event.event)\n")
         switch event.event {
         case "SHUTDOWN":
-            appendConsole("AVM: Guest issued a shutdown.\n")
+            appendConsole("Guest House: Guest issued a shutdown.\n")
         case "RESET":
-            appendConsole("AVM: VM reset (rebooting).\n")
+            appendConsole("Guest House: VM reset (rebooting).\n")
         case "POWERDOWN":
-            appendConsole("AVM: Guest requested power-down.\n")
+            appendConsole("Guest House: Guest requested power-down.\n")
         case "SUSPEND":
             if case .running = state { state = .paused }
         case "RESUME":
@@ -4182,7 +4182,7 @@ final class VMManager: ObservableObject {
         if process.terminationStatus != 0 {
             throw AVMError.diskCreationFailed(output)
         }
-        appendConsole("AVM: Created disk image at \(path) (\(sizeGB) GB).\n")
+        appendConsole("Guest House: Created disk image at \(path) (\(sizeGB) GB).\n")
     }
 
     // MARK: - Disk Image Growth (2026-09-26)
@@ -4191,7 +4191,7 @@ final class VMManager: ObservableObject {
     /// is 1024^3 bytes, the same unit createDiskImage uses).
     ///
     /// GROW ONLY. qemu-img refuses to shrink an image unless --shrink is
-    /// passed, and AVM never passes it. The caller also checks. Shrinking a
+    /// passed, and Guest House never passes it. The caller also checks. Shrinking a
     /// disk under Windows destroys data.
     ///
     /// STOPPED VMS ONLY. Settings offers growth only while no VM is running.
@@ -4204,9 +4204,9 @@ final class VMManager: ObservableObject {
     /// configuration only after this returns.
     ///
     /// Windows still sees the old drive C until the user extends it into the
-    /// new space. AVM's answer file puts drive C last, with no recovery
+    /// new space. Guest House's answer file puts drive C last, with no recovery
     /// partition after it, so that is one PowerShell command inside Windows.
-    /// AVM cannot run it from the Mac.
+    /// Guest House cannot run it from the Mac.
     func growDiskImage(at path: String, toGB newSizeGB: Int) async throws {
         guard let imgURL = bundledBinaryURL(named: "qemu-img") else {
             throw AVMError.binaryNotFound("qemu-img")
@@ -4234,14 +4234,14 @@ final class VMManager: ObservableObject {
         }
 
         func failure(_ message: String) -> NSError {
-            NSError(domain: "AVM.DiskGrowth", code: 1,
+            NSError(domain: "GuestHouse.DiskGrowth", code: 1,
                     userInfo: [NSLocalizedDescriptionKey: message])
         }
 
-        AVMLog.write("AVM: growDiskImage - resizing to \(newSizeGB) GB.")
+        AVMLog.write("Guest House: growDiskImage - resizing to \(newSizeGB) GB.")
         let resize = try runQemuImg(["resize", "-f", "qcow2", path, "\(newSizeGB)G"])
         guard resize.status == 0 else {
-            AVMLog.write("AVM: growDiskImage - qemu-img resize FAILED (status \(resize.status)): \(resize.output)")
+            AVMLog.write("Guest House: growDiskImage - qemu-img resize FAILED (status \(resize.status)): \(resize.output)")
             throw failure("The disk could not be resized. \(resize.output)")
         }
 
@@ -4256,11 +4256,11 @@ final class VMManager: ObservableObject {
         }
         guard reportedBytes == expectedBytes else {
             let reported = reportedBytes.map { String($0) } ?? "nothing readable"
-            AVMLog.write("AVM: growDiskImage - verification FAILED: expected \(expectedBytes) bytes, qemu-img info reported \(reported).")
-            throw failure("AVM could not confirm the new disk size, so the setting was not changed.")
+            AVMLog.write("Guest House: growDiskImage - verification FAILED: expected \(expectedBytes) bytes, qemu-img info reported \(reported).")
+            throw failure("Guest House could not confirm the new disk size, so the setting was not changed.")
         }
-        AVMLog.write("AVM: growDiskImage - VERIFIED at \(newSizeGB) GB.")
-        appendConsole("AVM: Grew disk image at \(path) to \(newSizeGB) GB.\n")
+        AVMLog.write("Guest House: growDiskImage - VERIFIED at \(newSizeGB) GB.")
+        appendConsole("Guest House: Grew disk image at \(path) to \(newSizeGB) GB.\n")
     }
 
     // MARK: - USB redirection (helper increment 1b, 2026-09-12)
@@ -4278,14 +4278,14 @@ final class VMManager: ObservableObject {
     /// keystroke), qmp.sock (full control), or usbredir-N.sock (the root
     /// USB helper connects to that one as root and streams the device to
     /// it). Now the folder carries the user's own uid, is created 0700,
-    /// and AVM refuses to start, saying why, unless both levels are real
+    /// and Guest House refuses to start, saying why, unless both levels are real
     /// directories (not symlinks), owned by this user, and closed to
     /// everyone else. The USB helper checks the same things before it
     /// connects (AVMUSBHelper/StreamSocketCheck.swift, streamSocketProblem).
     ///
     /// Another account that made /tmp/avm-<uid> first used to block every
     /// start until a restart (2026-10-28, third audit). Now a root with a
-    /// random tail, /tmp/avm-<uid>-<6 hex>, ours for this run of AVM,
+    /// random tail, /tmp/avm-<uid>-<6 hex>, ours for this run of Guest House,
     /// serves instead; the helper accepts that shape too.
     static func privateSocketDirectory(for vmID: UUID) throws -> URL {
         let uid = getuid()
@@ -4304,7 +4304,7 @@ final class VMManager: ObservableObject {
                 avmLog("privateSocketDirectory: not using \(candidate): \(error.localizedDescription)")
             }
         }
-        guard let root else { throw failure ?? AVMError.socketDirectoryUnsafe("AVM could not make its private folder.") }
+        guard let root else { throw failure ?? AVMError.socketDirectoryUnsafe("Guest House could not make its private folder.") }
         if root != usual, socketRootInUse != root {
             avmLog("privateSocketDirectory: \(usual) isn't this user's; the sockets go under \(root) for this run")
         }
@@ -4321,23 +4321,23 @@ final class VMManager: ObservableObject {
     /// Makes one level of the private folder, or proves it is ours.
     private static func makePrivateFolder(_ path: String, uid: uid_t) throws {
         if mkdir(path, 0o700) != 0 && errno != EEXIST {
-            throw AVMError.socketDirectoryUnsafe("AVM could not make its private folder \(path): \(String(cString: strerror(errno))).")
+            throw AVMError.socketDirectoryUnsafe("Guest House could not make its private folder \(path): \(String(cString: strerror(errno))).")
         }
         var info = stat()
         guard lstat(path, &info) == 0 else {
-            throw AVMError.socketDirectoryUnsafe("AVM could not check its private folder \(path).")
+            throw AVMError.socketDirectoryUnsafe("Guest House could not check its private folder \(path).")
         }
         let isDirectory = (info.st_mode & S_IFMT) == S_IFDIR
         guard isDirectory, info.st_uid == uid, info.st_mode & 0o077 == 0 else {
             avmLog("privateSocketDirectory: refusing \(path): directory \(isDirectory), owner \(info.st_uid), mode \(String(info.st_mode & 0o777, radix: 8))")
-            throw AVMError.socketDirectoryUnsafe("AVM's private folder \(path) belongs to someone else or can be opened by other accounts on this Mac, so AVM won't start the virtual machine with it. Next: restart the Mac, which empties that folder, then try again. If it happens again, another account on this Mac may be interfering; report it.")
+            throw AVMError.socketDirectoryUnsafe("Guest House's private folder \(path) belongs to someone else or can be opened by other accounts on this Mac, so Guest House won't start the virtual machine with it. Next: restart the Mac, which empties that folder, then try again. If it happens again, another account on this Mac may be interfering; report it.")
         }
     }
 
     /// A value for a comma-separated QEMU or swtpm option (2026-10-25,
     /// code audit). Both read a comma as the start of the next option, and
     /// escape a literal one by doubling it. File paths come from where the
-    /// user keeps AVM and their VMs: "/Volumes/Backup, 2TB/…" used to stop
+    /// user keeps Guest House and their VMs: "/Volumes/Backup, 2TB/…" used to stop
     /// that VM ever starting, and a folder named "x,readonly=on" would
     /// quietly change the drive's options.
     static func qemuOptionValue(_ path: String) -> String {
@@ -4436,7 +4436,7 @@ final class VMManager: ObservableObject {
     }
 
     /// Adds a socket chardev QEMU listens on and a usb-hid-bridge device
-    /// (AVM's QEMU patch) on root port `port`, presenting a Bluetooth HID
+    /// (Guest House's QEMU patch) on root port `port`, presenting a Bluetooth HID
     /// device with its own report descriptor; the helper then dials the
     /// socket and relays the device's reports.
     func attachHIDBridge(port: Int, socketPath: String, descriptor: Data, vendor: Int, product: Int, name: String) async throws {
@@ -4503,7 +4503,7 @@ final class VMManager: ObservableObject {
             "blockdev-snapshot-internal-sync",
             arguments: ["device": "disk0", "name": name]
         )
-        appendConsole("AVM: Snapshot \"\(name)\" created.\n")
+        appendConsole("Guest House: Snapshot \"\(name)\" created.\n")
     }
 
     func deleteSnapshot(name: String) async throws {
@@ -4511,13 +4511,13 @@ final class VMManager: ObservableObject {
             "blockdev-snapshot-delete-internal-sync",
             arguments: ["device": "disk0", "name": name]
         )
-        appendConsole("AVM: Snapshot \"\(name)\" deleted.\n")
+        appendConsole("Guest House: Snapshot \"\(name)\" deleted.\n")
     }
 
     // MARK: - Cleanup
 
     /// A process whose parent is gone (2026-10-28, code review): the
-    /// reapers used to kill a QEMU or swtpm another copy of AVM was still
+    /// reapers used to kill a QEMU or swtpm another copy of Guest House was still
     /// running (its machine then "stopped unexpectedly").
     nonisolated static func isOrphaned(_ pid: Int32) -> Bool {
         let ps = Process()
@@ -4593,9 +4593,9 @@ final class VMManager: ObservableObject {
         swtpmProcess?.terminate()
     }
 
-    /// Ends QEMU and swtpm before AVM quits, and doesn't return until QEMU
+    /// Ends QEMU and swtpm before Guest House quits, and doesn't return until QEMU
     /// is gone (2026-10-25). deinit never runs at app exit, so before this a
-    /// guest left running kept running after AVM closed, with no window and
+    /// guest left running kept running after Guest House closed, with no window and
     /// any USB devices still held. Same escalation as forceStopVM, but
     /// waited for here, because a detached task would die with the app:
     /// SIGTERM, then SIGKILL if QEMU is still alive after two seconds.
@@ -4603,7 +4603,7 @@ final class VMManager: ObservableObject {
         stopBootKeypressTask()
         stopInstallWatchdog()
         // The install media build too (2026-10-29, seventh audit): its tool
-        // outlived AVM, with the installer ISO still mounted and the scratch
+        // outlived Guest House, with the installer ISO still mounted and the scratch
         // folder kept; QuitCoordinator waits a moment for it to end.
         mediaBuildTask?.cancel()
         endQEMUAndWait()
@@ -4677,7 +4677,7 @@ enum AVMError: LocalizedError {
         case .vmAlreadyRunning:
             return "A VM is already running. Stop it before starting a new one."
         case .binaryNotFound(let name):
-            return "\(name) was not found in AVM.app/Contents/Resources."
+            return "\(name) was not found in Guest House.app/Contents/Resources."
         case .qemuLaunchFailed:
             return "QEMU failed to start as a child process."
         case .swtpmDidNotStart:
@@ -4725,10 +4725,10 @@ extension VMManager {
         do {
             let replies = try await GuestAgent.call([command], socketPath: path)
             let ok = replies.first?.contains(#""return""#) == true
-            AVMLog.write("AVM: GuestAgent — set the guest clock: \(ok ? "done" : replies.first ?? "no reply")")
+            AVMLog.write("Guest House: GuestAgent — set the guest clock: \(ok ? "done" : replies.first ?? "no reply")")
             return ok
         } catch {
-            AVMLog.write("AVM: GuestAgent — couldn't set the guest clock (\(error.localizedDescription)); Windows will correct it at its next time sync.")
+            AVMLog.write("Guest House: GuestAgent — couldn't set the guest clock (\(error.localizedDescription)); Windows will correct it at its next time sync.")
             return false
         }
     }
@@ -4780,7 +4780,7 @@ extension VMManager {
         return true
     }
 
-    /// True when this AVM's QEMU can draw in 3D: built from a sysroot
+    /// True when this Guest House's QEMU can draw in 3D: built from a sysroot
     /// with ANGLE and virglrenderer (Tools/build-sysroot.sh since
     /// 2026-10-27). An older sysroot has no virtio-gpu-gl-pci, and a
     /// machine asking for it wouldn't start, so 3D is neither offered nor
@@ -5063,7 +5063,7 @@ extension VMManager {
 
     /// Room for the machine's memory on the disk's volume (2026-11-05, second
     /// audit): a with-memory point writes up to the RAM size into the qcow2,
-    /// and AVM takes some on its own; without room the save hit a full disk
+    /// and Guest House takes some on its own; without room the save hit a full disk
     /// part way and the machine paused "disk full".
     nonisolated static func checkRoomForMemory(of configuration: VMConfiguration, in runtimeDir: URL, for what: String) throws {
         guard let free = MachineFileCopier.availableBytes(at: runtimeDir) else { return }
@@ -5164,7 +5164,7 @@ extension VMManager {
                 }
                 Announcer.shared.announce("\(guest) was turned off before its save finished, so the session wasn't saved. Its disk is as it was when it stopped.", tone: .failure)
             }
-            // A save QEMU finished after AVM gave up would be carried on
+            // A save QEMU finished after Guest House gave up would be carried on
             // over newer work at a later Start; it goes now.
             // The marker first (2026-11-09, fifth audit #3): the delete below
             // can fail, or run before the save lands, and the next Start
@@ -5293,7 +5293,7 @@ extension VMManager {
                         try? await Task.sleep(for: .milliseconds(500))
                     }
                 }
-                avmLog("resumeSavedState: the load finished after AVM stopped waiting; \(lateLoad ? "carrying on" : "but the machine didn't run")")
+                avmLog("resumeSavedState: the load finished after Guest House stopped waiting; \(lateLoad ? "carrying on" : "but the machine didn't run")")
             }
             if lateLoad {
                 carriedOn = true
@@ -5301,7 +5301,7 @@ extension VMManager {
                 if plan.isSavedState, !CommandLine.arguments.contains(where: { $0.hasPrefix("--test-") }) {
                     // The marker goes before the question (third audit of the day
                     // #1): it stayed while the question waited, which with Start
-                    // When AVM Opens and nobody at the Mac may be hours, and a
+                    // When Guest House Opens and nobody at the Mac may be hours, and a
                     // Quit, Force Quit or restart meanwhile made the next Start
                     // delete the session Keep It had promised to keep. Start
                     // Fresh writes it again below.
@@ -5312,7 +5312,7 @@ extension VMManager {
                     // #30): Keep It can then never work.
                     let hintText = (try? String(contentsOf: QEMUSavedState.hint(in: runtimeDir), encoding: .utf8)) ?? ""
                     let otherVersion = QEMUSavedState.madeByAnother(hint: hintText, qemu: qemuVersion)
-                        ? " It was saved by another version of AVM, which may be why, and trying again may not help." : ""
+                        ? " It was saved by another version of Guest House, which may be why, and trying again may not help." : ""
                     alert.informativeText = "Reason: \(error.localizedDescription)\(otherVersion) Keep It turns \(guest) off and keeps the saved session, so Start can try again. Start Fresh discards it, and anything open in \(guest) when it was saved is lost."
                     alert.addButton(withTitle: "Keep It")
                     alert.addButton(withTitle: "Start Fresh")
@@ -5348,7 +5348,7 @@ extension VMManager {
                 _ = try? await sendQMPCommand("system_reset", arguments: nil)
                 _ = try? await sendQMPCommand("cont", arguments: nil)
                 // Checked (2026-11-09, fifth audit #30): either command refused or
-                // timed out left QEMU paused at -S while AVM said Running.
+                // timed out left QEMU paused at -S while Guest House said Running.
                 var guestRuns = false
                 for _ in 0..<3 where !guestRuns && state == .starting {
                     if let status = try? await sendQMPCommand("query-status", arguments: nil) as? [String: Any],
@@ -5512,7 +5512,7 @@ extension VMManager {
             // The agent's own close, by name: 0.4.39 shipped this line as a
             // call to this method itself, and the first close after Windows
             // came up recursed without end, each frame on the heap, until
-            // AVM held gigabytes and had to be force-quit (2026-11-08).
+            // Guest House held gigabytes and had to be force-quit (2026-11-08).
             _ = try await agentCall(["execute": "guest-file-close", "arguments": ["handle": handle]])
             leakedGuestHandles.remove(handle)
         } catch AVMError.qmpCommandFailed(let why) where why.contains("has not been found") {
@@ -5527,7 +5527,7 @@ extension VMManager {
 
     /// One guest-file-write, checked (2026-11-09, fourth audit #25): the
     /// count the agent returned was never compared, so a short write landed
-    /// a truncated file and AVM said it had arrived.
+    /// a truncated file and Guest House said it had arrived.
     func writeToGuestFile(_ handle: Int, _ data: Data, timeout: TimeInterval = 10) async throws {
         let reply = try await agentCall(["execute": "guest-file-write", "arguments": ["handle": handle, "buf-b64": data.base64EncodedString()]], timeout: timeout) as? [String: Any]
         if let count = reply?["count"] as? Int, count != data.count {
@@ -5620,7 +5620,7 @@ extension VMManager {
         let guest = configuration.name
         guard await waitForGuestAgent(limit: Self.diskSwitchLimit) else {
             avmLog("diskSwitch: the guest agent never answered; still pending")
-            Announcer.shared.announce("AVM couldn't turn on Save with open apps yet: \(guest)'s guest agent didn't answer. It tries again at the next Start.", tone: .info)
+            Announcer.shared.announce("Guest House couldn't turn on Save with open apps yet: \(guest)'s guest agent didn't answer. It tries again at the next Start.", tone: .info)
             return
         }
         do {
@@ -5662,12 +5662,12 @@ extension VMManager {
                 guard out.contains("avm-virtio-ready") else {
                     // Not the guest's words, which are logged above (2026-11-10,
                     // fourth audit of 2026-11-09 #21).
-                    throw AVMError.qmpCommandFailed("the setup in the machine didn't finish; its words are in AVM's log.")
+                    throw AVMError.qmpCommandFailed("the setup in the machine didn't finish; its words are in Guest House's log.")
                 }
             }
         } catch {
             avmLog("diskSwitch: failed: \(error.localizedDescription)")
-            Announcer.shared.announce("AVM couldn't turn on Save with open apps for \(guest). Nothing was changed. Reason: \(error.localizedDescription)", tone: .failure)
+            Announcer.shared.announce("Guest House couldn't turn on Save with open apps for \(guest). Nothing was changed. Reason: \(error.localizedDescription)", tone: .failure)
             diskSwitchResult = "failed"
             return
         }
@@ -5685,7 +5685,7 @@ extension VMManager {
         } else if state == .running || state == .paused {
             storeDiskSwitch(configuration, bus: nil, step: nil)
             avmLog("diskSwitch: no guest agent \(Self.diskSwitchLimit) after the first virtio Start; switched back to NVMe")
-            Announcer.shared.announce("\(guest) didn't come up with its new disk setting, so AVM has switched it back. Use Force Stop, then start it again.", tone: .failure)
+            Announcer.shared.announce("\(guest) didn't come up with its new disk setting, so Guest House has switched it back. Use Force Stop, then start it again.", tone: .failure)
         }
     }
 }
@@ -5712,7 +5712,7 @@ extension VMManager {
         }
         let name = file.lastPathComponent
         guard let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.int64Value else {
-            Announcer.shared.announce("AVM can't read \(name), so nothing was sent.", tone: .failure)
+            Announcer.shared.announce("Guest House can't read \(name), so nothing was sent.", tone: .failure)
             return false
         }
         Announcer.shared.announce("Sending \(name) to \(machine).", tone: .info)
@@ -5770,7 +5770,7 @@ extension VMManager {
             guard linkCheck.contains("AVM-PLAIN") else {
                 let why = linkCheck.contains("AVM-NOTOWNED") ? "doesn't belong to its user"
                     : linkCheck.contains("AVM-MISSING") ? "couldn't be found" : "is a link to somewhere else"
-                throw AVMError.refused("Downloads in \(machine) \(why), so AVM won't write there. Next: share a folder with \(machine) in its Settings, and put the file there.")
+                throw AVMError.refused("Downloads in \(machine) \(why), so Guest House won't write there. Next: share a folder with \(machine) in its Settings, and put the file there.")
             }
 
             let handle = try FileHandle(forReadingFrom: file)
@@ -5809,7 +5809,7 @@ extension VMManager {
                 Announcer.shared.announce("\(name) wasn't sent to \(machine). \(message)", tone: .failure)
             } else if Self.mayNeedRepair(runningGuestOS), error.localizedDescription.contains("Permission denied") {
                 // An install from before 0.4.19, its agent confined by SELinux (2026-10-31).
-                Announcer.shared.announce("\(name) wasn't sent to \(machine): \(machine) was installed by an older AVM. Next: choose Virtual Machine, Repair \(machine) for AVM.", tone: .failure)
+                Announcer.shared.announce("\(name) wasn't sent to \(machine): \(machine) was installed by an older Guest House. Next: choose Virtual Machine, Repair \(machine) for Guest House.", tone: .failure)
             } else {
                 Announcer.shared.announce("\(name) wasn't sent to \(machine). Reason: \(error.localizedDescription) Next: check \(machine) has finished starting, then try again.", tone: .failure)
             }
@@ -5855,7 +5855,7 @@ extension VMManager {
             var heardDrives = false
             while !Task.isCancelled {
                 // The pause check every ten seconds (2026-11-09, fourth audit
-                // of the day #6): AVM reads no QMP events (handleQMPLine has
+                // of the day #6): Guest House reads no QMP events (handleQMPLine has
                 // no callers), so this poll is how a pause QEMU makes itself
                 // is seen, and once a minute left up to 60 seconds of
                 // "Running" over a frozen machine, typed keys going nowhere.
@@ -5962,13 +5962,13 @@ extension VMManager {
                     // The name and address on standard input, never inside
                     // the script (2026-10-28, fourth audit): PowerShell
                     // takes ’ ‘ ‚ ‛ as quotes too, so a Bonjour name like
-                    // "Amena’s MacBook Pro" broke out of the string AVM runs
+                    // "Amena’s MacBook Pro" broke out of the string Guest House runs
                     // as SYSTEM. One per line; a line break can't be in either.
                     let script = """
                     $in = New-Object IO.StreamReader([Console]::OpenStandardInput(), (New-Object Text.UTF8Encoding $false))
                     $n = $in.ReadLine(); $u = $in.ReadLine()
                     $p = Get-Printer -Name $n -ErrorAction SilentlyContinue
-                    # The address AVM gave it is kept in its comment: Windows
+                    # The address Guest House gave it is kept in its comment: Windows
                     # names the port itself (WSD-...), so that can't say.
                     if ($p -and $p.Comment -eq $u) { 'same' } else {
                       if ($p) { Remove-Printer -Name $n }
@@ -6008,7 +6008,7 @@ extension VMManager {
     }
 }
 
-// MARK: - The Mac's camera in the machine (2026-10-27; AVM's QEMU usb-camera)
+// MARK: - The Mac's camera in the machine (2026-10-27; Guest House's QEMU usb-camera)
 
 extension VMManager {
     /// Says what QEMU's camera reports: the camera light is something a
@@ -6016,7 +6016,7 @@ extension VMManager {
     func announceCamera(_ text: String) {
         let machine = activeConfiguration?.name ?? "The machine"
         if text.contains("camera access was not allowed") {
-            Announcer.shared.announce("\(machine) can't use your Mac's camera: macOS hasn't allowed AVM to. Turn on AVM in System Settings, Privacy and Security, Camera, then quit and reopen AVM.", tone: .failure)
+            Announcer.shared.announce("\(machine) can't use your Mac's camera: macOS hasn't allowed Guest House to. Turn on Guest House in System Settings, Privacy and Security, Camera, then quit and reopen Guest House.", tone: .failure)
         } else if text.contains("the Mac has no camera") {
             Announcer.shared.announce("\(machine) asked for the camera, but your Mac has no camera connected.", tone: .failure)
         } else if text.contains("could not be opened") {

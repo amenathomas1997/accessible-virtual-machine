@@ -1,20 +1,20 @@
 //
 //  AVMUSBHelperProtocol.swift
-//  AVM
+//  Guest House
 //
-//  The XPC contract between AVM and the root USB helper.
+//  The XPC contract between Guest House and the root USB helper.
 //  This file is compiled into BOTH targets. Change it in one place.
 //
 //  The helper does four things: claim, stream, release, report.
 //  It never speaks. It never decides policy. It never lists devices.
-//  AVM does all of that. The helper supplies honest state and AVM
+//  Guest House does all of that. The helper supplies honest state and Guest House
 //  turns that state into announcements.
 //
 //  Every call and every event names its device. Multiple devices can
 //  be attached at once, each with its own stream socket to QEMU.
 //
 //  Everything here is nonisolated on purpose. XPC decodes payloads and
-//  delivers calls on its own threads, and the AVM target defaults new
+//  delivers calls on its own threads, and the Guest House target defaults new
 //  types to the main actor. These types must not inherit that.
 //
 
@@ -25,22 +25,22 @@ import Foundation
 nonisolated public enum AVMUSBHelperNames {
     /// launchd label and Mach service name. Three L's on purpose,
     /// same as the bundle identifier. Don't fix it.
-    public static let machServiceName = "com.fullcircleat.AVM.usbhelper"
+    public static let machServiceName = "com.fullcircleat.GuestHouse.usbhelper"
 
-    /// The plist AVM registers with SMAppService.daemon(plistName:).
-    /// Lives at AVM.app/Contents/Library/LaunchDaemons/.
-    public static let launchdPlistName = "com.fullcircleat.AVM.usbhelper.plist"
+    /// The plist Guest House registers with SMAppService.daemon(plistName:).
+    /// Lives at Guest House.app/Contents/Library/LaunchDaemons/.
+    public static let launchdPlistName = "com.fullcircleat.GuestHouse.usbhelper.plist"
 
-    /// The helper this AVM expects (2026-10-28, code review). Bumped with
+    /// The helper this Guest House expects (2026-10-28, code review). Bumped with
     /// every change to the helper or its protocol: after an update, the
     /// helper from before keeps running for its idle grace period, and
-    /// AVM asks one that answers with another version to exit first.
+    /// Guest House asks one that answers with another version to exit first.
     /// Its libraries count too (0.4.7, 2026-10-29: usbredirhost sending
     /// long interrupt OUT transfers, Tools/sysroot-patches).
-    public static let helperBuildVersion = "0.4.45"
+    public static let helperBuildVersion = "0.4.47"
 
     /// The bundle identifier of the app that is allowed to talk to the helper.
-    public static let clientBundleIdentifier = "com.fullcircleat.AVM"
+    public static let clientBundleIdentifier = "com.fullcircleat.GuestHouse"
 }
 
 // MARK: - Device identity
@@ -135,7 +135,7 @@ nonisolated public final class AVMUSBDeviceIdentity: NSObject, NSSecureCoding {
 // MARK: - Device state
 
 /// Where one device is in its life with the helper.
-/// The helper reports these. AVM decides what to say about them.
+/// The helper reports these. Guest House decides what to say about them.
 @objc(AVMUSBDeviceState)
 nonisolated public enum AVMUSBDeviceState: Int {
     /// Claim in progress. Nothing to announce yet unless it takes too long.
@@ -190,7 +190,7 @@ nonisolated public final class AVMUSBDeviceStatus: NSObject, NSSecureCoding {
     }
 }
 
-// MARK: - Helper side (AVM calls these)
+// MARK: - Helper side (Guest House calls these)
 
 @objc(AVMUSBHelperProtocol)
 nonisolated public protocol AVMUSBHelperProtocol {
@@ -199,7 +199,7 @@ nonisolated public protocol AVMUSBHelperProtocol {
     /// Reply: success, failing step (nil on success), detail.
     /// Attach calls stack. Each device is an independent claim.
     /// peerPID: the QEMU listening on the socket, which the helper checks
-    /// it is talking to (2026-10-28); 0 when AVM doesn't know.
+    /// it is talking to (2026-10-28); 0 when Guest House doesn't know.
     func attach(_ device: AVMUSBDeviceIdentity,
                 streamSocketPath: String,
                 peerPID: Int,
@@ -212,14 +212,14 @@ nonisolated public protocol AVMUSBHelperProtocol {
     /// Everything the helper currently holds, with states.
     func status(reply: @escaping ([AVMUSBDeviceStatus]) -> Void)
 
-    /// Helper build identity, so AVM can tell a stale helper from a
+    /// Helper build identity, so Guest House can tell a stale helper from a
     /// current one after an update. Reply: version string.
     func helperVersion(reply: @escaping (String) -> Void)
 
     // A keyboard for Windows (2026-10-26, KeyboardHold.swift). macOS lets
     // only a privileged process take a keyboard over, so the helper does:
     // it holds the chosen keyboard exclusively, so neither macOS nor
-    // VoiceOver sees its keys, and passes each key to the AVM that asked,
+    // VoiceOver sees its keys, and passes each key to the Guest House that asked,
     // and to no one else, through keyboardKey. Never the built-in keyboard,
     // never the only keyboard, only for the user at the Mac's screen.
 
@@ -242,7 +242,7 @@ nonisolated public protocol AVMUSBHelperProtocol {
 
     // Bluetooth devices for a virtual machine (2026-10-27, BluetoothHold.swift):
     // the helper takes a Bluetooth HID device from macOS and relays its
-    // reports to QEMU's usb-hid-bridge over the socket AVM names.
+    // reports to QEMU's usb-hid-bridge over the socket Guest House names.
 
     /// The Bluetooth HID devices connected now: dictionaries with "id",
     /// "name", "kind" (braille, controller, keyboard, pointer, remote,
@@ -258,7 +258,7 @@ nonisolated public protocol AVMUSBHelperProtocol {
     func releaseBluetoothDevice(_ id: String, reply: @escaping () -> Void)
 }
 
-// MARK: - AVM side (the helper calls this back)
+// MARK: - Guest House side (the helper calls this back)
 
 @objc(AVMUSBHelperClientProtocol)
 nonisolated public protocol AVMUSBHelperClientProtocol {
@@ -269,7 +269,7 @@ nonisolated public protocol AVMUSBHelperClientProtocol {
                       state: AVMUSBDeviceState,
                       detail: String?)
 
-    /// A Bluetooth device the helper held was let go without AVM asking:
+    /// A Bluetooth device the helper held was let go without Guest House asking:
     /// it disconnected, or the virtual machine closed its side.
     func bluetoothState(_ id: String, held: Bool, detail: String?)
 
@@ -289,7 +289,7 @@ nonisolated public protocol AVMUSBHelperClientProtocol {
 // MARK: - Interfaces with secure-coding class lists
 
 nonisolated public enum AVMUSBHelperInterfaces {
-    /// The interface AVM sets as remoteObjectInterface and the helper
+    /// The interface Guest House sets as remoteObjectInterface and the helper
     /// sets as exportedInterface.
     public static func helper() -> NSXPCInterface {
         let iface = NSXPCInterface(with: AVMUSBHelperProtocol.self)
@@ -308,7 +308,7 @@ nonisolated public enum AVMUSBHelperInterfaces {
         return iface
     }
 
-    /// The interface the helper sets as remoteObjectInterface and AVM
+    /// The interface the helper sets as remoteObjectInterface and Guest House
     /// sets as exportedInterface.
     public static func client() -> NSXPCInterface {
         NSXPCInterface(with: AVMUSBHelperClientProtocol.self)

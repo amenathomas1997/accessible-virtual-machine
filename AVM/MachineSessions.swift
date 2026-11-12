@@ -1,5 +1,5 @@
 // MachineSessions.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // SEVERAL MACHINES AT ONCE (2026-10-27). Every running Windows or Linux
 // machine has a VMSession here, keyed by its configuration's id, and its
@@ -9,7 +9,7 @@
 //
 // "Current" is the machine whose window was last in front (or the one
 // just started): the Virtual Machine menu, Speak Status's keyboard line
-// and the rest of AVM that acts on "the" machine act on it, through
+// and the rest of Guest House that acts on "the" machine act on it, through
 // VMManager.shared and VMSession.current, which follow it here.
 //
 // Entering a machine brings its window forward and gives it the keyboard;
@@ -100,12 +100,12 @@ final class MachineSessions: ObservableObject {
             return sessions[config.id]!
         }
         lastError = nil
-        // AVM in front when the machine is to take the keyboard (2026-10-30,
-        // from "start when AVM opens", where AVM opened at login wasn't the
-        // active app, the lock stood down, and AVM wasn't in Command-Tab):
+        // Guest House in front when the machine is to take the keyboard (2026-10-30,
+        // from "start when Guest House opens", where Guest House opened at login wasn't the
+        // active app, the lock stood down, and Guest House wasn't in Command-Tab):
         // here, so every start that takes it gets it, a kept Windows app's
         // too (avmctl's start never takes it). Not with no window to take it
-        // in, nor for a test job, which opens AVM with options of its own
+        // in, nor for a test job, which opens Guest House with options of its own
         // and mustn't take the screen.
         if takesKeyboard, vmStore != nil, !windowless,
            !CommandLine.arguments.dropFirst().contains(where: { $0.hasPrefix("--") }) {
@@ -117,7 +117,7 @@ final class MachineSessions: ObservableObject {
         if let vmStore, let focusLock, !windowless {
             windows[config.id] = MachineWindow(session: session, vmStore: vmStore, focusLock: focusLock)
         } else if windowless {
-            Announcer.shared.announce("Starting \(config.name) without a window. Enter it from AVM's list to see it.", tone: .info)
+            Announcer.shared.announce("Starting \(config.name) without a window. Enter it from Guest House's list to see it.", tone: .info)
         }
         // Not while the keyboard is in another machine (2026-10-28, code
         // review): made current at once, a machine started from the list
@@ -131,7 +131,7 @@ final class MachineSessions: ObservableObject {
             .sink { [weak self] state, restarting in
                 MainActor.assumeIsolated { self?.stateChanged(config.id, state: state, restarting: restarting) }
             }
-        AVMLog.write("AVM: MachineSessions — starting \(config.name); \(sessions.count) machine(s) now.")
+        AVMLog.write("Guest House: MachineSessions — starting \(config.name); \(sessions.count) machine(s) now.")
         Task {
             do {
                 try await session.start()
@@ -149,7 +149,7 @@ final class MachineSessions: ObservableObject {
     }
 
     /// Makes `id` the machine "the" Virtual Machine menu and the rest of
-    /// AVM act on.
+    /// Guest House act on.
     func makeCurrent(_ id: UUID) {
         guard let session = sessions[id] else { return }
         currentID = id
@@ -194,11 +194,11 @@ final class MachineSessions: ObservableObject {
         // machine said "Entering" over a screen that took no keys.
         if session.vmState == .paused {
             // QEMU drops keys sent to a paused machine (2026-10-28, fifth audit).
-            Announcer.shared.announce("\(session.configuration.name) is paused. Nothing you type reaches it until you resume it from AVM's list.", tone: .info)
+            Announcer.shared.announce("\(session.configuration.name) is paused. Nothing you type reaches it until you resume it from Guest House's list.", tone: .info)
         }
         // Current first (2026-10-28, second review): a window made now for a
         // machine running without one otherwise saw the keyboard in another
-        // machine and said "Enter it from AVM's list" while being entered.
+        // machine and said "Enter it from Guest House's list" while being entered.
         // The machine holding the keyboard, not the current one (fourth audit
         // of 2026-11-09 #3): with B made current by a row button and the
         // keyboard in A, entering B kept the keyboard in A.
@@ -224,9 +224,9 @@ final class MachineSessions: ObservableObject {
             // It registers when it lands in its window.
             FocusLockManager.shared?.forgetCaptureView()
         }
-        // Once AVM is active (2026-10-28, code review): from the menu bar
+        // Once Guest House is active (2026-10-28, code review): from the menu bar
         // item, activate() hasn't landed yet, and lock() refused with
-        // "switch to AVM" though AVM was coming forward.
+        // "switch to Guest House" though Guest House was coming forward.
         if NSApp.isActive {
             FocusLockManager.shared?.lock(machine: id)
         } else {
@@ -296,7 +296,7 @@ final class MachineSessions: ObservableObject {
         windows[id]?.closeForGood()
         windows[id] = nil
         watchers[id] = nil
-        AVMLog.write("AVM: MachineSessions — a machine ended; \(sessions.count) still running.")
+        AVMLog.write("Guest House: MachineSessions — a machine ended; \(sessions.count) still running.")
         AVMPasteboard.shared.refreshEnabled()
         StorageWatch.shared.refresh()
         BackgroundMode.shared.machineStopped()
@@ -428,7 +428,7 @@ final class MachineWindow: NSObject, NSWindowDelegate {
         // that finished it took the keyboard from whatever the user had
         // begun meanwhile; the rest of a password being typed into
         // Settings or the wizard went into the machine.
-        // Nor over another app (its review): show() brought AVM forward
+        // Nor over another app (its review): show() brought Guest House forward
         // over it, and the lock then refused.
         let away = !NSApp.isActive
         let busy = away || NSApp.modalWindow != nil || NSApp.windows.contains { $0.attachedSheet != nil }
@@ -436,13 +436,13 @@ final class MachineWindow: NSObject, NSWindowDelegate {
             show()
         } else if elsewhere {
             window.orderBack(nil)
-            Announcer.shared.announce("\(session.configuration.name) is running. Enter it from AVM's list when you're ready.", tone: .info)
+            Announcer.shared.announce("\(session.configuration.name) is running. Enter it from Guest House's list when you're ready.", tone: .info)
         } else if busy, session.entersOnFirstShow {
             session.entersOnFirstShow = false
             window.orderBack(nil)
-            Announcer.shared.announce("\(session.configuration.name) is running. Your keyboard stays where it is. \(away ? "Switch to AVM and press" : "Press") Command Shift E to enter \(session.configuration.name) when you're ready.", tone: .info)
+            Announcer.shared.announce("\(session.configuration.name) is running. Your keyboard stays where it is. \(away ? "Switch to Guest House and press" : "Press") Command Shift E to enter \(session.configuration.name) when you're ready.", tone: .info)
         } else if !session.entersOnFirstShow {
-            // Started when AVM opened, with a keyboard of its own
+            // Started when Guest House opened, with a keyboard of its own
             // (2026-10-28): its window opens, and the Mac's keyboard stays
             // on the Mac.
             window.orderFront(nil)
@@ -450,8 +450,8 @@ final class MachineWindow: NSObject, NSWindowDelegate {
             // keyboard of its own.
             let name = session.configuration.name
             Announcer.shared.announce(latestConfiguration.windowsKeyboardID != nil
-                ? "\(name) is running. Your keyboard stays on the Mac; its own keyboard types into it. Enter \(name) from AVM's list to use this keyboard there too."
-                : "\(name) is running. Your keyboard stays on the Mac. To use it there, switch to AVM and enter \(name) from its list, or press Command Shift E.", tone: .info)
+                ? "\(name) is running. Your keyboard stays on the Mac; its own keyboard types into it. Enter \(name) from Guest House's list to use this keyboard there too."
+                : "\(name) is running. Your keyboard stays on the Mac. To use it there, switch to Guest House and enter \(name) from its list, or press Command Shift E.", tone: .info)
         } else {
             show()
         }
@@ -472,7 +472,7 @@ final class MachineWindow: NSObject, NSWindowDelegate {
     func reconnectIfQEMUChanged() -> Bool {
         let pid = session.manager.qemuPID
         guard shownOnce, !closing, pid != 0, pid != screenForPID else { return false }
-        AVMLog.write("AVM: MachineSessions — \(session.configuration.name)'s QEMU started again; reconnecting its screen")
+        AVMLog.write("Guest House: MachineSessions — \(session.configuration.name)'s QEMU started again; reconnecting its screen")
         // Neither screen touches the lock (2026-10-28, fifth audit): the new
         // one's onAppear locked the user into the machine unasked, and the
         // old one's onDisappear unlocked, in SwiftUI's order. The keyboard
@@ -516,7 +516,7 @@ final class MachineWindow: NSObject, NSWindowDelegate {
         let name = session.configuration.name
         let alert = NSAlert()
         alert.messageText = "Close \(name)?"
-        alert.informativeText = "Shut Down asks \(name) to shut down, as its power button would. Keep Running hides this window; Enter \(name) in AVM's main window brings it back."
+        alert.informativeText = "Shut Down asks \(name) to shut down, as its power button would. Keep Running hides this window; Enter \(name) in Guest House's main window brings it back."
         alert.addButton(withTitle: "Keep Running")
         alert.addButton(withTitle: "Shut Down")
         let saveable = session.canSave

@@ -15,7 +15,7 @@
       <UserLocale>AVM_SETUP_LANGUAGE</UserLocale>
     </component>
     <!-- The virtio disk's driver (2026-10-27): Setup loads it in this pass, before
-         the disk step, from the boot image (X:), where AVM's pipeline puts it. -->
+         the disk step, from the boot image (X:), where Guest House's pipeline puts it. -->
     <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <DriverPaths>
         <PathAndCredentials wcm:action="add" wcm:keyValue="1">
@@ -119,26 +119,26 @@
   <settings pass="specialize">
     <component name="Microsoft-Windows-Deployment" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <RunSynchronous>
-        <!-- AVM REINSTALL GUARD — DO NOT REMOVE.
+        <!-- Guest House REINSTALL GUARD — DO NOT REMOVE.
              Writes AVMDONE.TAG to the writable UNATTEND volume the moment the
              specialize pass runs, which by definition means Windows is on the
              disk. VMManager checks this marker via bundled mdir at VM start;
              if present, it skips install-media attach and the boot keypress
-             task, so a fresh AVM launch can never re-trigger the answer
+             task, so a fresh Guest House launch can never re-trigger the answer
              file's disk wipe on an installed VM. The drive letter is not
              stable during setup, so the command enumerates letters and writes
              next to autounattend.xml; the redirect fails harmlessly on
              read-only volumes. Proven in-guest and via mdir 2026-07-11. -->
         <RunSynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <Description>AVM: write install-complete marker to UNATTEND volume</Description>
+          <Description>Guest House: write install-complete marker to UNATTEND volume</Description>
           <Path>cmd /c for %d in (C D E F G H I J K L) do @if exist %d:\autounattend.xml (echo installed&gt;%d:\AVMDONE.TAG&amp; echo specialize-started&gt;%d:\AVMSTATUS.TXT)</Path>
         </RunSynchronousCommand>
-        <!-- AVM GUEST-AGENT STAGING (mouse parity at OOBE) — DO NOT REORDER.
+        <!-- Guest House GUEST-AGENT STAGING (mouse parity at OOBE) — DO NOT REORDER.
              Installs the vioserial driver and the SPICE vdagent DURING the
              specialize pass, before OOBE, so absolute (client-mode) mouse
              works from the very first interactive screen: a sighted person
-             may be the PRIMARY user of AVM, and OOBE must be mouse-usable
+             may be the PRIMARY user of Guest House, and OOBE must be mouse-usable
              without any guest-side manual steps. Both payload files ride
              this same UNATTEND volume (staged by the pipeline's Stage 4);
              the letter enumeration is the same proven pattern as the marker
@@ -153,10 +153,10 @@
              desktop corner click; VDAGENT.LOG status 0). -->
         <RunSynchronousCommand wcm:action="add">
           <Order>2</Order>
-          <Description>AVM: install vioserial driver from UNATTEND volume</Description>
+          <Description>Guest House: install vioserial driver from UNATTEND volume</Description>
           <Path>cmd /c for %d in (C D E F G H I J K L) do @if exist %d:\vioser.inf pnputil /add-driver %d:\vioser.inf /install</Path>
         </RunSynchronousCommand>
-        <!-- AVM TIME LIMIT (2026-10-30). Windows 11 24H2 (26100, the build
+        <!-- Guest House TIME LIMIT (2026-10-30). Windows 11 24H2 (26100, the build
              Microsoft's download catalog serves) left the vdagent msiexec
              waiting forever here, and Setup waits for every step in this
              pass, so the install stopped for good at "Getting ready" (read
@@ -169,15 +169,15 @@
              which cost 15 minutes at five each. JAWS keeps 30. -->
         <RunSynchronousCommand wcm:action="add">
           <Order>3</Order>
-          <Description>AVM: keep the time-limit helper and agent installer</Description>
+          <Description>Guest House: keep the time-limit helper and agent installer</Description>
           <Path>cmd /c for %d in (C D E F G H I J K L) do @if exist %d:\AVMRUN.PS1 (mkdir "%SystemRoot%\Setup\AVM" &amp; copy /y %d:\AVMRUN.PS1 "%SystemRoot%\Setup\AVM\" &amp; copy /y %d:\VDAGENT.MSI "%SystemRoot%\Setup\AVM\")</Path>
         </RunSynchronousCommand>
         <RunSynchronousCommand wcm:action="add">
           <Order>4</Order>
-          <Description>AVM: install SPICE vdagent from UNATTEND volume</Description>
+          <Description>Guest House: install SPICE vdagent from UNATTEND volume</Description>
           <Path>cmd /c for %d in (C D E F G H I J K L) do @if exist %d:\VDAGENT.MSI powershell -nop -ep bypass -f "%SystemRoot%\Setup\AVM\AVMRUN.PS1" 2 msiexec "/i %d:\VDAGENT.MSI /qn /norestart /L* %SystemRoot%\Temp\AVM-VDAGENT.LOG"</Path>
         </RunSynchronousCommand>
-        <!-- AVM SCREEN READERS (2026-10-26). The pipeline's Stage 3 puts the
+        <!-- Guest House SCREEN READERS (2026-10-26). The pipeline's Stage 3 puts the
              installers the user chose in AVMSR\ on the install DVD, after
              downloading them from NV Access and Freedom Scientific and
              checking their SHA-256. Nothing chosen, no folder, and these do
@@ -191,68 +191,68 @@
              test install 2026-10-26). -->
         <RunSynchronousCommand wcm:action="add">
           <Order>5</Order>
-          <Description>AVM: copy the NVDA installer for the first sign-in</Description>
+          <Description>Guest House: copy the NVDA installer for the first sign-in</Description>
           <Path>cmd /c for %d in (D E F G H I J K L M) do @if exist %d:\AVMSR\NVDA.EXE (mkdir "%SystemRoot%\Setup\AVM" &amp; copy /y %d:\AVMSR\NVDA.EXE "%SystemRoot%\Setup\AVM\NVDA.EXE")</Path>
         </RunSynchronousCommand>
         <RunSynchronousCommand wcm:action="add">
           <Order>6</Order>
-          <Description>AVM: install JAWS from the install media</Description>
+          <Description>Guest House: install JAWS from the install media</Description>
           <Path>cmd /c for %d in (D E F G H I J K L M) do @if exist %d:\AVMSR\JAWS.EXE powershell -nop -ep bypass -f "%SystemRoot%\Setup\AVM\AVMRUN.PS1" 30 %d:\AVMSR\JAWS.EXE "/quiet /norestart"</Path>
         </RunSynchronousCommand>
-        <!-- AVM SHARED FOLDER (2026-10-26). spice-webdavd, from AVMEXTRA\ on
-             the install DVD, shows the Mac folder chosen in AVM's Settings
+        <!-- Guest House SHARED FOLDER (2026-10-26). spice-webdavd, from AVMEXTRA\ on
+             the install DVD, shows the Mac folder chosen in Guest House's Settings
              as a network drive. With no folder shared it does nothing. -->
         <RunSynchronousCommand wcm:action="add">
           <Order>7</Order>
-          <Description>AVM: install the SPICE shared-folder service</Description>
+          <Description>Guest House: install the SPICE shared-folder service</Description>
           <Path>cmd /c for %d in (D E F G H I J K L M) do @if exist %d:\AVMEXTRA\WEBDAVD.MSI (copy %d:\AVMEXTRA\WEBDAVD.MSI "%SystemRoot%\Setup\AVM\" &amp; powershell -nop -ep bypass -f "%SystemRoot%\Setup\AVM\AVMRUN.PS1" 2 msiexec "/i %d:\AVMEXTRA\WEBDAVD.MSI /qn /norestart")</Path>
         </RunSynchronousCommand>
-        <!-- AVM GUEST AGENT (2026-10-26). The QEMU guest agent, from the DVD,
-             lets AVM set Windows' clock when the Mac wakes. -->
+        <!-- Guest House GUEST AGENT (2026-10-26). The QEMU guest agent, from the DVD,
+             lets Guest House set Windows' clock when the Mac wakes. -->
         <RunSynchronousCommand wcm:action="add">
           <Order>8</Order>
-          <Description>AVM: install the QEMU guest agent</Description>
+          <Description>Guest House: install the QEMU guest agent</Description>
           <Path>cmd /c for %d in (D E F G H I J K L M) do @if exist %d:\AVMEXTRA\QEMUGA.MSI (copy %d:\AVMEXTRA\QEMUGA.MSI "%SystemRoot%\Setup\AVM\" &amp; powershell -nop -ep bypass -f "%SystemRoot%\Setup\AVM\AVMRUN.PS1" 2 msiexec "/i %d:\AVMEXTRA\QEMUGA.MSI /qn /norestart")</Path>
         </RunSynchronousCommand>
-        <!-- AVM SETUP REPORT (2026-10-26). What the steps above left
+        <!-- Guest House SETUP REPORT (2026-10-26). What the steps above left
              installed, written to AVMSTATUS.TXT on the UNATTEND volume (the
-             one with AVMDONE.TAG), so AVM and Tools/test-windows-install.sh
+             one with AVMDONE.TAG), so Guest House and Tools/test-windows-install.sh
              can read it from the Mac without anyone at the screen. Each line
              checks for the result, not an installer's exit code. One command
              per check: Windows refuses the whole answer file if any Path is
              over 259 characters (found by the install test, 2026-10-26). -->
         <RunSynchronousCommand wcm:action="add">
           <Order>9</Order>
-          <Description>AVM: report: setup's own steps ran</Description>
+          <Description>Guest House: report: setup's own steps ran</Description>
           <Path>cmd /c for %d in (C D E F G H I J K L) do @if exist %d:\AVMDONE.TAG echo specialize-done&gt;%d:\AVMSTATUS.TXT</Path>
         </RunSynchronousCommand>
         <RunSynchronousCommand wcm:action="add">
           <Order>10</Order>
-          <Description>AVM: report: NVDA staged</Description>
+          <Description>Guest House: report: NVDA staged</Description>
           <Path>cmd /c if exist "%SystemRoot%\Setup\AVM\NVDA.EXE" for %d in (C D E F G H I J K L) do @if exist %d:\AVMDONE.TAG echo nvda-staged&gt;&gt;%d:\AVMSTATUS.TXT</Path>
         </RunSynchronousCommand>
         <RunSynchronousCommand wcm:action="add">
           <Order>11</Order>
-          <Description>AVM: report: JAWS</Description>
+          <Description>Guest House: report: JAWS</Description>
           <!-- jfw.exe, not the folder (2026-11-09, fourth audit of the day #7): an install killed at 30 minutes leaves the folder, and the user was told JAWS was talking. -->
           <Path>cmd /c for /d %v in ("%ProgramFiles%\Freedom Scientific\JAWS\*") do @if exist "%v\jfw.exe" for %d in (C D E F G H I J K L) do @if exist %d:\AVMDONE.TAG echo jaws-installed&gt;&gt;%d:\AVMSTATUS.TXT</Path>
         </RunSynchronousCommand>
         <RunSynchronousCommand wcm:action="add">
           <Order>12</Order>
-          <Description>AVM: report: SPICE agent</Description>
+          <Description>Guest House: report: SPICE agent</Description>
           <Path>cmd /c sc query spice-agent &gt;nul &amp;&amp; for %d in (C D E F G H I J K L) do @if exist %d:\AVMDONE.TAG echo vdagent-installed&gt;&gt;%d:\AVMSTATUS.TXT</Path>
         </RunSynchronousCommand>
         <RunSynchronousCommand wcm:action="add">
           <Order>13</Order>
-          <Description>AVM: report: shared-folder service</Description>
+          <Description>Guest House: report: shared-folder service</Description>
           <Path>cmd /c sc query spice-webdavd &gt;nul &amp;&amp; for %d in (C D E F G H I J K L) do @if exist %d:\AVMDONE.TAG echo webdavd-installed&gt;&gt;%d:\AVMSTATUS.TXT</Path>
         </RunSynchronousCommand>
         <RunSynchronousCommand wcm:action="add">
           <Order>14</Order>
-          <Description>AVM: report: guest agent</Description>
+          <Description>Guest House: report: guest agent</Description>
           <Path>cmd /c sc query QEMU-GA &gt;nul &amp;&amp; for %d in (C D E F G H I J K L) do @if exist %d:\AVMDONE.TAG echo qemu-ga-installed&gt;&gt;%d:\AVMSTATUS.TXT</Path>
         </RunSynchronousCommand>
-        <!-- AVM NO UPDATE DURING SETUP (2026-10-30). Microsoft's download
+        <!-- Guest House NO UPDATE DURING SETUP (2026-10-30). Microsoft's download
              catalog serves 26100.4349 (June 2025); the setup screens then
              fetched a cumulative update (to 26100.9544) and restarted to
              apply it, and that restart never got past the boot logo
@@ -262,10 +262,10 @@
              Windows Update and Spotlight behave as usual afterwards. -->
         <RunSynchronousCommand wcm:action="add">
           <Order>15</Order>
-          <Description>AVM: no Windows Update during the setup screens</Description>
+          <Description>Guest House: no Windows Update during the setup screens</Description>
           <Path>reg add HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent /v DisableCloudOptimizedContent /t REG_DWORD /d 1 /f</Path>
         </RunSynchronousCommand>
-        <!-- AVM ANSWER FILE GONE (2026-10-28, fourth audit). Its disk wipe
+        <!-- Guest House ANSWER FILE GONE (2026-10-28, fourth audit). Its disk wipe
              stayed armed while it sat on the UNATTEND drive: through the
              whole install run every restart offers the DVD for five seconds,
              and a key pressed then (Control-Command-Return for Narrator, say)
@@ -274,17 +274,17 @@
              password in it with it. Last, after the DVD steps and the report. -->
         <RunSynchronousCommand wcm:action="add">
           <Order>16</Order>
-          <Description>AVM: remove the answer file from the UNATTEND volume</Description>
+          <Description>Guest House: remove the answer file from the UNATTEND volume</Description>
           <Path>cmd /c for %d in (C D E F G H I J K L) do @if exist %d:\AVMDONE.TAG del /f /q %d:\autounattend.xml</Path>
         </RunSynchronousCommand>
       </RunSynchronous>
     </component>
-    <!-- AVM COMPUTER NAME (2026-10-26): the wizard's computer name, as a
+    <!-- Guest House COMPUTER NAME (2026-10-26): the wizard's computer name, as a
          specialize-pass Shell-Setup component (WindowsSetupAnswers.swift). -->
     <!--AVM_SPECIALIZE_SHELL-->
   </settings>
   <settings pass="oobeSystem">
-    <!-- AVM REGION (2026-10-26). Stage 4 replaces the marker below with the
+    <!-- Guest House REGION (2026-10-26). Stage 4 replaces the marker below with the
          region and keyboard chosen in the wizard (WindowsSetupAnswers.swift,
          WindowsRegion.swift), so OOBE skips its region and keyboard pages;
          an unanswered one is left out, and Windows asks. The same goes for
@@ -302,31 +302,31 @@
       <FirstLogonCommands>
         <SynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <Description>AVM: install NVDA</Description>
+          <Description>Guest House: install NVDA</Description>
           <CommandLine>cmd /c if exist "%SystemRoot%\Setup\AVM\NVDA.EXE" "%SystemRoot%\Setup\AVM\NVDA.EXE" --install-silent --enable-start-on-logon=True</CommandLine>
         </SynchronousCommand>
         <!--AVM_NVDA_SETTINGS-->
         <SynchronousCommand wcm:action="add">
           <Order>3</Order>
-          <Description>AVM: start the installed screen reader</Description>
+          <Description>Guest House: start the installed screen reader</Description>
           <CommandLine>cmd /c if exist "%ProgramFiles%\NVDA\nvda.exe" (start "" "%ProgramFiles%\NVDA\nvda.exe") else if exist "%ProgramFiles(x86)%\NVDA\nvda.exe" (start "" "%ProgramFiles(x86)%\NVDA\nvda.exe") else for /d %v in ("%ProgramFiles%\Freedom Scientific\JAWS\*") do @if exist "%v\jfw.exe" start "" "%v\jfw.exe"</CommandLine>
         </SynchronousCommand>
-        <!-- AVM AGENT CATCH-UP (2026-10-30): installs any agent that the
+        <!-- Guest House AGENT CATCH-UP (2026-10-30): installs any agent that the
              specialize pass's time limit stopped (see AVMRUN.PS1), before
              Order 5 removes the copies. -->
         <SynchronousCommand wcm:action="add">
           <Order>4</Order>
-          <Description>AVM: install any guest agent setup didn't finish</Description>
+          <Description>Guest House: install any guest agent setup didn't finish</Description>
           <CommandLine>cmd /c del "%SystemRoot%\Setup\AVM\FROZE.TXT" 2&gt;nul &amp; (sc query spice-agent &gt;nul || if exist "%SystemRoot%\Setup\AVM\VDAGENT.MSI" powershell -nop -ep bypass -f "%SystemRoot%\Setup\AVM\AVMRUN.PS1" 5 msiexec "/i %SystemRoot%\Setup\AVM\VDAGENT.MSI /qn /norestart") &amp; (sc query spice-webdavd &gt;nul || if exist "%SystemRoot%\Setup\AVM\WEBDAVD.MSI" powershell -nop -ep bypass -f "%SystemRoot%\Setup\AVM\AVMRUN.PS1" 5 msiexec "/i %SystemRoot%\Setup\AVM\WEBDAVD.MSI /qn /norestart") &amp; (sc query QEMU-GA &gt;nul || if exist "%SystemRoot%\Setup\AVM\QEMUGA.MSI" powershell -nop -ep bypass -f "%SystemRoot%\Setup\AVM\AVMRUN.PS1" 5 msiexec "/i %SystemRoot%\Setup\AVM\QEMUGA.MSI /qn /norestart")</CommandLine>
         </SynchronousCommand>
         <SynchronousCommand wcm:action="add">
           <Order>5</Order>
-          <Description>AVM: remove the installer copies</Description>
+          <Description>Guest House: remove the installer copies</Description>
           <CommandLine>cmd /c rmdir /s /q "%SystemRoot%\Setup\AVM"</CommandLine>
         </SynchronousCommand>
         <SynchronousCommand wcm:action="add">
           <Order>7</Order>
-          <Description>AVM: report what the first sign-in installed</Description>
+          <Description>Guest House: report what the first sign-in installed</Description>
           <CommandLine>cmd /c for %d in (C D E F G H I J K L) do @if exist %d:\AVMDONE.TAG ((if exist "%ProgramFiles%\NVDA\nvda.exe" (echo nvda-installed&gt;&gt;%d:\AVMSTATUS.TXT) else if exist "%ProgramFiles(x86)%\NVDA\nvda.exe" (echo nvda-installed&gt;&gt;%d:\AVMSTATUS.TXT)) &amp; (reg query "HKCU\Software\Microsoft\Windows NT\CurrentVersion\Accessibility" /v Configuration 2&gt;nul | find "nvda_nvda_v1" &gt;nul &amp;&amp; echo nvda-starts-after-sign-in&gt;&gt;%d:\AVMSTATUS.TXT) &amp; (sc query spice-agent &gt;nul &amp;&amp; echo vdagent-installed&gt;&gt;%d:\AVMSTATUS.TXT) &amp; (sc query spice-webdavd &gt;nul &amp;&amp; echo webdavd-installed&gt;&gt;%d:\AVMSTATUS.TXT) &amp; (sc query QEMU-GA &gt;nul &amp;&amp; echo qemu-ga-installed&gt;&gt;%d:\AVMSTATUS.TXT) &amp; echo first-sign-in-done&gt;&gt;%d:\AVMSTATUS.TXT)</CommandLine>
         </SynchronousCommand>
         <!-- NVDA after every sign-in (2026-10-26). The installer's
@@ -336,12 +336,12 @@
              NVDA was silent after a restart. NVDA registers as nvda_nvda_v1. -->
         <SynchronousCommand wcm:action="add">
           <Order>6</Order>
-          <Description>AVM: start NVDA after every sign-in</Description>
+          <Description>Guest House: start NVDA after every sign-in</Description>
           <CommandLine>cmd /c if exist "%ProgramFiles%\NVDA\nvda.exe" reg add "HKCU\Software\Microsoft\Windows NT\CurrentVersion\Accessibility" /v Configuration /t REG_SZ /d nvda_nvda_v1 /f</CommandLine>
         </SynchronousCommand>
         <SynchronousCommand wcm:action="add">
           <Order>8</Order>
-          <Description>AVM: undo the setup-only update policy</Description>
+          <Description>Guest House: undo the setup-only update policy</Description>
           <CommandLine>reg delete HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent /v DisableCloudOptimizedContent /f</CommandLine>
         </SynchronousCommand>
       </FirstLogonCommands>

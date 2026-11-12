@@ -1,5 +1,5 @@
 // SHA512Crypt.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // SHA-512 crypt ("$6$" password hashes), the form Ubuntu's installer
 // requires for the account it creates.

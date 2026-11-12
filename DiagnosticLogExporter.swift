@@ -1,8 +1,8 @@
 // DiagnosticLogExporter.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // STAGE D (2026-08-06): the "Save Diagnostic Log…" menu action. Gathers
-// AVM's diagnostic files into one folder the user chooses, so "please send
+// Guest House's diagnostic files into one folder the user chooses, so "please send
 // me the log" is a single deliverable a tester can inspect in Finder with
 // VoiceOver BEFORE sending — being able to read what you are handing over
 // is part of the privacy promise (see AVMLog's header), not incidental.
@@ -21,7 +21,7 @@
 //     plus by construction: this file's only writer is the guest side of
 //     the serial line (edk2/Windows Boot Manager), which never sees a host
 //     path, so it is copied WITHOUT a sanitizer pass — the only identifiers
-//     in it are guest-internal (GPT GUIDs) and the VM identity AVM itself
+//     in it are guest-internal (GPT GUIDs) and the VM identity Guest House itself
 //     injects, which a diagnostic bundle SHOULD carry.
 //     UBUNTU (2026-10-19): the Ubuntu installer's boot adds
 //     console=ttyAMA0 (UbuntuInstallPipeline.kernelArguments), so during an
@@ -30,7 +30,7 @@
 //     serial login prompt here too: on ARM it uses the serial console the
 //     firmware declares (ACPI SPCR) whatever its boot arguments say. The
 //     prompt can take no input (QEMU writes the port to this file). Still
-//     guest-side only: Ubuntu's own names and the host name AVM derives
+//     guest-side only: Ubuntu's own names and the host name Guest House derives
 //     from the VM's name; the account's user name was not in it on any
 //     test install.
 //   - Missing or empty sources are skipped silently: the tester cannot act
@@ -112,7 +112,7 @@ enum DiagnosticLogExporter {
 
         guard sources.isEmpty == false else {
             // Deliberate exception to verdicts-to-file-log — see header.
-            NSLog("AVM: Diagnostics — save requested; nothing to save yet (no log content, no serial logs).")
+            NSLog("Guest House: Diagnostics — save requested; nothing to save yet (no log content, no serial logs).")
             Announcer.shared.announce("There is no diagnostic log to save yet.", tone: .info)
             return
         }
@@ -122,7 +122,7 @@ enum DiagnosticLogExporter {
         panel.nameFieldStringValue = defaultBundleName()
         panel.canCreateDirectories = true
         panel.prompt = "Save"
-        panel.message = "AVM will create a folder with this name containing its diagnostic log files."
+        panel.message = "Guest House will create a folder with this name containing its diagnostic log files."
 
         guard panel.runModal() == .OK, let destination = panel.url else {
             return // Cancel: the user's own action — silence, no log line.
@@ -172,7 +172,7 @@ enum DiagnosticLogExporter {
             try ditto.run()
             ditto.waitUntilExit()
             guard ditto.terminationStatus == 0 else {
-                throw NSError(domain: "AVM.DiagnosticLog", code: 2, userInfo: [NSLocalizedDescriptionKey: "The log couldn't be zipped."])
+                throw NSError(domain: "GuestHouse.DiagnosticLog", code: 2, userInfo: [NSLocalizedDescriptionKey: "The log couldn't be zipped."])
             }
             // The zip is what's attached (2026-11-09, fourth audit #32).
             try? FileManager.default.removeItem(at: folder)
@@ -294,16 +294,16 @@ enum DiagnosticLogExporter {
         // The save panel already asked the user about replacing an existing
         // item with this name; honoring that answer means actually replacing
         // it rather than failing on "file exists". It goes to the Trash
-        // (2026-10-25, code audit), like everything else AVM replaces: a
+        // (2026-10-25, code audit), like everything else Guest House replaces: a
         // folder that happened to share the name used to be deleted outright.
         // Only an earlier diagnostic log is replaced (2026-10-26, code
         // audit): typing an existing folder's name, Documents say, and
         // confirming Replace sent that whole folder to the Trash, with
         // nothing said.
         if fm.fileExists(atPath: destination.path) {
-            guard destination.lastPathComponent.hasPrefix("AVM Diagnostic Log") else {
-                throw NSError(domain: "AVM.DiagnosticLog", code: 1, userInfo: [NSLocalizedDescriptionKey:
-                    "Something called \(destination.lastPathComponent) is already there, and AVM only replaces an earlier diagnostic log. Next: save it under another name."])
+            guard destination.lastPathComponent.hasPrefix("Guest House Diagnostic Log") else {
+                throw NSError(domain: "GuestHouse.DiagnosticLog", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                    "Something called \(destination.lastPathComponent) is already there, and Guest House only replaces an earlier diagnostic log. Next: save it under another name."])
             }
             try fm.trashItem(at: destination, resultingItemURL: nil)
         }
@@ -313,7 +313,7 @@ enum DiagnosticLogExporter {
         for source in sources {
             let target = destination.appendingPathComponent(source.destinationName)
             if source.destinationName.hasPrefix("firmware-serial") {
-                // Written by the guest, not by AVM, so never passed through
+                // Written by the guest, not by Guest House, so never passed through
                 // the sanitizer (2026-10-25, privacy audit). It is here.
                 // Its last 8 MB only (2026-11-09, fourth audit of the day #8):
                 // a guest can write as much as it likes, and the whole file
@@ -330,13 +330,13 @@ enum DiagnosticLogExporter {
 
     // MARK: - Naming
 
-    /// "AVM Diagnostic Log 2026-08-06" — date-only, per the approved
+    /// "Guest House Diagnostic Log 2026-08-06" — date-only, per the approved
     /// default; a same-day second save goes through the panel's standard
     /// replace prompt, which performCopy honors.
     private static func defaultBundleName() -> String {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         f.locale = Locale(identifier: "en_US_POSIX")
-        return "AVM Diagnostic Log \(f.string(from: Date()))"
+        return "Guest House Diagnostic Log \(f.string(from: Date()))"
     }
 }

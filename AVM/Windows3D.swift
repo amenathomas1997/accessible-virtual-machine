@@ -1,12 +1,12 @@
 // Windows3D.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // DirectX for Windows machines (2026-11-01, experimental, off unless chosen):
 // Settings, Display and Sound, 3D Graphics. It's UTM's stack: Windows' DirectX
 // goes through osy's driver (viogpu3d, Microsoft-signed, so it loads with
 // Secure Boot on) over virtio-gpu to virglrenderer's Neptune, and DXMT draws
 // it with Metal. D3DMetal, which adds Direct3D 12, is left out: Apple's terms
-// don't let AVM ship it.
+// don't let Guest House ship it.
 //
 // MEASURED 2026-11-01 on Windows 11 26100.4349 with driver v0.5: pnputil
 // installs it with no prompt and the device starts at once; the first restart
@@ -77,15 +77,15 @@ extension VMManager {
                 guard out.contains("Driver package installed on device") || out.contains("Added driver packages:  1") else {
                     // Logged, bounded, not spoken (2026-11-10, fourth audit of
                     // 2026-11-09 #21): the guest's words, said after "Reason:".
-                    AVMLog.write("AVM: Windows 3D — pnputil said: \(out.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))")
-                    throw AVMError.qmpCommandFailed("Windows' driver installer didn't install it; its words are in AVM's log.")
+                    AVMLog.write("Guest House: Windows 3D — pnputil said: \(out.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))")
+                    throw AVMError.qmpCommandFailed("Windows' driver installer didn't install it; its words are in Guest House's log.")
                 }
-                AVMLog.write("AVM: Windows 3D — driver installed in \(machine)")
+                AVMLog.write("Guest House: Windows 3D — driver installed in \(machine)")
                 Announcer.shared.announce("\(machine)'s 3D graphics driver is installed. Next: restart \(machine) to use it. The first restart can take several minutes.", tone: .success)
                 return
             } catch {
                 lastError = error
-                AVMLog.write("AVM: Windows 3D — try \(attempt) didn't finish: \(error.localizedDescription)")
+                AVMLog.write("Guest House: Windows 3D — try \(attempt) didn't finish: \(error.localizedDescription)")
                 try? await Task.sleep(for: .seconds(30))
             }
         }

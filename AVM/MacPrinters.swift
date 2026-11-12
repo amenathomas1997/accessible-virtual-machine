@@ -1,5 +1,5 @@
 // MacPrinters.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // THE MAC'S PRINTERS IN A MACHINE (2026-10-27), as VMware's printer
 // sharing. A machine reaches the Mac's own printing system only at
@@ -8,7 +8,7 @@
 // can't print through the Mac. It can reach a network printer directly,
 // though, through QEMU's network (MEASURED: a Brother MFC-L2980DW answered
 // get-printer-attributes from Debian), and modern printers print without
-// a driver over IPP. So AVM finds each of the Mac's network printers'
+// a driver over IPP. So Guest House finds each of the Mac's network printers'
 // addresses, as macOS does (its queue's device URI; Bonjour for a dnssd://
 // one), and the machine adds them (VMManager.addMacPrinters): Windows with
 // its IPP class driver, Linux with CUPS's driverless "everywhere" model.

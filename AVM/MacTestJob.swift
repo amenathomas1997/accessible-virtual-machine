@@ -1,11 +1,11 @@
 // MacTestJob.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // A window-less test of macOS machines (2026-10-26), for
 // Tools/test-macos-machine.sh, the macOS counterpart of
 // test-windows-install.sh:
 //
-//   AVM.app/Contents/MacOS/AVM --test-mac-machine --ipsw <IPSW>
+//   Guest House.app/Contents/MacOS/Guest House --test-mac-machine --ipsw <IPSW>
 //       --out <folder> [--boot-minutes N]
 //
 // It does what a person would, with no one at the screen:
@@ -32,8 +32,8 @@ enum MacTestJob {
     static let flag = "--test-mac-machine"
 
     /// The macOS installer download with no window (2026-10-30), for a
-    /// full system test: AVM --download-macos fetches the newest macOS this
-    /// Mac can run into AVM's own installer folder, exactly as New macOS
+    /// full system test: Guest House --download-macos fetches the newest macOS this
+    /// Mac can run into Guest House's own installer folder, exactly as New macOS
     /// Virtual Machine does, and prints its path as the last line (0), or
     /// the reason (1). One already there is used as it is.
     static let downloadFlag = "--download-macos"
@@ -47,7 +47,7 @@ enum MacTestJob {
             return arguments[i + 1]
         }
         guard let ipsw = value("--ipsw"), let out = value("--out") else {
-            print("Usage: AVM \(flag) --ipsw <macOS IPSW> --out <folder> [--boot-minutes N]")
+            print("Usage: Guest House \(flag) --ipsw <macOS IPSW> --out <folder> [--boot-minutes N]")
             exit(64)
         }
         let bootMinutes = Double(value("--boot-minutes") ?? "8") ?? 8
@@ -158,7 +158,7 @@ enum MacTestJob {
 
         if autoSetup {
             step("Setting macOS up automatically, as \"Set up macOS for me\" does")
-            let answers = MacSetupAnswers(fullName: "AVM Test", accountName: "avmtest", password: "avm-test-1", voiceOver: true)
+            let answers = MacSetupAnswers(fullName: "Guest House Test", accountName: "avmtest", password: "avm-test-1", voiceOver: true)
             try MacAutoSetup.save(answers, files: files)
             let done = await MacAutoSetup.run(machine: machine, files: files, answers: answers) { print("   \($0)"); fflush(stdout) }
             guard done else { throw MacGuestError("Automatic setup didn't reach the desktop.") }

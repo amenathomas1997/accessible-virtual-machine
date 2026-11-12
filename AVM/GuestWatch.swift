@@ -1,5 +1,5 @@
 // GuestWatch.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Watching a running Windows or Linux machine for what a blind user can't
 // see (2026-10-31, the user's request), one loop per machine, from Start
@@ -21,7 +21,7 @@
 //     the machine then doesn't come back from a restart for 20 minutes,
 //     the user is told how to go back.
 //
-// Each can be turned off in AVM's Settings, General.
+// Each can be turned off in Guest House's Settings, General.
 
 import AppKit
 import CoreGraphics
@@ -53,7 +53,7 @@ extension VMManager {
         if installed, configuration.usesWindows3D, Self.supportsWindows3D {
             Task { [weak self] in await self?.installWindows3DDriverIfNeeded(machine: configuration.name) }
         }
-        // A saved screen reader setup for a machine AVM is installing
+        // A saved screen reader setup for a machine Guest House is installing
         // (2026-11-01, ScreenReaderSetup.swift): noted now, put in at the
         // first sign-in, on a later start.
         if !installed, UserDefaults.standard.bool(forKey: GuestWatchSettings.useSavedSetupKey),
@@ -124,7 +124,7 @@ extension VMManager {
                     if agentAnswered {
                         if pointThisRun, agentLostAt != nil || restarted {
                             let away = agentLostAt.map { ", \(Int(Date().timeIntervalSince($0))) s after it stopped" } ?? ", restarted between two looks"
-                            AVMLog.write("AVM: GuestWatch — \(machine) answers again\(away)")
+                            AVMLog.write("Guest House: GuestWatch — \(machine) answers again\(away)")
                             Announcer.shared.announce("\(machine) is back after its restart. The restore point from before the updates is kept, in Settings, Startup and Recovery.", tone: .success)
                             pointThisRun = false
                         }
@@ -140,7 +140,7 @@ extension VMManager {
                     let reading = self.healthReading(since: started)
                     for warning in MachineHealth(reading).warnings where !healthSaid.contains(warning.kind) {
                         healthSaid.insert(warning.kind)
-                        AVMLog.write("AVM: GuestWatch — \(machine): \(warning.kind), \(reading.openFiles) of \(reading.fileLimit) files, \(reading.memoryBytes >> 20) MB")
+                        AVMLog.write("Guest House: GuestWatch — \(machine): \(warning.kind), \(reading.openFiles) of \(reading.fileLimit) files, \(reading.memoryBytes >> 20) MB")
                         Announcer.shared.announce("\(machine): \(warning.words)", tone: .failure)
                     }
                 }
@@ -162,7 +162,7 @@ extension VMManager {
                             let lines = await Task.detached(priority: .utility) { ScreenText.lines(in: image)?.map(\.text) }.value ?? []
                             if ScreenChange.isStopScreen(lines), self.state == .running {
                                 toldStopScreen = true
-                                AVMLog.write("AVM: GuestWatch — \(machine) stopped with an error, a blue screen")
+                                AVMLog.write("Guest House: GuestWatch — \(machine) stopped with an error, a blue screen")
                                 Announcer.shared.announce("\(machine) stopped with an error. On its screen: \(lines.joined(separator: ". "))", tone: .failure, logAs: "\(machine) stopped with an error")
                             }
                         }
@@ -172,11 +172,11 @@ extension VMManager {
                     }
                     switch stuck.look(agentAnswered: agentAnswered, screenChanged: changed) {
                     case .stuck:
-                        AVMLog.write("AVM: GuestWatch — \(machine) looks stuck")
+                        AVMLog.write("Guest House: GuestWatch — \(machine) looks stuck")
                         Task { await self.saveStuckState(machine: machine) }
-                        Announcer.shared.announce("\(machine) looks stuck: for \(Int(stuck.limit / 60)) minutes it hasn't answered AVM, and its screen hasn't changed. Next: press Command-Shift-R to reset it, or wait if it's doing something long.\(configuration.usesWindows3D ? " 3D graphics is on, which is experimental in Windows. If this keeps happening, turn it off in its Settings." : "")", tone: .failure)
+                        Announcer.shared.announce("\(machine) looks stuck: for \(Int(stuck.limit / 60)) minutes it hasn't answered Guest House, and its screen hasn't changed. Next: press Command-Shift-R to reset it, or wait if it's doing something long.\(configuration.usesWindows3D ? " 3D graphics is on, which is experimental in Windows. If this keeps happening, turn it off in its Settings." : "")", tone: .failure)
                     case .alive:
-                        AVMLog.write("AVM: GuestWatch — \(machine) is moving again")
+                        AVMLog.write("Guest House: GuestWatch — \(machine) is moving again")
                         Announcer.shared.announce("\(machine) is moving again.", tone: .info)
                     case .none: break
                     }
@@ -201,7 +201,7 @@ extension VMManager {
                         if !now.screenReaders.isEmpty { restartedReader = false }
                     }
                     // Seen before and gone for two checks, about half a minute.
-                    // A reader AVM can't start (Narrator) got "starting it
+                    // A reader Guest House can't start (Narrator) got "starting it
                     // again didn't work" with nothing tried (2026-11-01,
                     // audit); turned off on purpose, as a rule. Orca is
                     // started on every desktop since 2026-11-09 (third audit
@@ -214,15 +214,15 @@ extension VMManager {
                     var leftOff = false
                     if missingChecks == 2, now.gnome, readersSeen.sorted().first == "Orca" {
                         leftOff = await self.orcaSettingIsOn() == false
-                        if leftOff { AVMLog.write("AVM: GuestWatch — Orca stopped in \(machine) and is turned off in its settings; left so") }
+                        if leftOff { AVMLog.write("Guest House: GuestWatch — Orca stopped in \(machine) and is turned off in its settings; left so") }
                     }
                     if !leftOff, let reader = readersSeen.sorted().first, missingChecks == 2, Self.canStart(reader) {
                         if !restartedReader, await self.startScreenReader(reader, gnome: now.gnome) {
                             restartedReader = true
-                            AVMLog.write("AVM: GuestWatch — \(reader) stopped in \(machine); its shortcut key sent")
-                            Announcer.shared.announce("\(reader) stopped in \(machine), so AVM started it again.", tone: .info, routine: true)
+                            AVMLog.write("Guest House: GuestWatch — \(reader) stopped in \(machine); its shortcut key sent")
+                            Announcer.shared.announce("\(reader) stopped in \(machine), so Guest House started it again.", tone: .info, routine: true)
                         } else {
-                            AVMLog.write("AVM: GuestWatch — \(reader) still not running in \(machine)")
+                            AVMLog.write("Guest House: GuestWatch — \(reader) still not running in \(machine)")
                             Announcer.shared.announce("\(reader) isn't running in \(machine), and starting it again didn't work. \(Self.readerHelp(reader, gnome: now.gnome))", tone: .failure)
                         }
                     }
@@ -242,11 +242,11 @@ extension VMManager {
                         // audit of 2026-11-09 #16): from 0.4.42 this set GNOME's
                         // setting off and on at every boot, rewriting it for
                         // later logins too. Started only with the setting on;
-                        // outside GNOME, where AVM can't tell, advice as before.
+                        // outside GNOME, where Guest House can't tell, advice as before.
                         var orcaOff = false
                         if reader == "Orca", now.gnome { orcaOff = await self.orcaSettingIsOn() == false }
                         if reader == "Orca", !now.gnome || orcaOff {
-                            AVMLog.write("AVM: GuestWatch — Orca isn't running in \(machine) a minute after sign-in\(now.gnome ? ", and it's turned off; left so" : ""); not started")
+                            AVMLog.write("Guest House: GuestWatch — Orca isn't running in \(machine) a minute after sign-in\(now.gnome ? ", and it's turned off; left so" : ""); not started")
                             // Once per machine (its review): a machine run
                             // without Orca on purpose heard it at every Start.
                             let saidKey = "AVMNoOrcaAdviceSaid-\(machineKey)"
@@ -256,9 +256,9 @@ extension VMManager {
                             }
                         } else {
                             let started = await self.startScreenReader(reader, gnome: now.gnome)
-                            AVMLog.write("AVM: GuestWatch — no screen reader in \(machine) a minute after sign-in; started=\(started)")
+                            AVMLog.write("Guest House: GuestWatch — no screen reader in \(machine) a minute after sign-in; started=\(started)")
                             Announcer.shared.announce(started
-                                ? "No screen reader was running in \(machine), so AVM started \(reader)."
+                                ? "No screen reader was running in \(machine), so Guest House started \(reader)."
                                 : "No screen reader is running in \(machine). \(Self.readerHelp(reader, gnome: now.gnome))", tone: .info)
                         }
                     }
@@ -270,17 +270,17 @@ extension VMManager {
                    Date().timeIntervalSince(lastUpdateCheck) > (tick < 100 ? 300 : 1800) {
                     lastUpdateCheck = Date()
                     let outcome = await self.takePointBeforeUpdates(configuration: configuration, runtimeDir: runtimeDir, windows: windows)
-                    AVMLog.write("AVM: GuestWatch — before-updates check for \(machine): \(outcome)")
+                    AVMLog.write("Guest House: GuestWatch — before-updates check for \(machine): \(outcome)")
                     switch outcome {
                     case .taken: pointThisRun = true
                     case .devicesSent where !toldDevices:
                         toldDevices = true
-                        Announcer.shared.announce("Updates are waiting in \(machine). AVM takes a restore point before updates, but not while devices are sent to it: they'd have to come back to the Mac. To take one yourself, use Restore Points in Settings.", tone: .info)
+                        Announcer.shared.announce("Updates are waiting in \(machine). Guest House takes a restore point before updates, but not while devices are sent to it: they'd have to come back to the Mac. To take one yourself, use Restore Points in Settings.", tone: .info)
                     // Said once a run (2026-11-09, fifth audit #8): only
                     // logged, the user believed the updates were covered.
                     case .failed(let why) where !toldNoPoint:
                         toldNoPoint = true
-                        Announcer.shared.announce("Updates are waiting in \(machine), and AVM couldn't take a restore point first. Reason: \(why) Next: free some space if that's the reason, or take one yourself in Restore Points in Settings.", tone: .failure)
+                        Announcer.shared.announce("Updates are waiting in \(machine), and Guest House couldn't take a restore point first. Reason: \(why) Next: free some space if that's the reason, or take one yourself in Restore Points in Settings.", tone: .failure)
                     default: break
                     }
                 }
@@ -288,7 +288,7 @@ extension VMManager {
                 // Not back for 20 minutes after updates.
                 if pointThisRun, !toldNoComeBack, let lost = agentLostAt, Date().timeIntervalSince(lost) > 1200 {
                     toldNoComeBack = true
-                    AVMLog.write("AVM: GuestWatch — \(machine) hasn't answered for 20 minutes since the restore point before updates")
+                    AVMLog.write("Guest House: GuestWatch — \(machine) hasn't answered for 20 minutes since the restore point before updates")
                     Announcer.shared.announce("\(machine) hasn't come back for 20 minutes since its updates began. If it doesn't start, stop it and go back to the restore point from before the updates: in its Settings, Startup and Recovery, Restore Points.", tone: .failure)
                 }
             }
@@ -303,14 +303,14 @@ extension VMManager {
         }
     }
 
-    /// A reader AVM knows how to start. Narrator has no way in.
+    /// A reader Guest House knows how to start. Narrator has no way in.
     nonisolated static func canStart(_ reader: String) -> Bool {
         reader == "Orca" || screenReaderKeys(reader) != nil
     }
 
     /// Orca, started as the signed-in user over the agent (2026-11-09,
     /// third audit of the day #3 and #5). On GNOME through its setting, not
-    /// its shortcut: AVM's installs leave the setting on, a killed Orca
+    /// its shortcut: Guest House's installs leave the setting on, a killed Orca
     /// doesn't change it, and Super-Alt-S is a toggle, so the press turned
     /// Orca off instead of starting it. Elsewhere (KDE, XFCE, MATE) by
     /// running it, with the display and session bus of a process in the
@@ -393,7 +393,7 @@ extension VMManager {
 
     enum PointBeforeUpdates: Equatable { case taken, noUpdates, recent, devicesSent, notPossible, failed(String) }
 
-    /// Marks AVM's own before-updates points, so only those are replaced.
+    /// Marks Guest House's own before-updates points, so only those are replaced.
     nonisolated static let beforeUpdatesMarker = "before-updates"
 
     private func takePointBeforeUpdates(configuration: VMConfiguration, runtimeDir: URL, windows: Bool) async -> PointBeforeUpdates {
@@ -429,11 +429,11 @@ extension VMManager {
             for old in ours {
                 try? await deleteRunningRestorePoint(old, runtimeDir: runtimeDir)
             }
-            AVMLog.write("AVM: GuestWatch — restore point before \(waiting) update(s) taken")
-            Announcer.shared.announce("\(waiting == 1 ? "An update is" : "\(waiting) updates are") waiting in \(configuration.name), so AVM took a restore point first. If the updates cause trouble, go back to it in Settings, Startup and Recovery.", tone: .info)
+            AVMLog.write("Guest House: GuestWatch — restore point before \(waiting) update(s) taken")
+            Announcer.shared.announce("\(waiting == 1 ? "An update is" : "\(waiting) updates are") waiting in \(configuration.name), so Guest House took a restore point first. If the updates cause trouble, go back to it in Settings, Startup and Recovery.", tone: .info)
             return .taken
         } catch {
-            AVMLog.write("AVM: GuestWatch — restore point before updates failed: \(error.localizedDescription)")
+            AVMLog.write("Guest House: GuestWatch — restore point before updates failed: \(error.localizedDescription)")
             return .failed(error.localizedDescription)
         }
     }
@@ -441,14 +441,14 @@ extension VMManager {
     // MARK: - What a stuck machine was doing
 
     /// A freeze leaves nothing behind once it's force-stopped (2026-11-02: Windows
-    /// froze with no dump, no fault and nothing to go on). So the moment AVM calls
+    /// froze with no dump, no fault and nothing to go on). So the moment Guest House calls
     /// a machine stuck: its processors twice, ten seconds apart, which shows
-    /// whether they're moving, and what QEMU's threads are doing. Named as AVM's
+    /// whether they're moving, and what QEMU's threads are doing. Named as Guest House's
     /// logs are, so Report a Problem sends it and it sorts by date when the oldest
     /// go. Registers and call stacks, no screen text.
     func saveStuckState(machine: String) async {
         guard let folder = AVMLog.currentLogURL()?.deletingLastPathComponent() else { return }
-        var text = "AVM: state of \(machine) when it looked stuck, \(Date())\n"
+        var text = "Guest House: state of \(machine) when it looked stuck, \(Date())\n"
         for round in 1...2 {
             if round == 2 { try? await Task.sleep(for: .seconds(10)) }
             text += "\n== Registers, look \(round)\n"
@@ -485,9 +485,9 @@ extension VMManager {
         let url = folder.appendingPathComponent("avm-\(stamp.string(from: Date()))-stuck.log")
         do {
             try AVMLog.sanitize(text).write(to: url, atomically: true, encoding: .utf8)
-            AVMLog.write("AVM: GuestWatch — saved what \(machine) was doing to \(url.lastPathComponent)")
+            AVMLog.write("Guest House: GuestWatch — saved what \(machine) was doing to \(url.lastPathComponent)")
         } catch {
-            AVMLog.write("AVM: GuestWatch — couldn't save what \(machine) was doing: \(error.localizedDescription)")
+            AVMLog.write("Guest House: GuestWatch — couldn't save what \(machine) was doing: \(error.localizedDescription)")
         }
     }
 }

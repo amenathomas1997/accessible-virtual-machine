@@ -1,5 +1,5 @@
 // ReadScreen.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Read Screen (2026-10-30, the user's request): the machine's screen read
 // aloud by the Mac's own text recognition (Vision), for the times no screen

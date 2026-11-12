@@ -1,12 +1,12 @@
 // HIDReportDescriptor.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // What a HID device is, read from its report descriptor (2026-10-29): the
 // usage of each top-level application collection, the pairs macOS lists
-// as a device's DeviceUsagePairs. For a Bluetooth device AVM has only the
+// as a device's DeviceUsagePairs. For a Bluetooth device Guest House has only the
 // descriptor (the helper's list), and it needs to know before a send
 // whether the device has a keyboard in it: macOS lets the helper open one
-// that does only when AVM is allowed under Input Monitoring
+// that does only when Guest House is allowed under Input Monitoring
 // (InputMonitoring.swift). An APH Mantis Q40's pairs are 93/01, 41/01,
 // 01/06 and 01/00: a braille display whose keys are a keyboard too.
 

@@ -1,5 +1,5 @@
 // SetupView.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 
 import SwiftUI
 import AppKit
@@ -72,7 +72,7 @@ struct SetupView: View {
     }
 
     // ISO only. .ipsw was removed 2026-08-06: an IPSW is a macOS restore
-    // image AVM can never install; offering it in the picker set up a late,
+    // image Guest House can never install; offering it in the picker set up a late,
     // confusing pipeline failure in place of never presenting the file.
     private var allowedInstallerTypes: [UTType] {
         [UTType(filenameExtension: "iso") ?? .data]
@@ -92,7 +92,7 @@ struct SetupView: View {
     @State private var notices: [Notice] = []
     @State private var isCreating = false
     /// Which Windows edition Setup installs (2026-10-25). Shown once a
-    /// Windows installer is picked. Pro is the default, as it was when AVM
+    /// Windows installer is picked. Pro is the default, as it was when Guest House
     /// chose without asking.
     @State private var windowsEdition: WindowsEdition = .pro
     /// Screen readers installed during Windows setup (2026-10-26). NVDA is
@@ -105,7 +105,7 @@ struct SetupView: View {
     @State private var nvdaLaptopLayout = true
     /// Where the VM is stored (2026-10-25, roadmap item 3). nil means on
     /// this Mac, in Application Support, as always. Otherwise a folder the
-    /// user chose, usually on an external drive; AVM makes an "AVM Virtual
+    /// user chose, usually on an external drive; Guest House makes an "Guest House Virtual
     /// Machines" folder inside it, and one folder per VM inside that.
     @State private var storageFolder: URL? = nil
     @State private var showingISODownload = false
@@ -114,13 +114,13 @@ struct SetupView: View {
     @StateObject private var isoDownloader = WindowsISODownloader()
     /// Windows with no web page (2026-10-30, WindowsAutoDownload.swift).
     @StateObject private var windowsAutoDownloader = WindowsAutoDownloader()
-    /// Linux, downloaded by AVM itself (2026-10-30, LinuxISODownload.swift).
+    /// Linux, downloaded by Guest House itself (2026-10-30, LinuxISODownload.swift).
     @State private var showingLinuxDownload = false
     @StateObject private var linuxDownloader = LinuxISODownloader()
 
     // MARK: - Ubuntu (2026-10-19)
     //
-    // Picking the ISO decides the guest: AVM reads it (UbuntuInstallPipeline
+    // Picking the ISO decides the guest: Guest House reads it (UbuntuInstallPipeline
     // .identify) and, for an Ubuntu installer, shows the account fields
     // Ubuntu's no-questions install needs up front. Any other ISO stays on
     // the Windows path, whose own validation gate speaks to a wrong file at
@@ -132,9 +132,9 @@ struct SetupView: View {
         case checking
         case windows
         case ubuntu(UbuntuISOInfo)
-        /// An Ubuntu ISO AVM can't install from, with the reason.
+        /// An Ubuntu ISO Guest House can't install from, with the reason.
         case unusableUbuntu(String)
-        /// AVM couldn't read the ISO at all, with the reason. Never taken
+        /// Guest House couldn't read the ISO at all, with the reason. Never taken
         /// for Windows: that would hide the real problem until Start.
         case unreadable(String)
     }
@@ -200,13 +200,13 @@ struct SetupView: View {
         let alert = NSAlert()
         alert.messageText = byAVM ? "Stop the download?" : "Stop watching for the download?"
         // By who downloads (2026-11-10, fourth audit of 2026-11-09 #24):
-        // Microsoft's page downloads in the browser, which carries on; AVM
+        // Microsoft's page downloads in the browser, which carries on; Guest House
         // only stops watching for the file.
         alert.informativeText = byAVM
             ? "An installer is still downloading. Closing the Setup Wizard stops it, and what has come so far isn't kept."
             : isoDownloader.phase == .verifying
-                ? "AVM is checking the Windows file your browser downloaded. Closing the Setup Wizard stops the check; the file stays in Downloads, and you can choose it next time."
-                : "Your browser is still downloading Windows. Closing the Setup Wizard stops AVM watching for it; the browser carries on. Next time, choose the file in Downloads once it's finished."
+                ? "Guest House is checking the Windows file your browser downloaded. Closing the Setup Wizard stops the check; the file stays in Downloads, and you can choose it next time."
+                : "Your browser is still downloading Windows. Closing the Setup Wizard stops Guest House watching for it; the browser carries on. Next time, choose the file in Downloads once it's finished."
         alert.addButton(withTitle: byAVM ? "Keep Downloading" : "Keep Watching")
         alert.addButton(withTitle: "Stop and Close")
         if alert.runModal() == .alertSecondButtonReturn { dismiss() }
@@ -303,7 +303,7 @@ struct SetupView: View {
 
                 // Graphics section removed 2026-08-06: its text promised that
                 // "Windows guest drivers will provide improved display
-                // performance after installation," but AVM bundles no display
+                // performance after installation," but Guest House bundles no display
                 // driver (proven with positive controls, Handoff 25) — Windows
                 // runs Basic Display. The wizard must not promise what never
                 // happens, and an inert informational stub is noise under
@@ -339,7 +339,7 @@ struct SetupView: View {
                         }
                         .accessibilityHint("Gets Windows 11 from Microsoft's servers, with no web page, makes the installer and picks it for you")
 
-                        // 2026-10-30: Ubuntu, Debian or Fedora, by AVM; Kali
+                        // 2026-10-30: Ubuntu, Debian or Fedora, by Guest House; Kali
                         // and more since (the list is LinuxISODownloader's).
                         Button("Download Linux…") {
                             showingLinuxDownload = true
@@ -505,7 +505,7 @@ struct SetupView: View {
         panel.message = "Choose a drive or folder to store this virtual machine in. Windows needs 64 gigabytes or more."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         if VMConfiguration.isInICloud(url) {
-            Announcer.shared.announce("That folder is synced by iCloud, so AVM won't keep a virtual machine there: iCloud can move the machine's disk off this Mac to make room, and copies of it would upload as it runs. Next: choose a folder iCloud doesn't sync, or a drive.", tone: .failure)
+            Announcer.shared.announce("That folder is synced by iCloud, so Guest House won't keep a virtual machine there: iCloud can move the machine's disk off this Mac to make room, and copies of it would upload as it runs. Next: choose a folder iCloud doesn't sync, or a drive.", tone: .failure)
             return
         }
         storageFolder = url
@@ -527,7 +527,7 @@ struct SetupView: View {
             Text("Windows Edition")
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
-            Text("Choose the edition your Windows license is for. If you're not sure, choose Pro. AVM checks that the installer has it before installing.")
+            Text("Choose the edition your Windows license is for. If you're not sure, choose Pro. Guest House checks that the installer has it before installing.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             // The picker's own title names it (2026-10-26, accessibility
@@ -562,7 +562,7 @@ struct SetupView: View {
             Text("Screen Readers")
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
-            Text("Windows Setup speaks with Narrator. AVM can also install one of these, downloaded from its maker, so it's talking when you first sign in. Choosing one turns the other off: installed together, both started at every sign-in and talked over each other.")
+            Text("Windows Setup speaks with Narrator. Guest House can also install one of these, downloaded from its maker, so it's talking when you first sign in. Choosing one turns the other off: installed together, both started at every sign-in and talked over each other.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Toggle("Install NVDA (free, from NV Access)", isOn: $installNVDA)
@@ -589,7 +589,7 @@ struct SetupView: View {
     }()
 
     private var suggestedComputerName: String {
-        WindowsSetupAnswers.suggestedComputerName(from: vmName.isEmpty ? "AVM PC" : vmName)
+        WindowsSetupAnswers.suggestedComputerName(from: vmName.isEmpty ? "Guest House PC" : vmName)
     }
 
     private var windowsSetupSection: some View {
@@ -665,7 +665,7 @@ struct SetupView: View {
                 SecureField("Password", text: $windowsPassword)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel("Windows password")
-                    .accessibilityHint("Leave it empty to sign in with no password. Until Windows is installed, AVM keeps it in this machine's private folder, encoded but not encrypted.")
+                    .accessibilityHint("Leave it empty to sign in with no password. Until Windows is installed, Guest House keeps it in this machine's private folder, encoded but not encrypted.")
                 SecureField("Confirm password", text: $windowsPasswordConfirm)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel("Confirm Windows password")
@@ -746,7 +746,7 @@ struct SetupView: View {
             SecureField("Password", text: $ubuntuPassword)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel("\(linuxName) password")
-                .accessibilityHint("Used to sign in and to make changes to \(linuxName). AVM keeps only a scrambled form of it, until \(linuxName) is installed.")
+                .accessibilityHint("Used to sign in and to make changes to \(linuxName). Guest House keeps only a scrambled form of it, until \(linuxName) is installed.")
 
             SecureField("Confirm password", text: $ubuntuPasswordConfirm)
                 .textFieldStyle(.roundedBorder)
@@ -770,7 +770,7 @@ struct SetupView: View {
         if let layout = current.layout {
             return "\(linuxName)'s keyboard will be \(layout.name), to match your Mac, so your password types the same in \(linuxName)."
         }
-        return "Your Mac's keyboard, \(current.macName), isn't one AVM can match, so \(linuxName) will use a U.S. keyboard. Choose a password that types the same on a U.S. keyboard, such as one made of letters and digits that sit in the same places."
+        return "Your Mac's keyboard, \(current.macName), isn't one Guest House can match, so \(linuxName) will use a U.S. keyboard. Choose a password that types the same on a U.S. keyboard, such as one made of letters and digits that sit in the same places."
     }
 
     /// The installer's kind, as shown and spoken after the file name.
@@ -869,7 +869,7 @@ struct SetupView: View {
 
         switch installerKind {
         case .checking:
-            reportGuidance("AVM is still checking the installer. Try again in a moment.")
+            reportGuidance("Guest House is still checking the installer. Try again in a moment.")
             return
         case .unusableUbuntu(let reason):
             reportGuidance(reason)
@@ -921,16 +921,16 @@ struct SetupView: View {
             }
         }
 
-        // Build the disk image path in Application Support/AVM/vms/<uuid>/disk.qcow2.
+        // Build the disk image path in Application Support/<identifier>/VMs/<uuid>/disk.qcow2.
         // VMManager.createDiskImage will create the actual file when the user starts
         // the VM for the first time.
         let vmID = UUID()
         let diskPath: String
-        // A chosen folder gets "AVM Virtual Machines/<uuid>" inside it, so
+        // A chosen folder gets "Guest House Virtual Machines/<uuid>" inside it, so
         // the drive shows plainly what the folder is for. nil keeps the
         // Application Support layout (VMConfiguration.directoryURL).
         let storagePath = storageFolder?
-            .appendingPathComponent("AVM Virtual Machines", isDirectory: true)
+            .appendingPathComponent("Guest House Virtual Machines", isDirectory: true)
             .appendingPathComponent(vmID.uuidString, isDirectory: true)
             .path
         do {
@@ -961,7 +961,7 @@ struct SetupView: View {
             storageFolderPath: storagePath,
             storageVolumeUUID: storageFolder.flatMap(VMConfiguration.volumeUUID),
             // Secure Boot for every new Windows VM (2026-10-25): with the
-            // TPM AVM already gives it, Windows sees a PC that meets its
+            // TPM Guest House already gives it, Windows sees a PC that meets its
             // requirements, Insider builds included.
             secureBoot: isUbuntu ? nil : true,
             windowsScreenReaderNames: isUbuntu ? nil : chosenScreenReaders
@@ -985,7 +985,7 @@ struct SetupView: View {
                 // them.
                 if let folder = try? config.directoryURL() {
                     if config.isStoredElsewhere {
-                        // The user's own folder: only AVM's answer files go.
+                        // The user's own folder: only Guest House's answer files go.
                         for name in [WindowsSetupAnswers.fileName, UbuntuAccount.fileName] {
                             try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
                         }

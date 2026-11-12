@@ -1,5 +1,5 @@
 // TypeText.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Type the clipboard into the machine (2026-10-30, the user's request):
 // sign-in screens, some installers and some web forms refuse paste, and a
@@ -8,10 +8,10 @@
 // through the machine's own virtual keyboard (QMP send-key), as Send
 // Ctrl-Alt-Delete does, so it works before the guest's agents are up.
 //
-// The keys are the US layout's. AVM's installs set that up until
+// The keys are the US layout's. Guest House's installs set that up until
 // 2026-10-25 and follow the Mac's layout since, so a machine that says its
 // keyboard is another one isn't typed into (keyboardLayoutIfNotUS). A character with no key there, such as
-// an accented letter, is skipped and counted, and AVM says how many. The
+// an accented letter, is skipped and counted, and Guest House says how many. The
 // text itself is never logged or spoken: it's often a password.
 
 import Foundation
@@ -45,7 +45,7 @@ extension VMManager {
 
     /// The machine's keyboard layout, when its agent can say and it isn't
     /// the US one (2026-11-10, audit of that day #10). Since 2026-10-25
-    /// AVM's installs follow the Mac's layout or the wizard's, and US key
+    /// Guest House's installs follow the Mac's layout or the wizard's, and US key
     /// positions typed into a German or French machine come out as other
     /// characters: a wrong password, with "Typed N characters" said. Nil
     /// when it's US or can't be told (the agent is a service, so it answers
@@ -88,7 +88,7 @@ extension VMManager {
         var skipped = 0
         for character in text {
             guard case .running = state, !typingStopAsked else {
-                AVMLog.write("AVM: Type Clipboard — stopped after \(typed) characters")
+                AVMLog.write("Guest House: Type Clipboard — stopped after \(typed) characters")
                 return (typed, skipped, true)
             }
             guard let key = Self.usKey(for: character) else {
@@ -102,14 +102,14 @@ extension VMManager {
                 try await sendQMPCommand("send-key", arguments: ["keys": keys, "hold-time": 15])
                 typed += 1
             } catch {
-                AVMLog.write("AVM: Type Clipboard — stopped after \(typed) characters: \(error.localizedDescription)")
+                AVMLog.write("Guest House: Type Clipboard — stopped after \(typed) characters: \(error.localizedDescription)")
                 return typed == 0 ? nil : (typed, skipped, true)
             }
             // A moment between keys, so a slow screen or a sign-in box
             // doesn't drop any.
             try? await Task.sleep(for: .milliseconds(15))
         }
-        AVMLog.write("AVM: Type Clipboard — typed \(typed) characters, \(skipped) without a key")
+        AVMLog.write("Guest House: Type Clipboard — typed \(typed) characters, \(skipped) without a key")
         return (typed, skipped, false)
     }
 }

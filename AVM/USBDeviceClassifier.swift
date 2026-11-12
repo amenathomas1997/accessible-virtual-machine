@@ -1,6 +1,6 @@
 //
 //  USBDeviceClassifier.swift
-//  AVM
+//  Guest House
 //
 //  USB increment 2b, piece 4 step 1: decides whether a USB device is
 //  protected. The watcher logs the answer; nothing acts on it yet.
@@ -140,7 +140,7 @@ enum USBDeviceClassifier {
         // While VoiceOver is on, every USB sound output asks (2026-10-29,
         // seventh audit). VoiceOver can speak through an output that isn't
         // the Mac's default (VoiceOver Utility, Sound: speech in a USB
-        // earpiece, music through the speakers), and AVM can't read which
+        // earpiece, music through the speakers), and Guest House can't read which
         // output VoiceOver uses, so Always mode sent that earpiece without a
         // question. One question, as Ask mode costs. A device Core Audio
         // doesn't list yet is taken by its audio interface.

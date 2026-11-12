@@ -1,6 +1,6 @@
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 
-AVM is a macOS application that lets blind and low-vision users install
+Guest House is a macOS application that lets blind and low-vision users install
 and run Windows 11 ARM64 virtual machines entirely through VoiceOver —
 no sighted assistance required at any step. Every failure produces a
 spoken, specific, actionable announcement. It can also install Ubuntu
@@ -9,15 +9,20 @@ Rocky Linux or openSUSE Tumbleweed with no installer
 questions, with the Orca screen reader speaking from the first boot
 (tester guide, section 16), and macOS itself, from Apple.
 
-AVM is currently in early testing. It is distributed to testers as a
+Guest House is currently in early testing. It is distributed to testers as a
 notarized DMG.
 
 <!-- fork-only -->
-**About this repository.** This is a fork of Allison Meloy's AVM,
+**About this repository.** Guest House is a fork of Allison Meloy's
+Accessible Virtual Machine,
 [allisonfm85/accessible-virtual-machine](https://github.com/allisonfm85/accessible-virtual-machine),
 maintained by Amena Thomas (Full Circle AT LLC). It carries its own
-builds, issues and updates. AVM was designed and built by Allison; this
-fork adds to it under the same license, GPL version 2.
+name, builds, issues and updates, so that nobody takes one for the
+other: until November 2026 this fork was released under the original's
+name. The original was designed and built by Allison; Guest House adds
+to it under the same license, GPL version 2. A copy installed under the
+old name updates to Guest House from inside the app, and brings its
+machines and settings with it.
 <!-- /fork-only -->
 
 ## For testers
@@ -25,7 +30,7 @@ fork adds to it under the same license, GPL version 2.
 Start with the tester guide: [AVM-TESTER-GUIDE.md](AVM-TESTER-GUIDE.md).
 It covers everything from getting a Windows ISO to reporting problems.
 Problems are reported through this repository's
-[issues](../../issues) — and remember: if AVM fails silently, the
+[issues](../../issues) — and remember: if Guest House fails silently, the
 silence itself is a bug worth reporting. **Help > Report a Problem**
 puts a report on the clipboard (versions and the end of the diagnostic
 log, without your user name) and opens a new issue for you to paste it
@@ -48,33 +53,33 @@ VO-Right and VO-Space), or with Command-1 to Command-5. Save Settings
 keeps the changes made in every category. On the dashboard, a selected
 machine's Settings are Command-Option-Comma.
 
-AVM's own Settings are Command-Comma from any AVM window, or **AVM
+Guest House's own Settings are Command-Comma from any Guest House window, or **Guest House
 Settings…** on the dashboard, in four categories in the same kind of
 toolbar: **General** (checking for updates, What's New), **Startup and
-Background** (opening AVM at login, running in the background with a
+Background** (opening Guest House at login, running in the background with a
 keyboard for Windows, the second monitor), **Watching Machines** (see
 below), **Keyboard** (Caps Lock as the screen reader key in Windows) and
 **Devices** (Restart USB Helper).
 
-While a Windows or Linux machine runs, AVM watches it, each part on
+While a Windows or Linux machine runs, Guest House watches it, each part on
 unless turned off in **Watching Machines**:
 
 - **A screen reader that stops is started again** with its own start key
   (Control-Alt-N for NVDA, Control-Alt-J for JAWS, Super-Alt-S for Orca
   in GNOME), and the Windows screen reader chosen at setup is started if
-  it hasn't started a minute after sign-in. AVM says when it does this.
-- **A restore point before updates**: when updates are waiting, AVM takes
+  it hasn't started a minute after sign-in. Guest House says when it does this.
+- **A restore point before updates**: when updates are waiting, Guest House takes
   a restore point with the machine running (once a day at most, keeping
   the newest), and says how to go back if the machine doesn't return
   from its restart within 20 minutes. Not while devices are sent to the
   machine. Off unless turned on: in testing, Windows sometimes didn't
   come back from the restart after one of these points.
-- **Disk space**: AVM warns when a machine's disk, or the Mac's, is nearly
+- **Disk space**: Guest House warns when a machine's disk, or the Mac's, is nearly
   full.
 
 **Send to Virtual Machine** is in Finder's right-click menu (Quick Actions
 or Services) for any file: it goes to Downloads in the running Windows or
-Linux machine, and AVM asks which one when several run.
+Linux machine, and Guest House asks which one when several run.
 
 The **Virtual Machine** menu can also:
 
@@ -99,25 +104,25 @@ The **Virtual Machine** menu can also:
 A machine's Settings, under Display and Sound, has **Sound Output**: play
 the machine through its own output, headphones say, so its screen reader
 and VoiceOver don't talk in the same ear. When a Windows machine starts
-with a second keyboard connected and none chosen for it, AVM offers that
+with a second keyboard connected and none chosen for it, Guest House offers that
 keyboard once. **Report a Problem…** in the Help menu can email the whole
-diagnostic log, and **Remove AVM…** in the AVM menu removes AVM, its USB
+diagnostic log, and **Remove Guest House…** in the Guest House menu removes Guest House, its USB
 helper and login item, and, if you choose, its machines, all to the Trash.
 
-**AVM > Permissions…** lists everything macOS has to allow for AVM (the
+**Guest House > Permissions…** lists everything macOS has to allow for Guest House (the
 USB helper, Input Monitoring, VoiceOver control, the microphone, the
 camera and the local network), what each is for, whether it's allowed,
-and a button to allow it. It opens by itself only when AVM opens and
+and a button to allow it. It opens by itself only when Guest House opens and
 something your setup needs isn't allowed.
 
 **New macOS Virtual Machine** can set macOS up for you: with **Set up
 macOS for me**, your full name and a password, the first start goes
 through Setup Assistant by itself (no Apple Account, Siri, Screen Time or
 location; all can be turned on later), signs in and turns on VoiceOver.
-If a screen stops it, AVM reads that screen aloud so you can finish.
+If a screen stops it, Guest House reads that screen aloud so you can finish.
 
-When AVM opens at login to start a machine, only that machine shows: AVM
-stays out of Command-Tab, and its list stays hidden, until you open AVM
+When Guest House opens at login to start a machine, only that machine shows: Guest House
+stays out of Command-Tab, and its list stays hidden, until you open Guest House
 from Applications, the Dock or Spotlight.
 
 The setup wizard downloads installers too: **Download Windows 11 for
@@ -129,7 +134,7 @@ Linux…** gets Ubuntu Desktop, Debian, Fedora, Kali Linux, AlmaLinux,
 Rocky Linux or openSUSE Tumbleweed from its own server. Each
 is checked against its published checksum and chosen as the installer.
 
-After an update, **What's New in AVM** says what changed; it's in the
+After an update, **What's New in Guest House** says what changed; it's in the
 Help menu too.
 
 ## Making a virtual machine's disk larger
@@ -139,16 +144,16 @@ Windows has actually used. The disk size you choose is a ceiling. When
 Windows starts running out of room, you can raise it.
 
 1. Shut down Windows, so the virtual machine is stopped.
-2. In AVM, find your virtual machine in the list and choose its Settings
+2. In Guest House, find your virtual machine in the list and choose its Settings
    button.
-3. Raise Disk Size with the Up Arrow key, then choose Save Settings. AVM
+3. Raise Disk Size with the Up Arrow key, then choose Save Settings. Guest House
    makes the disk larger, checks that it worked, and tells you the new
    size. A disk can grow but never shrink.
 
-The next time Windows starts, AVM gives drive C the new space and tells you
+The next time Windows starts, Guest House gives drive C the new space and tells you
 its new size. On Linux, make the main partition larger yourself.
 
-If drive C can't take the space, AVM says so. A recovery partition may be in
+If drive C can't take the space, Guest House says so. A recovery partition may be in
 the way if you installed Windows some other way. Please open an issue rather
 than deleting partitions yourself.
 
@@ -160,8 +165,8 @@ you use on it.
 1. Shut down the virtual machine.
 2. In its Settings, under General, turn on **Add a second drive**, choose a
    size, then choose Save Settings. If the machine was saved with its apps
-   open, AVM asks first, because its next Start is then a normal start.
-3. Start the machine. AVM makes the drive ready and tells you where it is:
+   open, Guest House asks first, because its next Start is then a normal start.
+3. Start the machine. Guest House makes the drive ready and tells you where it is:
    the next free letter in Windows, such as D, or `/mnt/avm-data` on Linux.
 
 Restore points put the second drive back too, along with the rest of the
@@ -172,51 +177,51 @@ except by deleting the machine. macOS machines can't have one.
 
 ## USB devices
 
-When you plug in a USB device while Windows is running, AVM decides what to do based on the USB Devices setting for that virtual machine. You'll find it in Settings, under the USB Devices heading. Each virtual machine keeps its own setting and its own remembered devices.
+When you plug in a USB device while Windows is running, Guest House decides what to do based on the USB Devices setting for that virtual machine. You'll find it in Settings, under the USB Devices heading. Each virtual machine keeps its own setting and its own remembered devices.
 
 There are three choices. From left to right, they are:
 
-- **Ask each time.** AVM asks before sending a device to Windows.
+- **Ask each time.** Guest House asks before sending a device to Windows.
 - **Always use in Windows.** Devices go straight to Windows. Keyboards, braille displays, and other input devices still ask.
 - **Keep on the Mac.** Devices stay on the Mac.
 
-When AVM asks, you can check "Remember my choice for this device" so it won't ask about that device again.
+When Guest House asks, you can check "Remember my choice for this device" so it won't ask about that device again.
 
 You can also attach or detach a device yourself at any time. In the Virtual Machine menu, choose Attach USB Device, or Return Devices to Mac (Command-Shift-M). Return Devices to Mac lists every USB and Bluetooth device in the machine, each with a Return to Mac button, and Return All to Mac gives them all back. It also lists a Bluetooth device waiting to reconnect, with Keep on Mac to stop it going back.
 
 ### What to expect
 
-AVM always tells you when it sends a device to Windows, even when it does it automatically, so you're never left wondering where a device went.
+Guest House always tells you when it sends a device to Windows, even when it does it automatically, so you're never left wondering where a device went.
 
-If you plug in a device while you're working in Windows, or while AVM is in the background, AVM lets you know it's there. It waits to ask until you're back in AVM on the Mac, so you aren't pulled out of what you're doing.
+If you plug in a device while you're working in Windows, or while Guest House is in the background, Guest House lets you know it's there. It waits to ask until you're back in Guest House on the Mac, so you aren't pulled out of what you're doing.
 
-If Windows is paused, AVM holds on to the device and sends it as soon as Windows resumes.
+If Windows is paused, Guest House holds on to the device and sends it as soon as Windows resumes.
 
-Some devices disconnect and reconnect when you change their mode. If a device you sent to Windows comes back within a minute, AVM sends it right back to Windows without asking. The minute gives you time to make the switch without rushing.
+Some devices disconnect and reconnect when you change their mode. If a device you sent to Windows comes back within a minute, Guest House sends it right back to Windows without asking. The minute gives you time to make the switch without rushing.
 
-When Windows starts, AVM sends the devices you've chosen to remember for Windows once Windows has finished starting up. During Windows setup, AVM waits until setup is almost done, since that's when most people are ready to use their devices.
+When Windows starts, Guest House sends the devices you've chosen to remember for Windows once Windows has finished starting up. During Windows setup, Guest House waits until setup is almost done, since that's when most people are ready to use their devices.
 
-**USB flash drives don't work yet.** macOS 27 blocks AVM from sending a USB storage device to Windows. I'm working with Apple on a fix.
+**USB flash drives don't work yet.** macOS 27 blocks Guest House from sending a USB storage device to Windows. I'm working with Apple on a fix.
 
 ## Keeping a virtual machine on an external drive
 
 In the Setup Wizard, under Where to Store It, choose Choose a Folder or
-Drive, then pick the drive. AVM keeps everything for that machine there,
-in a folder named AVM Virtual Machines. The dashboard says which drive
+Drive, then pick the drive. Guest House keeps everything for that machine there,
+in a folder named Guest House Virtual Machines. The dashboard says which drive
 each machine is on. If the drive isn't connected, the dashboard says so,
 and Start and Delete refuse until you connect it, so a machine is never
 quietly recreated on your Mac or forgotten while its files are on the
-drive. While Windows installs, AVM still needs about 8 gigabytes free on
+drive. While Windows installs, Guest House still needs about 8 gigabytes free on
 the Mac itself for a short while.
 
 ## Backing up and moving a virtual machine
 
 Shut a machine down, then choose Export beside it on the dashboard, or
 Export Virtual Machine… in the Virtual Machine menu, and pick a folder or
-drive. AVM saves the whole machine there as one folder ending in .avmvm,
+drive. Guest House saves the whole machine there as one folder ending in .avmvm,
 saying how big it is, how far along it is, and when it's done. Import
 Virtual Machine… brings it back, on this Mac or another, as a new entry
-in your list, so it never collides with the original. Passwords AVM kept
+in your list, so it never collides with the original. Passwords Guest House kept
 for setup are left out. A machine that is running, still installing, or
 saved rather than shut down is refused, with the reason. On an ExFAT or
 FAT drive a disk takes its full size; APFS or Mac OS Extended keeps it
@@ -227,7 +232,7 @@ Mac to macOS as the original: run only one of them at a time.
 
 New Windows machines have Secure Boot, with Microsoft's keys, so Windows
 Update offers Insider preview builds. For an older machine, stop it, open
-Settings, and turn on Secure Boot. AVM asks first, keeps a copy of the
+Settings, and turn on Secure Boot. Guest House asks first, keeps a copy of the
 old firmware settings, and puts them back if you turn Secure Boot off.
 If BitLocker is on, Windows may ask for its recovery key after the switch.
 The firmware is UTM's Secure Boot build of edk2; its licences ship with
@@ -237,30 +242,30 @@ it, in edk2-licenses.txt.
 
 Copy something on the Mac, enter Windows, and paste: it's there. What you
 copy in Windows is ready to paste on the Mac straight away. This works for
-text, rich text and pictures, through the SPICE agent AVM installs in
-Windows. AVM never records what is copied. To keep the two clipboards
+text, rich text and pictures, through the SPICE agent Guest House installs in
+Windows. Guest House never records what is copied. To keep the two clipboards
 apart, turn off Share the clipboard in that machine's Settings.
 
 ## Screen readers from the first sign-in
 
-When you make a Windows machine, AVM can install NVDA and JAWS for ARM,
+When you make a Windows machine, Guest House can install NVDA and JAWS for ARM,
 so a screen reader is talking the moment you first sign in. JAWS installs
 during Windows setup; NVDA installs at your first sign-in, as you, which
 is what its installer needs. Narrator speaks through setup itself. NVDA is chosen by default. JAWS is your choice, because it
 needs your own license. Without one it runs for 40 minutes at a time;
 activate it in Windows. If you choose both, NVDA starts at sign-in.
 
-AVM doesn't ship either one. It downloads each from its maker: NVDA's
+Guest House doesn't ship either one. It downloads each from its maker: NVDA's
 newest release from NV Access's own update feed, JAWS's from winget's
 public package list, or a known version if those can't be reached. A
 download is used only if it comes from the maker's own server and
-matches the checksum its maker publishes. AVM keeps the downloads, so your next machine doesn't download
-them again. If a download fails, AVM says so and Windows installs
+matches the checksum its maker publishes. Guest House keeps the downloads, so your next machine doesn't download
+them again. If a download fails, Guest House says so and Windows installs
 without that screen reader.
 
 ## Windows in other languages
 
-Windows Setup runs in the language of the ISO you give it: AVM reads the
+Windows Setup runs in the language of the ISO you give it: Guest House reads the
 language from the ISO, so a French or German ISO works as an English
 one does.
 
@@ -272,10 +277,10 @@ machine's own answer file: region, keyboard, time zone, computer name,
 privacy settings, and the account. Each answer is filled in from your
 Mac. The account can be a Microsoft account, signed in during setup, or
 a local account from a name and password you type, which skips the
-sign-in screens and signs in once by itself. AVM keeps the password only
+sign-in screens and signs in once by itself. Guest House keeps the password only
 in Windows' scrambled form, only until the install disc is built, and
 removes the answer file once Windows is installed. Once Windows is
-installed, AVM also deletes its copy of the install disc, about 8.5 GB.
+installed, Guest House also deletes its copy of the install disc, about 8.5 GB.
 The answer file also accepts Microsoft's licence terms for the edition
 you chose, as a PC maker's install does, and turns off Setup's hardware
 checks (TPM, Secure Boot, memory, processor and storage), so a virtual
@@ -283,7 +288,7 @@ machine isn't refused on them.
 
 NVDA starts with its laptop keyboard layout, since a Mac keyboard has
 no Insert key or number pad; the wizard has a checkbox for it. The first
-time a machine starts after Windows is installed, AVM says what setup
+time a machine starts after Windows is installed, Guest House says what setup
 installed, or names anything that didn't install and how to install it.
 
 ## A keyboard for Windows
@@ -293,20 +298,20 @@ Windows: choose it under **Keyboard for Windows** in the machine's
 Settings. While Windows runs, that keyboard types only into Windows,
 whichever app is in front, and your Mac's keyboard stays with the Mac
 and VoiceOver, so there is nothing to switch. macOS lets only a
-privileged process take a keyboard over, so AVM's helper (the one that
-connects USB devices) holds it and passes its keys to AVM alone; it never
+privileged process take a keyboard over, so Guest House's helper (the one that
+connects USB devices) holds it and passes its keys to Guest House alone; it never
 takes the built-in keyboard or your only keyboard, gives it back when
-Windows stops or AVM quits, takes it again if it disconnects and comes
+Windows stops or Guest House quits, takes it again if it disconnects and comes
 back, and never records a key. macOS lets even the helper take a
-keyboard only when AVM is allowed under Input Monitoring, so the first
-time AVM says so and macOS asks: turn on AVM in System Settings, under
+keyboard only when Guest House is allowed under Input Monitoring, so the first
+time Guest House says so and macOS asks: turn on Guest House in System Settings, under
 Privacy & Security, then Input Monitoring. If macOS then offers to quit
-and reopen AVM, choose Later; the keyboard goes to Windows without it.
+and reopen Guest House, choose Later; the keyboard goes to Windows without it.
 
 ## Option and Command in Windows
 
 On a Mac keyboard, Option is where a PC's Windows key is and Command is
-where its Alt is. AVM sends them as printed: Option is Alt, Command is
+where its Alt is. Guest House sends them as printed: Option is Alt, Command is
 Windows. To put them in a PC's order, remap them inside Windows, with
 SharpKeys for example.
 
@@ -337,7 +342,7 @@ you back to the Mac, where Command-Tab takes you to the next one. While
 your keyboard is in Windows, Command-Tab stays off, as it always has.
 
 macOS puts these apps in the Dock too; it has no way to list an app in
-Command-Tab without it. For this, AVM puts a small helper in Windows
+Command-Tab without it. For this, Guest House puts a small helper in Windows
 (`C:\ProgramData\AVM`, started at sign-in by the scheduled task
 `\AVM\Windows Apps`), which lists the apps open and brings one forward;
 it shows no window. Turn the list off
@@ -345,9 +350,9 @@ in the machine's Settings, under Windows Apps on the Mac.
 
 To keep one, Command-Tab to it and choose **Keep in Dock and
 Applications** (a button in its window, and in its menu named for the
-machine). It goes in the Dock and in Applications, in the AVM Windows
+machine). It goes in the Dock and in Applications, in the Guest House Windows
 Apps folder. Open it from there, the Dock, Launchpad or Spotlight even
-when AVM or the machine isn't running: AVM opens, the machine starts, and
+when Guest House or the machine isn't running: Guest House opens, the machine starts, and
 once you're signed in to Windows the app opens there with your keyboard
 in it. **Remove from Dock and Applications** undoes it, moving it to the
 Trash.
@@ -355,7 +360,7 @@ Trash.
 ## macOS virtual machines
 
 **New macOS Virtual Machine…** on the dashboard makes a macOS machine:
-AVM gets the newest macOS your Mac supports from Apple (or uses an IPSW
+Guest House gets the newest macOS your Mac supports from Apple (or uses an IPSW
 file you have), downloads and installs it, and says how far it has got
 throughout. macOS runs on Apple's own Virtualization framework, in its
 own window with sound and a shared folder (My Shared Files in its
@@ -367,21 +372,21 @@ to your Mac's apps.
 ## Debian
 
 Choose a Debian arm64 installer (the netinst from debian.org works) in
-the setup wizard, and AVM installs Debian with GNOME and Orca exactly as
+the setup wizard, and Guest House installs Debian with GNOME and Orca exactly as
 it installs Ubuntu: no questions, Orca speaking from the first boot.
 
 ## Fedora
 
 Choose the Fedora Everything netinstall ISO for aarch64, Fedora 44 or
-later, from fedoraproject.org, and AVM installs Fedora Workstation (GNOME
+later, from fedoraproject.org, and Guest House installs Fedora Workstation (GNOME
 and Orca) the same way, downloading it from Fedora's mirrors during the
-install. The Workstation live image is not used: AVM says so and names
+install. The Workstation live image is not used: Guest House says so and names
 the download it needs (tester guide, section 16).
 
 ## Kali Linux
 
 Choose Kali's arm64 installer (Download Linux… gets the netinstaller from
-cdimage.kali.org) and AVM installs Kali the way it installs Debian, whose
+cdimage.kali.org) and Guest House installs Kali the way it installs Debian, whose
 installer Kali uses: Kali's own mirror, the GNOME desktop rather than
 Kali's default Xfce (GNOME's sign-in screen speaks with Orca), and Kali's
 default tool set, with Orca speaking from the first boot.
@@ -390,14 +395,14 @@ default tool set, with Orca speaking from the first boot.
 
 Choose the AlmaLinux or Rocky Linux 10 boot ISO for aarch64 (Download
 Linux… gets the newest from repo.almalinux.org or
-download.rockylinux.org) and AVM installs it the way it installs Fedora,
+download.rockylinux.org) and Guest House installs it the way it installs Fedora,
 whose installer they use: Server with GUI (GNOME) and Orca, downloaded
 from the distribution's own servers during the install.
 
 ## openSUSE Tumbleweed
 
 Choose Tumbleweed's aarch64 network image (Download Linux… gets the
-current snapshot from download.opensuse.org) and AVM installs it with
+current snapshot from download.opensuse.org) and Guest House installs it with
 YaST and an AutoYaST profile: GNOME and Orca from openSUSE's own
 repository, your account, and Orca speaking from the first boot.
 
@@ -406,21 +411,21 @@ repository, your account, and Orca speaking from the first boot.
 In a Windows machine's Settings, choose Choose Folder to Share. Windows
 shows that Mac folder in File Explorer as a network drive. You can let
 Windows only read it. The change takes effect the next time the machine
-starts. AVM installs the service that does this, spice-webdavd, during
-Windows setup. A Windows installed by an older AVM needs it installed
+starts. Guest House installs the service that does this, spice-webdavd, during
+Windows setup. A Windows installed by an older Guest House needs it installed
 from spice-space.org first.
 
 ## When the Mac sleeps
 
-Before the Mac sleeps, AVM pauses a running machine. When the Mac wakes,
-AVM resumes it, sets Windows' clock to the Mac's through the QEMU guest
+Before the Mac sleeps, Guest House pauses a running machine. When the Mac wakes,
+Guest House resumes it, sets Windows' clock to the Mac's through the QEMU guest
 agent it installs with Windows, and tells you. A machine you paused
-yourself stays paused. Windows installed by an older AVM has no guest
+yourself stays paused. Windows installed by an older Guest House has no guest
 agent, so its clock catches up at its next time sync.
 
 ## 3D graphics in Windows
 
-3D graphics in Windows is experimental. It lets apps that use Direct3D 11 draw with your Mac's graphics chip, through the same driver as UTM. It's off unless you turn it on in a machine's Settings, and a machine with it on may freeze or stop, so don't turn it on for a machine you rely on. AVM takes a restore point first. It does little for a screen reader user unless an app needs DirectX 11.
+3D graphics in Windows is experimental. It lets apps that use Direct3D 11 draw with your Mac's graphics chip, through the same driver as UTM. It's off unless you turn it on in a machine's Settings, and a machine with it on may freeze or stop, so don't turn it on for a machine you rely on. Guest House takes a restore point first. It does little for a screen reader user unless an app needs DirectX 11.
 
 ## Sound
 
@@ -432,13 +437,13 @@ crackles. A change takes effect at the machine's next Start.
 ## Remote Desktop
 
 A machine's Settings has Remote Desktop: a user name, a password, and
-whether only this Mac or the whole network may connect. AVM makes the
+whether only this Mac or the whole network may connect. Guest House makes the
 account in the machine, turns on its Remote Desktop host (Windows 11
 Pro's own, or xrdp on Linux), forwards a port on the Mac to it, and
 publishes the machine's name on the local network while it runs. In
 Microsoft's Windows App, add a PC named like amena-pc.local and sign in
 with that account. The password is kept in the Mac's keychain. On
-Linux, AVM also installs the distribution's xrdp sound module where
+Linux, Guest House also installs the distribution's xrdp sound module where
 there is one (Debian 13, Ubuntu 24.04 and newer), so the remote session
 has sound there and is silent elsewhere; it should use an account other
 than the one signed in at the machine's screen.
@@ -449,16 +454,16 @@ A restore point saves a virtual machine as it is, so you can put it back
 later: before a big Windows update, or before trying Insider builds. They're
 in the machine's Settings, under Startup and Recovery. Choose Save a Restore
 Point; a Windows or Linux machine can be running, and its restore point then
-keeps open apps too. To go back, choose Restore beside the one you want. AVM
+keeps open apps too. To go back, choose Restore beside the one you want. Guest House
 asks first, because everything since then is lost, and it first saves the
 machine as it is now, as "Before going back to …", so a restore can be undone
-(untick the box to skip it). AVM keeps the two newest of those. A running
+(untick the box to skip it). Guest House keeps the two newest of those. A running
 machine is turned off, put back, and started again. Rename gives a restore
 point a name you'll recognize.
 
 A restore point keeps the disk, the firmware settings and the TPM, so
 BitLocker and Windows Hello still match afterwards. Each one takes more disk
-space as Windows changes after it, so delete the ones you no longer need. AVM
+space as Windows changes after it, so delete the ones you no longer need. Guest House
 saves one called **Fresh install** by itself, the first time a machine starts
 after Windows is set up, so a clean Windows is always minutes away.
 
@@ -468,23 +473,23 @@ and with the same setup answers. It asks first.
 
 ## Braille displays
 
-When you plug in a USB device while Windows is running, AVM checks whether it's a braille display before doing anything with it. A braille display is never sent to Windows without asking, even when "Always use in Windows" is chosen in Settings. If you check "Remember my choice for this device," AVM will use your choice from then on.
+When you plug in a USB device while Windows is running, Guest House checks whether it's a braille display before doing anything with it. A braille display is never sent to Windows without asking, even when "Always use in Windows" is chosen in Settings. If you check "Remember my choice for this device," Guest House will use your choice from then on.
 
-AVM recognizes a braille display in three ways:
+Guest House recognizes a braille display in three ways:
 
 - It identifies itself as a braille display. Most newer displays, like the Monarch, do this.
 - Its model is in the list of USB braille displays kept by the BRLTTY project.
 - It comes from a company that makes braille and low-vision products: HumanWare, Freedom Scientific, Baum, Handy Tech, EuroBraille, or Optelec.
 
-Some displays use common USB chips that other gadgets also use. AVM treats those as possible braille displays, so it asks about them too.
+Some displays use common USB chips that other gadgets also use. Guest House treats those as possible braille displays, so it asks about them too.
 
-**If AVM doesn't recognize your display,** please open an issue and include the display's name and model. Also include its USB IDs, if you can: plug in the display while Windows is running, then in AVM choose File, then Save Diagnostic Log, and attach the log. AVM records the IDs of each device plugged in, but never what you type.
+**If Guest House doesn't recognize your display,** please open an issue and include the display's name and model. Also include its USB IDs, if you can: plug in the display while Windows is running, then in Guest House choose File, then Save Diagnostic Log, and attach the log. Guest House records the IDs of each device plugged in, but never what you type.
 
 **Using a Monarch with Windows:** open Braille Terminal, choose USB, and then plug in the Monarch. After you detach it from Windows, you may need to restart the Monarch before the Mac can use it again.
 
 ## What's in this repository
 
-The complete AVM application source (Swift/SwiftUI), the Xcode project,
+The complete Guest House application source (Swift/SwiftUI), the Xcode project,
 and the install-media resources: the unattended-install answer file
 template; the virtio ARM64 drivers for the network (NetKVM), the memory
 balloon, the serial channel (vioserial) and the disk (viostor), version
@@ -532,7 +537,7 @@ same commit, so builds don't depend on another account).
 
 ## Licenses and source code
 
-AVM is under the GPL version 2. It bundles QEMU (GPL version 2), xorriso,
+Guest House is under the GPL version 2. It bundles QEMU (GPL version 2), xorriso,
 mtools and wimlib (GPL version 3), the SPICE, GStreamer, GLib, usbredir,
 libusb and gettext libraries and others under the LGPL, OpenSSL 1.1.1b
 under the OpenSSL and SSLeay licenses, the Windows virtio drivers under
@@ -545,10 +550,10 @@ The complete corresponding source for every GPL and LGPL component is
 the pinned source tarball named in `Tools/build-sysroot.sh` (checked
 against `Tools/sysroot-sources.sha256` when it is downloaded), or the
 git commit named there, plus the patches in `Tools/sysroot-patches`,
-which are the only changes AVM makes; for the Windows installers it is
+which are the only changes Guest House makes; for the Windows installers it is
 the upstream release named in the notices file. The project will
 provide any of it to anyone who asks at this repository (open an issue,
-or write to the maintainer named above), for three years from each AVM
+or write to the maintainer named above), for three years from each Guest House
 release, for no more than the cost of the copy.
 
 ## Building from source
@@ -600,7 +605,7 @@ file attributes there that stop the tests from being signed.
 
 ## Running every test
 
-`Tools/run-all-tests.sh` runs everything AVM can test by itself, one
+`Tools/run-all-tests.sh` runs everything Guest House can test by itself, one
 after another, and prints one report: the logic tests, the
 accessibility audit, and the machine tests (save and resume, two
 machines at once, the shared folder, Send File, printers, the camera,
@@ -623,9 +628,9 @@ waits for the install-complete marker and the installer's power-off.
 ## Testing a Windows install
 
 `Tools/test-windows-install.sh` runs a complete Windows install with no
-one at the screen: it builds fresh install media with AVM's own pipeline
-(`AVM --build-install-media`), boots a Secure Boot machine with a TPM
-the way AVM does, and reads the report the answer file writes
+one at the screen: it builds fresh install media with Guest House's own pipeline
+(`Guest House --build-install-media`), boots a Secure Boot machine with a TPM
+the way Guest House does, and reads the report the answer file writes
 (`AVMSTATUS.TXT` on the UNATTEND volume) until the first sign-in is done.
 It then says which of JAWS, NVDA, the SPICE agent, the shared-folder
 service and the guest agent installed. If Windows stops on a screen, it
@@ -672,14 +677,14 @@ safe. Without it, no future update can reach anyone who has the app.
 `Tools/measure-speech-latency.sh` measures how long a screen reader in a
 virtual machine takes to start speaking after a key press. It presses a
 key the way a person would and listens to the Mac's output, so it
-measures any VM app the same way: run it once with AVM and once with
+measures any VM app the same way: run it once with Guest House and once with
 Parallels on the same Mac to compare. Run it with `--help` for the setup
 it needs; the first run asks for Accessibility and audio recording
 permission.
 
 ## Privacy
 
-AVM cannot capture what you type into Windows: the code path for
+Guest House cannot capture what you type into Windows: the code path for
 logging keystroke contents does not exist. The diagnostic log never
 records your username — paths are sanitized at the point of writing.
 These are design commitments, and this repository is where you can
@@ -688,4 +693,4 @@ verify them.
 ## License
 
 GPL v2. See [LICENSE](LICENSE), and Licenses and source code above for
-what AVM bundles.
+what Guest House bundles.

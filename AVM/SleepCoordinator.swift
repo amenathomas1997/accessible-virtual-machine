@@ -1,15 +1,15 @@
 // SleepCoordinator.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
-// The Mac going to sleep with a VM running (2026-10-26). Nothing in AVM
+// The Mac going to sleep with a VM running (2026-10-26). Nothing in Guest House
 // used to notice: the guest kept running into sleep and out of it, which
 // can leave USB devices stuck and the guest's clock confused, and a VM
 // could keep a Mac with its lid closed busy.
 //
 // Now, before the Mac sleeps, a running VM is paused, and when the Mac
-// wakes it resumes and AVM says so. A VM the user paused stays paused.
+// wakes it resumes and Guest House says so. A VM the user paused stays paused.
 // It uses IOKit's system power notifications rather than NSWorkspace's,
-// because only IOKit lets AVM hold the sleep until the pause has gone
+// because only IOKit lets Guest House hold the sleep until the pause has gone
 // through (IOAllowPowerChange), up to a few seconds; an NSWorkspace
 // observer returns and the Mac sleeps whether the pause finished or not.
 
@@ -23,7 +23,7 @@ final class SleepCoordinator {
     private var rootPort: io_connect_t = 0
     private var notifier: io_object_t = 0
     private var notifyPort: IONotificationPortRef?
-    /// The machines AVM paused for sleep, so only those pauses are undone
+    /// The machines Guest House paused for sleep, so only those pauses are undone
     /// (every running machine, 2026-10-27, several at once).
     private var pausedForSleep: [VMManager] = []
     /// Between the Mac's sleep and its wake (2026-10-26, code audit): a
@@ -33,7 +33,7 @@ final class SleepCoordinator {
     /// Machines left running into sleep because QEMU was busy with a
     /// snapshot (2026-11-09, fifth audit #13); only their clocks need setting.
     private var leftRunningForSleep: [VMManager] = []
-    /// The longest AVM holds the Mac's sleep for the pause.
+    /// The longest Guest House holds the Mac's sleep for the pause.
     private static let holdLimit: Duration = .seconds(5)
 
     private init() {}
@@ -51,11 +51,11 @@ final class SleepCoordinator {
             }
         }, &notifier)
         guard rootPort != 0, let notifyPort else {
-            AVMLog.write("AVM: Sleep — could not register for power notifications; VMs won't pause for sleep.")
+            AVMLog.write("Guest House: Sleep — could not register for power notifications; VMs won't pause for sleep.")
             return
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), IONotificationPortGetRunLoopSource(notifyPort).takeUnretainedValue(), .commonModes)
-        AVMLog.write("AVM: Sleep — watching for the Mac going to sleep.")
+        AVMLog.write("Guest House: Sleep — watching for the Mac going to sleep.")
     }
 
     // From IOMessage.h, where they are macros Swift can't import:
@@ -81,19 +81,19 @@ final class SleepCoordinator {
     private func willSleep(token: Int) {
         // Not one taking a snapshot (2026-11-09, fifth audit #13): QEMU answers
         // nothing until it ends, so `stop` timed out and stayed queued, and
-        // landed after the wake: a frozen guest while AVM said Running, with
+        // landed after the wake: a frozen guest while Guest House said Running, with
         // nothing to resume it. The snapshot's own clock stops with the Mac.
         let machines = MachineSessions.shared.managers.filter { $0.state == .running }
         let running = machines.filter { !$0.isSaving && !$0.isRunningQMPJob }
         leftRunningForSleep = machines.filter { $0.isSaving || $0.isRunningQMPJob }
         if !leftRunningForSleep.isEmpty {
-            AVMLog.write("AVM: Sleep — \(leftRunningForSleep.count) machine(s) taking a snapshot aren't paused for sleep.")
+            AVMLog.write("Guest House: Sleep — \(leftRunningForSleep.count) machine(s) taking a snapshot aren't paused for sleep.")
         }
         guard !running.isEmpty else {
             IOAllowPowerChange(rootPort, token)
             return
         }
-        AVMLog.write("AVM: Sleep — the Mac is going to sleep; pausing \(running.count) machine(s).")
+        AVMLog.write("Guest House: Sleep — the Mac is going to sleep; pausing \(running.count) machine(s).")
         let port = rootPort
         // Sleep goes ahead after the pauses, or after holdLimit if QEMU is
         // slow to answer, whichever comes first; never both.
@@ -113,13 +113,13 @@ final class SleepCoordinator {
                         do {
                             try await manager.pauseVM()
                             guard self.asleep else {
-                                AVMLog.write("AVM: Sleep — a pause landed after the Mac woke; resuming it at once.")
+                                AVMLog.write("Guest House: Sleep — a pause landed after the Mac woke; resuming it at once.")
                                 try? await manager.resumeVM()
                                 return
                             }
                             self.pausedForSleep.append(manager)
                         } catch {
-                            AVMLog.write("AVM: Sleep — a pause failed (\(error.localizedDescription)); letting the Mac sleep anyway.")
+                            AVMLog.write("Guest House: Sleep — a pause failed (\(error.localizedDescription)); letting the Mac sleep anyway.")
                         }
                     }
                 }
@@ -160,7 +160,7 @@ final class SleepCoordinator {
                 }
             }
             guard !resumed.isEmpty else { return }
-            AVMLog.write("AVM: Sleep — the Mac woke; \(resumed.count) machine(s) running again.")
+            AVMLog.write("Guest House: Sleep — the Mac woke; \(resumed.count) machine(s) running again.")
             let names = ListFormatter.localizedString(byJoining: resumed)
             let verb = resumed.count == 1 ? "was" : "were"
             let again = resumed.count == 1 ? "is" : "are"

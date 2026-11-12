@@ -1,13 +1,13 @@
 //
 //  USBDeviceEnumerator.swift
-//  AVM
+//  Guest House
 //
 //  Unprivileged USB enumeration. Lists the devices macOS can see and
 //  builds the identity the root helper needs to find one again.
 //
 //  Scope contract (handoff 46, decision 1b): the helper never lists
-//  devices. AVM lists them here with IOKit, which needs no privilege
-//  and no libusb in the AVM target, and hands the helper a bus number,
+//  devices. Guest House lists them here with IOKit, which needs no privilege
+//  and no libusb in the Guest House target, and hands the helper a bus number,
 //  a device address and a vendor:product to check them against.
 //
 //  Bus and address come from two IORegistry properties on each

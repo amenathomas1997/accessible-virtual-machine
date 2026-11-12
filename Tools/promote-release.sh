@@ -1,6 +1,6 @@
 #!/bin/bash
 # promote-release.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
 # Offers an early release to everyone (2026-11-02): takes its early mark out of
 # appcast.xml, and makes it GitHub's latest release, which the website links to.
@@ -30,4 +30,4 @@ xmllint --noout "$REPO_ROOT/appcast.xml"
 gh release edit "v$VERSION" --repo "$REPO_SLUG" --prerelease=false --latest >/dev/null
 git -C "$REPO_ROOT" commit -q -m "Appcast: v$VERSION for everyone" -- appcast.xml
 git -C "$REPO_ROOT" push -q
-echo "Installed copies of AVM will be offered $VERSION."
+echo "Installed copies of Guest House will be offered $VERSION."

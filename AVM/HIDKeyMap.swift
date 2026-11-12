@@ -1,7 +1,7 @@
 // HIDKeyMap.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
-// USB HID keyboard usages (page 7) to the PC set 1 scancodes AVM sends
+// USB HID keyboard usages (page 7) to the PC set 1 scancodes Guest House sends
 // Windows through SPICE (2026-10-26), for the keyboard for Windows
 // (WindowsKeyboard.swift), whose keys arrive from the helper as HID
 // usages rather than as Mac key events. Extended keys carry 0x100, as in
@@ -43,7 +43,7 @@ nonisolated enum HIDKeyMap {
 
     /// An Apple ISO keyboard reports the key left of 1 (§) and the key
     /// right of left Shift (`) the other way round from a PC keyboard;
-    /// macOS swaps them back, and with the keyboard held, AVM does, when
+    /// macOS swaps them back, and with the keyboard held, Guest House does, when
     /// the setting says so.
     static func isoSwapped(_ usage: Int) -> Int {
         switch usage {

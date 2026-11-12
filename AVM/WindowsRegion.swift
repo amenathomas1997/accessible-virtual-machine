@@ -1,5 +1,5 @@
 // WindowsRegion.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // The Mac's region and keyboard, told to Windows Setup (2026-10-26), so
 // OOBE skips its "Is this the right country or region?" and keyboard
@@ -7,7 +7,7 @@
 // They go into the answer file's oobeSystem pass as the International-Core
 // component (UserLocale, SystemLocale, InputLocale).
 //
-// Only what AVM is sure of is sent. A region that isn't a plain
+// Only what Guest House is sure of is sent. A region that isn't a plain
 // language-COUNTRY pair, or a keyboard missing from the table below,
 // leaves that setting out, and Windows asks on that page as before;
 // a wrong keyboard would be worse than one more question. The display

@@ -1,30 +1,30 @@
 // SaveResumeTestJob.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Save and resume, tested with no one at the screen (2026-10-27), on a
 // machine kept by Tools/test-windows-install.sh or test-linux-install.sh
-// (--keep), through AVM's own code (VMManager.startVM, saveStateAndStop,
+// (--keep), through Guest House's own code (VMManager.startVM, saveStateAndStop,
 // and the resume in startVM):
 //
-//   AVM.app/Contents/MacOS/AVM --test-save-resume --vm <folder> [--guest windows|debian|ubuntu|fedora] [--convert] [--camera]
-//   AVM.app/Contents/MacOS/AVM --test-microphone --vm <folder> [--guest ...]
-//   AVM.app/Contents/MacOS/AVM --test-two-machines --vm <folder> --guest <os> --vm2 <folder> --guest2 <os>
-//   AVM.app/Contents/MacOS/AVM --test-duplicate --vm <folder> --guest <os>
-//   AVM.app/Contents/MacOS/AVM --test-send-file --vm <folder> --guest <os>
-//   AVM.app/Contents/MacOS/AVM --test-linux-share --vm <folder> --guest <os>
-//   AVM.app/Contents/MacOS/AVM --test-ctl --vm <folder> --guest <os>
-//   AVM.app/Contents/MacOS/AVM --test-disk-info --vm <folder> --guest <os>
-//   AVM.app/Contents/MacOS/AVM --run-in-guest <command> --vm <folder> --guest <os>
-//   AVM.app/Contents/MacOS/AVM --test-printers --vm <folder> --guest <os>
-//   AVM.app/Contents/MacOS/AVM --test-camera --vm <folder> --guest <os>
-//   AVM.app/Contents/MacOS/AVM --test-3d --vm <folder> --guest <linux os>
-//   AVM.app/Contents/MacOS/AVM --test-camera-save --vm <folder> --guest <linux os>
-//   AVM.app/Contents/MacOS/AVM --test-screen-readers [--jaws] [--into <folder>]
-//   AVM.app/Contents/MacOS/AVM --test-hid-bridge --vm <folder> --guest <os>
-//   AVM.app/Contents/MacOS/AVM --test-background --vm <folder> --guest <os>
+//   Guest House.app/Contents/MacOS/Guest House --test-save-resume --vm <folder> [--guest windows|debian|ubuntu|fedora] [--convert] [--camera]
+//   Guest House.app/Contents/MacOS/Guest House --test-microphone --vm <folder> [--guest ...]
+//   Guest House.app/Contents/MacOS/Guest House --test-two-machines --vm <folder> --guest <os> --vm2 <folder> --guest2 <os>
+//   Guest House.app/Contents/MacOS/Guest House --test-duplicate --vm <folder> --guest <os>
+//   Guest House.app/Contents/MacOS/Guest House --test-send-file --vm <folder> --guest <os>
+//   Guest House.app/Contents/MacOS/Guest House --test-linux-share --vm <folder> --guest <os>
+//   Guest House.app/Contents/MacOS/Guest House --test-ctl --vm <folder> --guest <os>
+//   Guest House.app/Contents/MacOS/Guest House --test-disk-info --vm <folder> --guest <os>
+//   Guest House.app/Contents/MacOS/Guest House --run-in-guest <command> --vm <folder> --guest <os>
+//   Guest House.app/Contents/MacOS/Guest House --test-printers --vm <folder> --guest <os>
+//   Guest House.app/Contents/MacOS/Guest House --test-camera --vm <folder> --guest <os>
+//   Guest House.app/Contents/MacOS/Guest House --test-3d --vm <folder> --guest <linux os>
+//   Guest House.app/Contents/MacOS/Guest House --test-camera-save --vm <folder> --guest <linux os>
+//   Guest House.app/Contents/MacOS/Guest House --test-screen-readers [--jaws] [--into <folder>]
+//   Guest House.app/Contents/MacOS/Guest House --test-hid-bridge --vm <folder> --guest <os>
+//   Guest House.app/Contents/MacOS/Guest House --test-background --vm <folder> --guest <os>
 //
 // --test-hid-bridge: the Bluetooth path without a Bluetooth device. Adds a
-// usb-hid-bridge (AVM's QEMU patch) with a made-up HID device, plays the
+// usb-hid-bridge (Guest House's QEMU patch) with a made-up HID device, plays the
 // helper's part on its socket, and checks the machine sees the device, an
 // input report reaches it, and an output report written there comes back.
 //
@@ -38,14 +38,14 @@
 //
 // --test-3d: starts a Linux machine with 3D Graphics (gpu3D), checks its
 // kernel found virgl and that OpenGL there is drawn by virgl (on the
-// Mac's GPU through ANGLE) rather than in software, and that AVM doesn't
+// Mac's GPU through ANGLE) rather than in software, and that Guest House doesn't
 // offer to save it with open apps (QEMU can't save virgl).
 //
 // --test-camera: starts the machine with the Mac's camera (shareCamera),
 // checks the machine has a working camera called Mac Camera, takes a
 // picture with it there (GStreamer on Linux, Windows' MediaCapture on
 // Windows), and that the Mac's camera went on, then off once the picture
-// was taken. Run it with `open` so AVM, not the shell, asks macOS for the
+// was taken. Run it with `open` so Guest House, not the shell, asks macOS for the
 // camera.
 //
 // --test-printers: adds the Mac's network printers in the machine as a
@@ -58,11 +58,11 @@
 // --test-disk-info: the machine's drives as the disk watch reads them
 // from the guest agent (DiskWatch.drives).
 //
-// --test-ctl: a control socket in a temporary AVM folder, and real
-// `AVM ctl` commands against it: list, start --no-window, status,
+// --test-ctl: a control socket in a temporary Guest House folder, and real
+// `Guest House ctl` commands against it: list, start --no-window, status,
 // send-file, save, start (carries on), stop.
 //
-// --test-linux-share: a Mac folder served over SPICE (AVM --serve-folder,
+// --test-linux-share: a Mac folder served over SPICE (Guest House --serve-folder,
 // as a machine's window serves it) is mounted at the user's sign-in by
 // /usr/local/lib/avm/mount-mac-folder.sh, and a file in it reads back in
 // the guest; a file written in the guest appears on the Mac.
@@ -77,14 +77,14 @@
 // really installs in Windows and is listed there. Use a copy of a machine for "all".
 //
 // --test-blue-screen: Windows crashed on purpose with NtRaiseHardError (taskkill
-// can't end its protected processes); AVM says so, and it comes back.
+// can't end its protected processes); Guest House says so, and it comes back.
 //
 // --test-send-file: sends a 3 MB file of random bytes (three pieces) to
 // the machine's Downloads, twice, and checks both arrive whole, the second
 // under a new name.
 //
 // --test-duplicate: duplicates the machine as Duplicate… does, in a
-// temporary AVM folder (the user's machine list is never opened), then
+// temporary Guest House folder (the user's machine list is never opened), then
 // runs the original and the copy at once, and deletes the copy.
 //
 // --test-machine-drives (2026-11-03, MachineDrives.swift): on a copy of a machine,
@@ -197,7 +197,7 @@ enum SaveResumeTestJob {
             return
         }
         guard let folder = value("--vm") else {
-            print("Usage: AVM \(flag) --vm <folder> [--guest windows|debian|ubuntu|fedora]")
+            print("Usage: Guest House \(flag) --vm <folder> [--guest windows|debian|ubuntu|fedora]")
             exit(64)
         }
         AVMLog.useTestLogFolder()
@@ -266,7 +266,7 @@ enum SaveResumeTestJob {
             }
             if arguments.contains("--test-crash-save") {
                 // QEMU killed in the middle of a save (2026-10-28, deep audit):
-                // AVM must not say it was saved, the machine must not be left
+                // Guest House must not say it was saved, the machine must not be left
                 // in a state that can't start, and the next Start must reach
                 // the guest, carrying on or starting fresh.
                 var manager = VMManager()
@@ -284,7 +284,7 @@ enum SaveResumeTestJob {
                 print(String(format: "   QEMU %d killed %d ms into the save; the save returned %@ after %.1f s", pid, killAfter, saved ? "saved" : "not saved", Date().timeIntervalSince(saveBegan)))
                 // Killed mid-save, it must not say saved; a save that was
                 // already complete may say so, and the resume below proves it.
-                check(saved ? "the save had finished before the kill (then it may say saved)" : "AVM didn't say it was saved", true)
+                check(saved ? "the save had finished before the kill (then it may say saved)" : "Guest House didn't say it was saved", true)
                 for _ in 0..<40 where manager.state != .stopped && { if case .error = manager.state { return false } else { return true } }() {
                     try? await Task.sleep(for: .milliseconds(250))
                 }
@@ -321,7 +321,7 @@ enum SaveResumeTestJob {
                 guard let socketPath = manager.hidBridgeSocketPath(port: port) else { await finish(false) }
                 do {
                     try await manager.attachHIDBridge(port: port, socketPath: socketPath, descriptor: descriptor,
-                                                      vendor: 0x46f4, product: 0x0012, name: "AVM fuzz")
+                                                      vendor: 0x46f4, product: 0x0012, name: "Guest House fuzz")
                 } catch { check("QEMU added the bridge device (\(error.localizedDescription))", false); await finish(false) }
                 func dial() -> Int32 {
                     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -487,14 +487,14 @@ enum SaveResumeTestJob {
                 // while the name resolved at once for a small program beside them.
                 // Some older copies' identifiers did resolve. Probably the Mac's
                 // Local Network permission; not confirmed (2026-11-02).
-                if Bundle.main.bundleIdentifier == "com.fullcircleat.AVM" {
+                if Bundle.main.bundleIdentifier == "com.fullcircleat.GuestHouse" {
                     var hints = addrinfo(); hints.ai_family = AF_INET
                     var info: UnsafeMutablePointer<addrinfo>?
                     let resolved = getaddrinfo("\(RemoteDesktop.hostLabel(for: config)).local", nil, &hints, &info) == 0
                     if info != nil { freeaddrinfo(info) }
                     check("\(RemoteDesktop.hostLabel(for: config)).local resolves on this Mac", resolved)
                 } else {
-                    notChecked("\(RemoteDesktop.hostLabel(for: config)).local resolving: this copy of AVM has its own identifier, and such a copy may not be able to look up .local names")
+                    notChecked("\(RemoteDesktop.hostLabel(for: config)).local resolving: this copy of Guest House has its own identifier, and such a copy may not be able to look up .local names")
                 }
                 // A real sign-in, with FreeRDP's client when it's on the Mac
                 // (brew install freerdp): authenticate only, then exit. The
@@ -576,7 +576,7 @@ enum SaveResumeTestJob {
                 guard let socketPath = manager.hidBridgeSocketPath(port: port) else { await finish(false) }
                 do {
                     try await manager.attachHIDBridge(port: port, socketPath: socketPath, descriptor: braille ? brailleDescriptor : descriptor,
-                                                      vendor: 0x46f4, product: 0x0012, name: "AVM Bluetooth test")
+                                                      vendor: 0x46f4, product: 0x0012, name: "Guest House Bluetooth test")
                     check("QEMU added the bridge device", true)
                 } catch {
                     check("QEMU added the bridge device (\(error.localizedDescription))", false)
@@ -647,7 +647,7 @@ enum SaveResumeTestJob {
                 try? await Task.sleep(for: .seconds(2))
                 let usb = (try? await manager.sendQMPCommand("x-query-usb", arguments: nil)).map { "\($0)" } ?? ""
                 print("   QEMU's USB devices after the detach: \(usb.prefix(600))")
-                check("the bridge device was removed", !usb.isEmpty && !usb.contains("hidbridge-dev-\(port)") && !usb.contains("AVM Bluetooth test"))
+                check("the bridge device was removed", !usb.isEmpty && !usb.contains("hidbridge-dev-\(port)") && !usb.contains("Guest House Bluetooth test"))
                 await shutDown(manager)
                 await finish(ok)
             }
@@ -699,7 +699,7 @@ enum SaveResumeTestJob {
                 // (2026-11-01 audit).
                 let renderers = text.lowercased().split(whereSeparator: \.isNewline).filter { $0.contains("opengl:") && $0.contains("renderer") }
                 check("OpenGL there is drawn by virgl, not in software", !renderers.isEmpty && renderers.allSatisfy { $0.contains("virgl") && !$0.contains("llvmpipe") })
-                check("AVM doesn't offer to save it with open apps", !manager.canSaveState)
+                check("Guest House doesn't offer to save it with open apps", !manager.canSaveState)
                 await shutDown(manager)
                 await finish(ok)
             }
@@ -886,7 +886,7 @@ enum SaveResumeTestJob {
         var configuration = VMConfiguration(
             name: "Save test", cpuCount: 4, ramSizeGB: guest == .windows ? 8 : 4, diskSizeGB: 64,
             diskImagePath: folder.appendingPathComponent("disk.qcow2").path,
-            // Any install disc: AVM reads the "installed" marker only for a
+            // Any install disc: Guest House reads the "installed" marker only for a
             // machine that has one (checkInstallCompleteMarker).
             installISOPath: folder.appendingPathComponent("install-avm.iso").path,
             guestOSName: guest == .windows ? nil : guest.rawValue,
@@ -965,7 +965,7 @@ enum SaveResumeTestJob {
         return ok
     }
 
-    /// Runs `AVM ctl …` as the user would, against this test's socket.
+    /// Runs `Guest House ctl …` as the user would, against this test's socket.
     private static func ctl(_ words: [String], support: URL) async -> (ok: Bool, out: String) {
         await Task.detached {
             let process = Process()
@@ -1038,7 +1038,7 @@ enum SaveResumeTestJob {
     }
 
     /// Windows' DirectX as a person turns it on (2026-11-01), on a clone of
-    /// the machine, so the machine itself doesn't get the driver: AVM puts
+    /// the machine, so the machine itself doesn't get the driver: Guest House puts
     /// the driver in, Windows has it after a restart at the feature levels
     /// DXMT gives, and with 3D off again the same Windows still starts.
     private static func windows3D(_ folder: URL) async -> Bool {
@@ -1061,7 +1061,7 @@ enum SaveResumeTestJob {
             check("the machine started and answers", false); await shutDown(manager); return false
         }
         check("it draws on the graphics chip", manager.drawsOnGPU)
-        print("== AVM installing the driver, as the first start with 3D on does")
+        print("== Guest House installing the driver, as the first start with 3D on does")
         var installed = false
         for _ in 0..<60 where !installed {
             try? await Task.sleep(for: .seconds(10))
@@ -1121,8 +1121,8 @@ enum SaveResumeTestJob {
         return ok
     }
 
-    /// Repair for AVM (2026-11-01), on a clone: its agent is confined again as
-    /// an older AVM left it, Repair types its command at GNOME's Run box, the
+    /// Repair for Guest House (2026-11-01), on a clone: its agent is confined again as
+    /// an older Guest House left it, Repair types its command at GNOME's Run box, the
     /// password goes into the box that asks, and the agent is free again.
     private static func repair(_ folder: URL, _ guest: GuestOS) async -> Bool {
         let clone = folder.deletingLastPathComponent().appendingPathComponent(folder.lastPathComponent + "-repair-\(UUID().uuidString.prefix(8))")
@@ -1139,11 +1139,11 @@ enum SaveResumeTestJob {
         }
         // Signed in and settled before any keys are typed at the desktop.
         try? await Task.sleep(for: .seconds(45))
-        print("== Confining its agent, as an older AVM left it")
+        print("== Confining its agent, as an older Guest House left it")
         _ = await exec(agent, program: "/bin/sh", args: ["-c", "for m in avm avm-qemu-ga; do semodule -r $m 2>/dev/null; done; true"])
         try? await Task.sleep(for: .seconds(5))
         check("its agent is confined", await manager.agentIsConfined() == true)
-        print("== Repair for AVM")
+        print("== Repair for Guest House")
         let repairing = Task { await manager.repairForAVM(askFirst: false) }
         // Once Repair has finished typing: it types one at a time, and typing
         // the password over it does nothing.
@@ -1164,7 +1164,7 @@ enum SaveResumeTestJob {
     private static func finderSend(_ folder: URL, _ guest: GuestOS) async -> Bool {
         let services = Bundle.main.object(forInfoDictionaryKey: "NSServices") as? [[String: Any]] ?? []
         check("Info.plist offers the service", services.contains { $0["NSMessage"] as? String == "sendToVirtualMachine" })
-        check("AVM answers its message", SendToMachineService.shared.responds(to: NSSelectorFromString("sendToVirtualMachine:userData:error:")))
+        check("Guest House answers its message", SendToMachineService.shared.responds(to: NSSelectorFromString("sendToVirtualMachine:userData:error:")))
         var config = configuration(folder: folder, guest: guest)
         config.name = "Finder test"
         let session = MachineSessions.shared.start(config, vmStore: nil, focusLock: nil)
@@ -1199,8 +1199,8 @@ enum SaveResumeTestJob {
         return ok
     }
 
-    /// Looks stuck (2026-11-01): QEMU's CPUs stopped, with AVM thinking it runs,
-    /// is a frozen machine. AVM says so within its limit, here a minute, and
+    /// Looks stuck (2026-11-01): QEMU's CPUs stopped, with Guest House thinking it runs,
+    /// is a frozen machine. Guest House says so within its limit, here a minute, and
     /// says so when it moves again.
     private static func stuckMachine(_ folder: URL, _ guest: GuestOS) async -> Bool {
         func log() -> String { AVMLog.currentLogURL().flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? "" }
@@ -1218,7 +1218,7 @@ enum SaveResumeTestJob {
         check("it isn't called stuck while it answers", !log().contains("looks stuck"))
         print("== Frozen")
         _ = try? await manager.sendQMPCommand("stop", arguments: nil)
-        check("AVM says it looks stuck", await waitForLog("looks stuck", seconds: 180))
+        check("Guest House says it looks stuck", await waitForLog("looks stuck", seconds: 180))
         check("it saved what the machine was doing", await waitForLog("-stuck.log", seconds: 60))
         if let line = log().components(separatedBy: "\n").last(where: { $0.contains("-stuck.log") }),
            let name = line.components(separatedBy: " ").last,
@@ -1231,7 +1231,7 @@ enum SaveResumeTestJob {
         }
         print("== Moving again")
         _ = try? await manager.sendQMPCommand("cont", arguments: nil)
-        check("AVM says it's moving again", await waitForLog("is moving again", seconds: 120))
+        check("Guest House says it's moving again", await waitForLog("is moving again", seconds: 120))
         await shutDown(manager)
         return ok
     }
@@ -1464,7 +1464,7 @@ enum SaveResumeTestJob {
         NSApp.setActivationPolicy(.regular)
         Tour.show()
         try? await Task.sleep(for: .seconds(1))
-        check("its window opens", NSApp.windows.contains { $0.title == "AVM Tour" && $0.isVisible })
+        check("its window opens", NSApp.windows.contains { $0.title == "Guest House Tour" && $0.isVisible })
         for index in 1..<Tour.steps.count {
             Tour.say(index)
             try? await Task.sleep(for: .milliseconds(200))
@@ -1604,15 +1604,15 @@ enum SaveResumeTestJob {
         check("NVDA is running", up)
         try? await Task.sleep(for: .seconds(40))   // GuestWatch sees it
         print("== NVDA ended in the machine")
-        // Only after sign-in (2026-10-31): at the lock screen AVM leaves the
+        // Only after sign-in (2026-10-31): at the lock screen Guest House leaves the
         // screen reader alone, as GuestWatch does, so there's nothing to check.
         let signedIn = (await exec(agent, program: "tasklist.exe", args: ["/fo", "csv", "/nh"]) ?? "").lowercased().contains("\"explorer.exe\"")
         if signedIn {
             _ = await exec(agent, program: "taskkill.exe", args: ["/f", "/im", "nvda.exe"])
-            check("AVM said NVDA stopped", await waitForLog("NVDA stopped in", seconds: 120))
+            check("Guest House said NVDA stopped", await waitForLog("NVDA stopped in", seconds: 120))
             check("NVDA is running again", await nvdaRunning())
         } else {
-            notChecked("NVDA being restarted: no one is signed in to Windows (it's at the lock screen), and AVM restarts a screen reader only in a signed-in session")
+            notChecked("NVDA being restarted: no one is signed in to Windows (it's at the lock screen), and Guest House restarts a screen reader only in a signed-in session")
         }
         print("== The before-updates check, at 5 minutes")
         let wait = 330 - Date().timeIntervalSince(started)
@@ -1626,7 +1626,7 @@ enum SaveResumeTestJob {
         _ = await exec(agent, program: "shutdown.exe", args: ["/r", "/t", "0"])
         check("the machine answers again", await waitForAgent(agent, seconds: 600))
         check("no screen text was said during the restart", !String(log().dropFirst(before)).contains("'s screen said"))
-        if taken { check("AVM said it's back after the restart", await waitForLog("is back after its restart", seconds: 60)) }
+        if taken { check("Guest House said it's back after the restart", await waitForLog("is back after its restart", seconds: 60)) }
         await shutDown(manager)
         return ok
     }
@@ -1680,7 +1680,7 @@ enum SaveResumeTestJob {
         return ok
     }
 
-    /// --test-background (2026-10-28, BackgroundMode.swift): AVM leaves
+    /// --test-background (2026-10-28, BackgroundMode.swift): Guest House leaves
     /// Command-Tab and hides only while a machine with a keyboard for
     /// Windows runs, comes back from the menu bar item, and is an ordinary
     /// app again once the machine stops. The setting is put back after.
@@ -1696,7 +1696,7 @@ enum SaveResumeTestJob {
         NSApp.setActivationPolicy(.regular)
         print("== With no machine running")
         mode.goToBackgroundIfChosen()
-        check("AVM stays in Command-Tab", NSApp.activationPolicy() == .regular && !mode.inBackground)
+        check("Guest House stays in Command-Tab", NSApp.activationPolicy() == .regular && !mode.inBackground)
 
         print("== A machine without a keyboard for Windows")
         let machines = MachineSessions.shared
@@ -1704,7 +1704,7 @@ enum SaveResumeTestJob {
         for _ in 0..<600 where plain.vmState != .running { try? await Task.sleep(for: .milliseconds(500)) }
         check("it's running", plain.vmState == .running)
         mode.goToBackgroundIfChosen()
-        check("AVM stays in Command-Tab", NSApp.activationPolicy() == .regular && !mode.inBackground)
+        check("Guest House stays in Command-Tab", NSApp.activationPolicy() == .regular && !mode.inBackground)
         plain.forceStop()
         for _ in 0..<40 where machines.session(for: config.id) != nil { try? await Task.sleep(for: .milliseconds(250)) }
 
@@ -1716,19 +1716,19 @@ enum SaveResumeTestJob {
         for _ in 0..<600 where plain.vmState != .running { try? await Task.sleep(for: .milliseconds(500)) }
         check("it's running", plain.vmState == .running)
         mode.goToBackgroundIfChosen()
-        check("AVM leaves Command-Tab and the Dock", NSApp.activationPolicy() == .accessory && mode.inBackground)
-        check("AVM is hidden", NSApp.isHidden)
+        check("Guest House leaves Command-Tab and the Dock", NSApp.activationPolicy() == .accessory && mode.inBackground)
+        check("Guest House is hidden", NSApp.isHidden)
         mode.comeForward()
         // Unhiding finishes on the next turns of the run loop.
         try? await Task.sleep(for: .seconds(1))
-        check("Show AVM brings it back", NSApp.activationPolicy() == .regular && !mode.inBackground && !NSApp.isHidden)
+        check("Show Guest House brings it back", NSApp.activationPolicy() == .regular && !mode.inBackground && !NSApp.isHidden)
         mode.goToBackgroundIfChosen()
         check("it goes back again", NSApp.activationPolicy() == .accessory)
 
         print("== The machine stops")
         plain.forceStop()
         for _ in 0..<40 where machines.session(for: config.id) != nil { try? await Task.sleep(for: .milliseconds(250)) }
-        check("AVM is in Command-Tab again", NSApp.activationPolicy() == .regular && !mode.inBackground)
+        check("Guest House is in Command-Tab again", NSApp.activationPolicy() == .regular && !mode.inBackground)
 
         print("== The setting off")
         mode.runInBackground = false
@@ -1822,7 +1822,7 @@ enum SaveResumeTestJob {
             said = log().dropFirst(before).contains("a blue screen")
             if !said { try? await Task.sleep(for: .seconds(1)) }
         }
-        check("AVM said Windows stopped with an error", said)
+        check("Guest House said Windows stopped with an error", said)
         check("the machine answers again", await waitForAgent(agent, seconds: 600))
         await shutDown(manager)
         return ok

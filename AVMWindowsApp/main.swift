@@ -1,51 +1,51 @@
 // main.swift
 // AVMWindowsApp — one Windows app in the Mac's Command-Tab list
 //
-// (2026-10-29, the user's request.) AVM copies this small program into an
+// (2026-10-29, the user's request.) Guest House copies this small program into an
 // app bundle of its own for each app open in a running Windows machine
 // (AVM/WindowsApps.swift), named for it, "Microsoft Word (Amena-PC)", so
-// Command-Tab lists it; AVM quits it when the app closes or the machine
+// Command-Tab lists it; Guest House quits it when the app closes or the machine
 // stops. It has one window, which VoiceOver reads on the way in, and one
-// command: Command-Shift-E, as AVM's own Enter, which asks AVM, through
+// command: Command-Shift-E, as Guest House's own Enter, which asks Guest House, through
 // its control socket, to bring the app forward in Windows and lock the
 // keyboard into it. Control-Command-Escape comes back, as always.
 //
 // Pinned (2026-10-30): Keep in Dock and Applications makes a lasting copy
-// in /Applications/AVM Windows Apps (the home folder's Applications when
-// that can't be written), in the Dock too; AVM makes it again when AVM
+// in /Applications/Guest House Windows Apps (the home folder's Applications when
+// that can't be written), in the Dock too; Guest House makes it again when Guest House
 // itself changes. Opened by the
-// person, from there or the Dock, rather than by AVM (which passes
-// --avm-opened), it asks AVM to open its app: AVM opens if it isn't, the
+// person, from there or the Dock, rather than by Guest House (which passes
+// --avm-opened), it asks Guest House to open its app: Guest House opens if it isn't, the
 // machine starts if it isn't running, and once Windows is signed in the
 // app opens and the keyboard goes into it. A click on its Dock icon while
 // it runs does the same, and so does Command-Shift-E.
 //
 // A machine's own app (AVMKind = machine, 2026-10-30): one for each
 // running machine, named for it, so Command-Tab switches between machines.
-// Switched to, or clicked in the Dock, it hands the front to AVM and asks
+// Switched to, or clicked in the Dock, it hands the front to Guest House and asks
 // it to enter the machine ("enter-machine"): its window comes forward with
-// the keyboard in it. Its window shows only if AVM couldn't.
+// the keyboard in it. Its window shows only if Guest House couldn't.
 //
-// Everything it needs is in its Info.plist, written by AVM: AVMAppName,
+// Everything it needs is in its Info.plist, written by Guest House: AVMAppName,
 // AVMAppKey (the Windows helper's key for the app), AVMMachineID,
-// AVMMachineName, AVMControlSocket, AVMBundleID (AVM's own) and AVMPinned.
+// AVMMachineName, AVMControlSocket, AVMBundleID (Guest House's own) and AVMPinned.
 
 import AppKit
 
 /// What every stand-in has: its window, which VoiceOver reads, and its
-/// requests to AVM. Its kind decides the rest (2026-10-30 cleanup: one
+/// requests to Guest House. Its kind decides the rest (2026-10-30 cleanup: one
 /// class with "if a machine" in each delegate method):
 /// WindowsAppStandIn and MachineStandIn.
 class StandIn: NSObject, NSApplicationDelegate {
     let info = Bundle.main.infoDictionary ?? [:]
     var appName: String { info["AVMAppName"] as? String ?? "Windows app" }
     var machineName: String { info["AVMMachineName"] as? String ?? "Windows" }
-    /// Opened by the person, not by AVM, which passes --avm-opened.
+    /// Opened by the person, not by Guest House, which passes --avm-opened.
     var openedByPerson: Bool { !CommandLine.arguments.contains("--avm-opened") }
     var window: NSWindow?
     var status: NSTextField?
     private var asking = false
-    private static let noAnswer = "AVM didn't answer. Open AVM, then try again."
+    private static let noAnswer = "Guest House didn't answer. Open Guest House, then try again."
 
     func applicationDidFinishLaunching(_ notification: Notification) {}
     func applicationDidBecomeActive(_ notification: Notification) {}
@@ -68,7 +68,7 @@ class StandIn: NSObject, NSApplicationDelegate {
         status = text
     }
 
-    /// AVM takes the front next (macOS 14 lets an app activate only when
+    /// Guest House takes the front next (macOS 14 lets an app activate only when
     /// the active one yields) and is asked to act; only a refusal is said
     /// here.
     func handOver(_ command: String, showingWindowIfRefused: Bool) {
@@ -83,7 +83,7 @@ class StandIn: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// True after saying why, when AVM said no or didn't answer.
+    /// True after saying why, when Guest House said no or didn't answer.
     @discardableResult
     func sayIfRefused(_ reply: [String: Any]?) -> Bool {
         guard reply?["ok"] as? Bool != true else { return false }
@@ -97,7 +97,7 @@ class StandIn: NSObject, NSApplicationDelegate {
                              userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
-    /// One request to AVM; AVM opened first if it isn't answering, then
+    /// One request to Guest House; Guest House opened first if it isn't answering, then
     /// asked again for up to a minute.
     func ask(_ command: String, then: @escaping ([String: Any]?) -> Void) {
         let request: [String: Any] = ["command": command,
@@ -121,15 +121,15 @@ class StandIn: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// One JSON line to AVM's control socket, one back (ControlServer).
+    /// One JSON line to Guest House's control socket, one back (ControlServer).
     static func send(_ request: [String: Any], to path: String) -> [String: Any]? {
         guard let line = try? JSONSerialization.data(withJSONObject: request) else { return nil }
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }
         defer { close(fd) }
-        // AVM quitting between the connect and the write (2026-11-09, fifth
+        // Guest House quitting between the connect and the write (2026-11-09, fifth
         // audit #42): SIGPIPE killed the stand-in with nothing said, where a
-        // failed write ends in "AVM didn't answer" and AVM being opened.
+        // failed write ends in "Guest House didn't answer" and Guest House being opened.
         var noSignal: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
         var address = sockaddr_un()
@@ -174,7 +174,7 @@ final class WindowsAppStandIn: StandIn {
                             target: self, action: #selector(togglePinned(_:)))
         makeWindow(title: "\(appName) in \(machineName)", text: text, buttons: [enter, keep])
         if !NSApp.isHidden { window?.makeKeyAndOrderFront(nil) }
-        // Opened by the person, not by AVM: open the app.
+        // Opened by the person, not by Guest House: open the app.
         if openedByPerson { openApp() }
     }
 
@@ -217,18 +217,18 @@ final class WindowsAppStandIn: StandIn {
     @objc func enterApp(_ sender: Any?) { openApp() }
 
     /// The app, opened or brought forward in Windows, with the machine
-    /// started and AVM opened as needed (WindowsApps.launch).
+    /// started and Guest House opened as needed (WindowsApps.launch).
     private func openApp() { handOver("launch-app", showingWindowIfRefused: false) }
 
     @objc func togglePinned(_ sender: Any?) {
-        // AVM says what happened; only a refusal is said here.
+        // Guest House says what happened; only a refusal is said here.
         ask(pinned ? "unpin-app" : "pin-app") { self.sayIfRefused($0) }
     }
 }
 
 /// A running machine's own app (AVMKind = machine, 2026-10-30): switched
 /// to, or clicked in the Dock, it goes straight into the machine. Its
-/// window shows only if AVM couldn't, to say why.
+/// window shows only if Guest House couldn't, to say why.
 final class MachineStandIn: StandIn {
     override func applicationDidFinishLaunching(_ notification: Notification) {
         let main = NSMenu()

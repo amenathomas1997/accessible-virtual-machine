@@ -1,11 +1,11 @@
 // SoundOutputDevices.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // The Mac's sound outputs, for a machine's Sound Output setting
 // (2026-10-30, the user's request): a machine can play through its own
 // device, headphones say, while VoiceOver stays on the Mac's default
 // output, so the two screen readers don't talk over each other in the same
-// ear. QEMU takes the device by its unique ID (out.dev, AVM's coreaudio
+// ear. QEMU takes the device by its unique ID (out.dev, Guest House's coreaudio
 // patch), which stays the same across restarts and reconnections.
 
 import AudioToolbox
@@ -69,7 +69,7 @@ enum SoundOutputDevices {
 // MARK: - Whether the Mac's sound answers
 
 /// QEMU opens its sound output while it builds the machine, on its main
-/// thread, before it answers AVM at all. On 2026-11-10 that call into Core
+/// thread, before it answers Guest House at all. On 2026-11-10 that call into Core
 /// Audio never came back (a sample of the stuck QEMU: coreaudio_init_out,
 /// AudioDeviceCreateIOProcID, waiting on coreaudiod), and every Start
 /// ended minutes later with "Timed out waiting for a QMP response" (audit
@@ -78,7 +78,7 @@ enum SoundOutputDevices {
 /// so stays the output, while the headset itself is off. Opening it then
 /// blocks; the built-in speakers opened in the same minute. The screen's
 /// lock, first suspected, has nothing to do with it. So before QEMU is
-/// launched AVM opens the same output itself, off to one side, and a
+/// launched Guest House opens the same output itself, off to one side, and a
 /// Start that would hang is ended in seconds, naming the device.
 extension SoundOutputDevices {
     private static let probeLock = NSLock()

@@ -1,14 +1,14 @@
 // KeyboardTestJob.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // The keyboard, tested into a real Windows (2026-10-26), for
 // Tools/test-windows-install.sh --keyboard:
 //
-//   AVM.app/Contents/MacOS/AVM --test-keyboard --spice <spice.sock> [--qmp <qmp.sock>]
+//   Guest House.app/Contents/MacOS/Guest House --test-keyboard --spice <spice.sock> [--qmp <qmp.sock>]
 //
 // It connects to a running Windows machine's SPICE socket the way the
 // machine's window does (CocoaSpice), and types a fixed sequence through
-// the same send calls and the same translation AVM uses: Mac keys through
+// the same send calls and the same translation Guest House uses: Mac keys through
 // SPICECoordinator.scancode(forVirtualKey:), modifiers through
 // ModifierSides, the keyboard for Windows' keys through
 // WindowsKeyTranslator, and the way back to the Mac through the same
@@ -59,7 +59,7 @@ enum KeyboardTestJob {
     }
 
     /// `--play-spice-audio --spice <sock> [--low-latency]`: plays a
-    /// machine's sound the way its window does (CocoaSpice, AVM's audio
+    /// machine's sound the way its window does (CocoaSpice, Guest House's audio
     /// pipeline), with nothing else, until stopped; for
     /// Tools/measure-audio-latency.sh to listen to (2026-10-26).
     static func playAudioIfAsked(arguments: [String] = CommandLine.arguments) {
@@ -78,7 +78,7 @@ enum KeyboardTestJob {
         while true { RunLoop.main.run(until: Date().addingTimeInterval(1)) }
     }
 
-    /// `AVM --serve-folder <folder> --spice <spice.sock>` (2026-10-27): a
+    /// `Guest House --serve-folder <folder> --spice <spice.sock>` (2026-10-27): a
     /// SPICE client that only serves a folder, as a machine's window does,
     /// for the shared folder test; runs until it's ended.
     static func serveFolderIfAsked(arguments: [String] = CommandLine.arguments) {
@@ -100,7 +100,7 @@ enum KeyboardTestJob {
         guard arguments.contains(flag) else { return }
         AVMLog.useTestLogFolder()
         guard let i = arguments.firstIndex(of: "--spice"), arguments.indices.contains(i + 1) else {
-            print("Usage: AVM \(flag) --spice <spice.sock>")
+            print("Usage: Guest House \(flag) --spice <spice.sock>")
             exit(64)
         }
         let socket = URL(fileURLWithPath: arguments[i + 1])

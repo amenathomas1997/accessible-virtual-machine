@@ -1,5 +1,5 @@
 // VMView.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Displays the SPICE output from QEMU using CocoaSpice and Metal, and
 // captures keyboard input, forwarding it to the Windows guest via CSInput.
@@ -61,7 +61,7 @@
 //   NOTE: the hot typing path (handleKey / handleFlagsChanged) still sends on
 //   the main thread deliberately — it is exercised on every keystroke of every
 //   session without incident and is outside the audit's findings.
-//   If a freeze recurs: `sample <AVM pid> 5 -file ~/Desktop/avm_hang_sample.txt`
+//   If a freeze recurs: `sample <Guest House pid> 5 -file ~/Desktop/avm_hang_sample.txt`
 //   WHILE frozen, BEFORE force-quitting.
 //
 // STUCK-KEY HANDLING (the Narrator-toggle fix):
@@ -91,7 +91,7 @@
 //
 //   That is fatal for guest screen readers. JAWS and NVDA in LAPTOP LAYOUT use
 //   Caps Lock as their modifier key, and Narrator's DEFAULT modifier is "Caps
-//   lock or Insert" — so this breaks all three, including the one AVM itself
+//   lock or Insert" — so this breaks all three, including the one Guest House itself
 //   documents. No Mac keyboard has an Insert key and a MacBook has no numeric
 //   keypad, so there is no fallback modifier available to a Mac user.
 //
@@ -282,13 +282,13 @@
 //   field-by-field SNAPSHOT COPY (texture, vertices, isVisible, offset) taken
 //   at blit time; the source's identity is erased at snapshot, and the
 //   CSRenderer protocol exposes no source property. The binding announcement
-//   stream is the available substitute: it names the display AVM attached
+//   stream is the available substitute: it names the display Guest House attached
 //   the renderer to.
 //
 // VIEWPORT SCALING (2026-08-07, issue #3 — the "extremely small display"
 // fix):
 //   FIELD REPORT (Zach Bennoui, issue #3, first post-release feedback): the
-//   guest picture occupies a small fraction of the AVM window — bad for
+//   guest picture occupies a small fraction of the Guest House window — bad for
 //   sighted testers and equally bad for blind users' OCR and AI image
 //   description workflows.
 //   ROOT CAUSE, MEASURED (2026-08-07): the driverless guest draws at the
@@ -322,7 +322,7 @@
 //   applyViewportScale.
 //
 // MOUSE INPUT (2026-08-08, issue #4 — field-reported by Zach Bennoui):
-//   Not a bug fix: AVM had NO pointer path at all (audited 2026-08-07 — zero
+//   Not a bug fix: Guest House had NO pointer path at all (audited 2026-08-07 — zero
 //   mouse handlers, zero position sends anywhere in this file). Built this
 //   session.
 //   THE MODEL: absolute positioning. VMManager already attaches usb-tablet
@@ -449,10 +449,10 @@
 //   %@ object argument, and the unified log redacts %@ as <private>. So EVERY
 //   NSLog in this file — all of them, for the whole life of this project —
 //   lands in `log show` as:
-//       AVM: (Foundation) <private>
+//       Guest House: (Foundation) <private>
 //   ObjC's NSLog(@"literal %p %d", ptr, n) does NOT redact, because the format
 //   is a literal and the arguments are scalars. THAT is why the CocoaSpice
-//   fork's [AVM-EV] markers were readable in runs 5–7 while AVM's own lines
+//   fork's [AVM-EV] markers were readable in runs 5–7 while Guest House's own lines
 //   never were. It is a property of the CALL, not of the machine, not of the
 //   launch path, and not of the build.
 //
@@ -500,33 +500,33 @@ import CocoaSpiceNoUsb
 /// by VMManager's display-configuration file-log line.
 ///
 /// The subsystem/category are arbitrary but stable; `log show --predicate
-/// 'process == "AVM"'` picks these up exactly as it does NSLog lines. The
+/// 'process == "Guest House"'` picks these up exactly as it does NSLog lines. The
 /// value of os_log here is solely the %{public}@ specifier — see THE
 /// REDACTION TRAP in the file header.
 ///
 /// PRIVACY BOUNDARY, unchanged and load-bearing: under NO circumstances may
 /// a key-naming line be routed through this helper. Key identities stay on
 /// plain NSLog behind the KeyEventLogging gate.
-private let avmPublicLogHandle = OSLog(subsystem: "com.fullcircleat.AVM", category: "instrument")
+private let avmPublicLogHandle = OSLog(subsystem: "com.fullcircleat.GuestHouse", category: "instrument")
 
 /// Emit a log line that is READABLE FROM `log show` rather than redacted to
-/// <private>. The "AVM: " prefix is preserved so existing greps keep working.
+/// <private>. The "Guest House: " prefix is preserved so existing greps keep working.
 @inline(__always)
 private func avmPublicLog(_ message: String) {
-    os_log("%{public}@", log: avmPublicLogHandle, type: .default, "AVM: " + message)
+    os_log("%{public}@", log: avmPublicLogHandle, type: .default, "Guest House: " + message)
 }
 
 // MARK: - Key Event Logging Gate (Stage B, 2026-07-26)
-/// PRIVACY: AVM must not be CAPABLE of capturing what users type (Handoff 19
+/// PRIVACY: Guest House must not be CAPABLE of capturing what users type (Handoff 19
 /// §6). Stage A removed the always-on lines that named keys; these gated
 /// diagnostics exist for the rare debugging session that needs key identity,
 /// and they are OFF unless the person running the app deliberately sets the
 /// flag below and relaunches. The gate is read ONCE per launch (static let)
 /// so mid-session defaults writes cannot silently enable it.
 ///
-/// Enable (Terminal):  defaults write com.fullcircleat.AVM AVMKeyEventLogging -bool YES
-/// Disable:            defaults delete com.fullcircleat.AVM AVMKeyEventLogging
-/// then QUIT and RELAUNCH AVM either way.
+/// Enable (Terminal):  defaults write com.fullcircleat.GuestHouse AVMKeyEventLogging -bool YES
+/// Disable:            defaults delete com.fullcircleat.GuestHouse AVMKeyEventLogging
+/// then QUIT and RELAUNCH Guest House either way.
 ///
 /// When enabled, the app self-declares in the unified log at first key event
 /// (the NSLog in the initializer below), so a log capture can always be
@@ -536,13 +536,13 @@ private func avmPublicLog(_ message: String) {
 /// false, with no setting that can change it. The flag above used to work in
 /// release builds too, and any program the user runs can write a defaults
 /// key or pass it on the command line, which made the README's promise,
-/// that AVM cannot capture what you type, untrue for the build testers use.
+/// that Guest House cannot capture what you type, untrue for the build testers use.
 enum KeyEventLogging {
     #if DEBUG
     static let isEnabled: Bool = {
         let on = UserDefaults.standard.bool(forKey: "AVMKeyEventLogging")
         if on {
-            NSLog("AVM: key event logging is ENABLED for this session (AVMKeyEventLogging is set). Key identities will appear in the unified log until the flag is removed and AVM is relaunched.")
+            NSLog("Guest House: key event logging is ENABLED for this session (AVMKeyEventLogging is set). Key identities will appear in the unified log until the flag is removed and Guest House is relaunched.")
         }
         return on
     }()
@@ -601,7 +601,7 @@ struct VMView: View {
             // Not the old screen of a rebuild (2026-10-28, fifth audit).
             if session.rebuildingScreen { return }
             if focusLock.isLocked, MachineSessions.shared.currentID == nil || focusLock.holdsKeyboard(for: session.configuration.id) {
-                NSLog("AVM: VMView onDisappear — unlocking focus (view went away while locked).")
+                NSLog("Guest House: VMView onDisappear — unlocking focus (view went away while locked).")
                 focusLock.unlock()
             }
         }
@@ -713,7 +713,7 @@ final class SPICEKeyCaptureView: MTKView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        NSLog("AVM: focus — viewDidMoveToWindow, window=\(window != nil ? "present" : "nil")")
+        NSLog("Guest House: focus — viewDidMoveToWindow, window=\(window != nil ? "present" : "nil")")
         // AUTHORITATIVE ROUTING: register with the focus-lock manager the
         // moment view+window are valid. Repeat registrations are safe (window
         // changes re-register). If auto-lock already fired, the manager starts
@@ -728,11 +728,11 @@ final class SPICEKeyCaptureView: MTKView {
         }
         DispatchQueue.main.async { [weak self] in
             guard let self, let window = self.window else {
-                NSLog("AVM: focus — deferred makeFirstResponder skipped (no window).")
+                NSLog("Guest House: focus — deferred makeFirstResponder skipped (no window).")
                 return
             }
             let ok = window.makeFirstResponder(self)
-            NSLog("AVM: focus — deferred makeFirstResponder returned \(ok); isFirstResponder=\(self.window?.firstResponder === self)")
+            NSLog("Guest House: focus — deferred makeFirstResponder returned \(ok); isFirstResponder=\(self.window?.firstResponder === self)")
         }
     }
 
@@ -755,12 +755,12 @@ final class SPICEKeyCaptureView: MTKView {
 
     override func becomeFirstResponder() -> Bool {
         let ok = super.becomeFirstResponder()
-        NSLog("AVM: focus — becomeFirstResponder -> \(ok)")
+        NSLog("Guest House: focus — becomeFirstResponder -> \(ok)")
         return ok
     }
 
     override func resignFirstResponder() -> Bool {
-        NSLog("AVM: focus — resignFirstResponder (losing focus).")
+        NSLog("Guest House: focus — resignFirstResponder (losing focus).")
         return super.resignFirstResponder()
     }
 
@@ -768,7 +768,7 @@ final class SPICEKeyCaptureView: MTKView {
         // Stage B: keyCode is key identity — same information as the vk= line
         // — so this is gated. See KeyEventLogging at the top of the file.
         if KeyEventLogging.isEnabled {
-            NSLog("AVM: focus — keyDown received, keyCode=\(event.keyCode), locked=\(coordinator?.isLocked ?? false)")
+            NSLog("Guest House: focus — keyDown received, keyCode=\(event.keyCode), locked=\(coordinator?.isLocked ?? false)")
         }
         // Locked: the key is the guest's, so never super (that would beep
         // or forward it). Unlocked (2026-10-28, code review): AppKit has it,
@@ -820,7 +820,7 @@ final class SPICEKeyCaptureView: MTKView {
             coordinator.returnToMac()
             return true
         }
-        // AVM'S KEYS, IN THE WINDOW TOO (2026-11-02, the user's request): Read
+        // Guest House'S KEYS, IN THE WINDOW TOO (2026-11-02, the user's request): Read
         // Screen and the like, which reached the guest as Windows-Shift keys.
         if AVMKeysInMachine.isAVMs(keyCode: event.keyCode, modifiers: event.modifierFlags) {
             if !event.isARepeat { coordinator.holdAVMKey(event) }
@@ -835,7 +835,7 @@ final class SPICEKeyCaptureView: MTKView {
         // Three facts from the stderr key log, one held Ctrl+Cmd+Return:
         //   1. AppKit delivers typematic repeats of a Command key combination through
         //      performKeyEquivalent too, each with isARepeat set.
-        //   2. With those repeats dropped, AVM sent ONE make during a 2.7 s
+        //   2. With those repeats dropped, Guest House sent ONE make during a 2.7 s
         //      hold and Narrator STILL started and then exited: the guest does
         //      its own typematic repeat from a held key and re-fires the
         //      hotkey itself. A host-side repeat filter alone is not the lever.
@@ -947,14 +947,14 @@ final class SPICEKeyCaptureView: MTKView {
 // MARK: - Clipboard sharing (2026-10-25)
 
 /// Connects CocoaSpice's clipboard sharing to the Mac's pasteboard.
-/// CocoaSpice already turns sharing on and the SPICE agent AVM installs in
+/// CocoaSpice already turns sharing on and the SPICE agent Guest House installs in
 /// Windows speaks it, but with no pasteboard delegate nothing moved:
 /// copying between the Mac and Windows didn't work at all.
 ///   - Windows to Mac: CocoaSpice calls setString/setData as soon as
 ///     something is copied in the guest.
-///   - Mac to Windows: NSPasteboard has no change notification, so AVM
+///   - Mac to Windows: NSPasteboard has no change notification, so Guest House
 ///     checks its change count whenever the user enters the guest or comes
-///     back to AVM, and tells CocoaSpice when it moved; Windows then asks
+///     back to Guest House, and tells CocoaSpice when it moved; Windows then asks
 ///     for the data when the user pastes.
 /// CocoaSpice calls this on its SPICE thread, so it touches no main-actor
 /// state: the VM's setting is copied in, behind a lock, by refreshEnabled.
@@ -964,7 +964,7 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
 
     private let lock = NSLock()
     private var enabled = true
-    /// The pasteboard's change count when AVM last told the guest, or last
+    /// The pasteboard's change count when Guest House last told the guest, or last
     /// wrote it itself, so a guest copy isn't echoed back as a Mac change.
     private var seenChangeCount = NSPasteboard.general.changeCount
 
@@ -986,7 +986,7 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
     /// Sharing is on and what's on the Mac's clipboard may go to a guest.
     private var mayOffer: Bool { isEnabled && !Self.isPrivate(NSPasteboard.general) }
 
-    /// The change count of the copy AVM last offered to guests, if any.
+    /// The change count of the copy Guest House last offered to guests, if any.
     private var offeredChangeCount: Int?
     /// The machines someone is at: the one with the keyboard, and the one
     /// the keyboard for Windows types into.
@@ -998,15 +998,15 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
     /// the next entry even if the Mac's clipboard hasn't changed since.
     private var offerOwed = false
     /// While the keyboard for Windows is held the user can paste there
-    /// without coming to AVM, so the Mac's clipboard is looked at each second.
+    /// without coming to Guest House, so the Mac's clipboard is looked at each second.
     @MainActor private var heldKeyboardTimer: Timer?
 
-    /// A guest may read the Mac's clipboard only as AVM offered it
+    /// A guest may read the Mac's clipboard only as Guest House offered it
     /// (2026-11-10, audit of that day #2). CocoaSpice answers any request a
     /// guest's agent makes, at any time, so a guest that kept asking got
     /// everything copied in any Mac app while it ran, entered or not.
     /// What's offered is what was there when the user last entered a
-    /// machine or came back to AVM; a later copy waits for the next time.
+    /// machine or came back to Guest House; a later copy waits for the next time.
     private var mayRead: Bool {
         guard mayOffer else { return false }
         lock.lock(); defer { lock.unlock() }
@@ -1065,8 +1065,8 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
         lock.lock(); enabled = on; lock.unlock()
     }
 
-    /// Tells CocoaSpice if the Mac's clipboard changed since AVM last
-    /// looked. Called on entering the guest and when AVM becomes active.
+    /// Tells CocoaSpice if the Mac's clipboard changed since Guest House last
+    /// looked. Called on entering the guest and when Guest House becomes active.
     @MainActor
     func macPasteboardMayHaveChanged() {
         refreshEnabled()
@@ -1080,7 +1080,7 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
         if changed, !isPrivate { offeredChangeCount = count }
         lock.unlock()
         if changed, !isPrivate {
-            AVMLog.write("AVM: Clipboard — the Mac's clipboard changed; offering it to the guest.")
+            AVMLog.write("Guest House: Clipboard — the Mac's clipboard changed; offering it to the guest.")
             NotificationCenter.default.post(name: .csPasteboardChanged, object: nil)
         }
     }
@@ -1153,8 +1153,8 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
     }
 
     /// The Mac's clipboard offered to the guest whether or not it changed
-    /// since AVM last looked (2026-10-26, code audit): every earlier look
-    /// (entering Windows, AVM coming to the front) happened before a SPICE
+    /// since Guest House last looked (2026-10-26, code audit): every earlier look
+    /// (entering Windows, Guest House coming to the front) happened before a SPICE
     /// session or the guest's agent existed, so the change was marked seen
     /// and never offered. Called when the agent connects, the first moment
     /// a guest can take it.
@@ -1177,7 +1177,7 @@ nonisolated final class AVMPasteboard: NSObject, CSPasteboardDelegate, @unchecke
     private func noteOwnWrite() {
         let count = NSPasteboard.general.changeCount
         lock.lock(); seenChangeCount = count; lock.unlock()
-        AVMLog.write("AVM: Clipboard — the guest copied something; it's on the Mac's clipboard.")
+        AVMLog.write("Guest House: Clipboard — the guest copied something; it's on the Mac's clipboard.")
     }
 }
 
@@ -1403,7 +1403,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         // itself now (VMManager's -audiodev coreaudio), about a quarter of a
         // second sooner than this SPICE path did, so the SPICE audio channel
         // carries nothing. Leaving it off also keeps CocoaSpice's GStreamer
-        // pipeline out of AVM: its osxaudiosink teardown could deadlock
+        // pipeline out of Guest House: its osxaudiosink teardown could deadlock
         // against CoreAudio's IO thread when the guest stopped its audio
         // stream (sample-proven 2026-07-12, at OOBE's PIN screen), wedging the
         // SPICE worker until the VM restarted.
@@ -1498,17 +1498,17 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         CSMain.shared.async {
             if let displayToDetach, let rendererToDetach {
                 displayToDetach.removeRenderer(rendererToDetach)
-                NSLog("AVM: teardown — renderer removed from display on the SPICE context.")
+                NSLog("Guest House: teardown — renderer removed from display on the SPICE context.")
             }
             if let inputToFlush {
                 if !codesToRelease.isEmpty {
-                    NSLog("AVM: teardown — flushing \(codesToRelease.count) stuck guest key(s) on the SPICE context.")
+                    NSLog("Guest House: teardown — flushing \(codesToRelease.count) stuck guest key(s) on the SPICE context.")
                 }
                 for code in codesToRelease {
                     inputToFlush.send(.release, code: code)
                 }
                 if !buttonsToRelease.isEmpty {
-                    NSLog("AVM: teardown — releasing held guest mouse button(s) on the SPICE context.")
+                    NSLog("Guest House: teardown — releasing held guest mouse button(s) on the SPICE context.")
                 }
                 for button in Self.allMouseButtons where buttonsToRelease.contains(button) {
                     inputToFlush.sendMouseButton(button, mask: [], pressed: false)
@@ -1517,7 +1517,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
             }
             if let connectionToClose {
                 connectionToClose.disconnect()
-                NSLog("AVM: teardown — connection disconnected on the SPICE context.")
+                NSLog("Guest House: teardown — connection disconnected on the SPICE context.")
             }
             // The captured strong references (connectionToClose in particular)
             // die HERE, on the SPICE context — so CSConnection dealloc's
@@ -1553,10 +1553,10 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         scrollAccumulatorY = 0
 
         guard let inputToFlush else {
-            NSLog("AVM: guest-key flush (\(reason)) — no input channel; tracking cleared.")
+            NSLog("Guest House: guest-key flush (\(reason)) — no input channel; tracking cleared.")
             return
         }
-        NSLog("AVM: guest-key flush (\(reason)) — queued \(codesToRelease.count) tracked key(s)\(buttonsToRelease.isEmpty ? "" : " + held mouse button(s)") + releaseKeys on the SPICE context.")
+        NSLog("Guest House: guest-key flush (\(reason)) — queued \(codesToRelease.count) tracked key(s)\(buttonsToRelease.isEmpty ? "" : " + held mouse button(s)") + releaseKeys on the SPICE context.")
         CSMain.shared.async {
             for code in codesToRelease {
                 inputToFlush.send(.release, code: code)
@@ -1589,7 +1589,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
     private func releaseAllPressedKeys() {
         guard let input else { pressedScancodes.removeAll(); return }
         if !pressedScancodes.isEmpty {
-            NSLog("AVM: flushing \(pressedScancodes.count) stuck guest key(s).")
+            NSLog("Guest House: flushing \(pressedScancodes.count) stuck guest key(s).")
         }
         for code in pressedScancodes {
             input.send(.release, code: code)
@@ -1604,11 +1604,11 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
     /// Control-Command-Escape reached the capture view (the hotkey wasn't
     /// registered): the same as the hotkey.
     func returnToMac() {
-        AVMLog.write("AVM: FocusLock — Control-Command-Escape arrived in the window (hotkey not registered); returning to the Mac.")
+        AVMLog.write("Guest House: FocusLock — Control-Command-Escape arrived in the window (hotkey not registered); returning to the Mac.")
         focusLock.unlock()
     }
 
-    /// One of AVM's keys, pressed with the keyboard in the machine. The guest
+    /// One of Guest House's keys, pressed with the keyboard in the machine. The guest
     /// already has its modifiers down, so Windows would open Start when Command
     /// comes up alone; an unused key in between stops that, as any key does.
     /// The menu item waits for the modifiers to come up, so Type Clipboard's
@@ -1621,29 +1621,29 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
 
     func handleCommandComboTap(event: NSEvent) {
         guard isLocked, let input else {
-            NSLog("AVM: combo tap gated — locked=\(isLocked), input=\(input != nil ? "present" : "nil")")
+            NSLog("Guest House: combo tap gated — locked=\(isLocked), input=\(input != nil ? "present" : "nil")")
             return
         }
         let vk = Int(event.keyCode)
         guard let scancode = Self.scancode(forVirtualKey: vk) else {
             if KeyEventLogging.isEnabled {
-                NSLog("AVM: combo key vk=\(vk) has no scancode mapping (ignored).")
+                NSLog("Guest House: combo key vk=\(vk) has no scancode mapping (ignored).")
             } else {
-                NSLog("AVM: combo key with no scancode mapping ignored.")
+                NSLog("Guest House: combo key with no scancode mapping ignored.")
             }
             return
         }
         let code = Int32(scancode)
         // Stage B: key identity, gated. The sends are NOT gated.
         if KeyEventLogging.isEnabled {
-            NSLog("AVM: combo key vk=\(vk) -> scancode=0x\(String(scancode, radix: 16)) tap (press+release)")
+            NSLog("Guest House: combo key vk=\(vk) -> scancode=0x\(String(scancode, radix: 16)) tap (press+release)")
         }
         input.send(.press, code: code)
         input.send(.release, code: code)
     }
     func handleKey(event: NSEvent, pressed: Bool) {
         guard isLocked, let input else {
-            NSLog("AVM: handleKey gated — locked=\(isLocked), input=\(input != nil ? "present" : "nil")")
+            NSLog("Guest House: handleKey gated — locked=\(isLocked), input=\(input != nil ? "present" : "nil")")
             return
         }
 
@@ -1665,7 +1665,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         // OBSERVED GUEST BEHAVIOR: with JAWS running in laptop layout, four
         // holds of 1–4 s all left caps state OFF and produced no speech. JAWS
         // consumes a bare held modifier, so the repeat run was absorbed and was
-        // never user-visible. That absorption is JAWS's doing, NOT AVM's, and it
+        // never user-visible. That absorption is JAWS's doing, NOT Guest House's, and it
         // is not something to depend on. What raw Windows does with repeated
         // makes WAS later measured for a hotkey key combination (2026-09-07, issue 13):
         // it re-fires the hotkey per make, which bounced Narrator. See the
@@ -1722,9 +1722,9 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
             // "some unmapped key was pressed" identifies nothing and can
             // reconstruct no text. The vk appears only when the flag is on.
             if KeyEventLogging.isEnabled {
-                NSLog("AVM: key vk=\(vk) has no scancode mapping (ignored).")
+                NSLog("Guest House: key vk=\(vk) has no scancode mapping (ignored).")
             } else {
-                NSLog("AVM: key with no scancode mapping ignored.")
+                NSLog("Guest House: key with no scancode mapping ignored.")
             }
             return
         }
@@ -1743,7 +1743,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         // file. The send below is NOT gated — forwarding is unconditional.
         // NEVER route this through avmPublicLog.
         if KeyEventLogging.isEnabled {
-            NSLog("AVM: key vk=\(vk) -> scancode=0x\(String(scancode, radix: 16)) pressed=\(pressed)")
+            NSLog("Guest House: key vk=\(vk) -> scancode=0x\(String(scancode, radix: 16)) pressed=\(pressed)")
         }
         input.send(pressed ? .press : .release, code: code)
 
@@ -1784,7 +1784,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
             capsLockEngaged = capsNow
             // Stage B: names a key and fires on a press — gated.
             if KeyEventLogging.isEnabled {
-                NSLog("AVM: Caps Lock toggle -> synthesizing press+release (0x3A). NOTE: tap only, no hold; see F19 courier note.")
+                NSLog("Guest House: Caps Lock toggle -> synthesizing press+release (0x3A). NOTE: tap only, no hold; see F19 courier note.")
             }
             input.send(.press, code: Int32(0x3A))
             input.send(.release, code: Int32(0x3A))
@@ -1802,7 +1802,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
             // Stage B: names which modifier went down/up and when — key
             // identity, so gated. The send below is NOT gated.
             if KeyEventLogging.isEnabled {
-                NSLog("AVM: modifier vk=\(vk) -> scancode=0x\(String(scancode, radix: 16)) down=\(isDown)")
+                NSLog("Guest House: modifier vk=\(vk) -> scancode=0x\(String(scancode, radix: 16)) down=\(isDown)")
             }
             input.send(isDown ? .press : .release, code: Int32(scancode))
         }
@@ -2014,7 +2014,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
     /// the line.
     func handleMouseButton(event: NSEvent, button: CSInputButton, pressed: Bool) {
         guard isLocked, let input else {
-            NSLog("AVM: mouse button gated — locked=\(isLocked), input=\(input != nil ? "present" : "nil")")
+            NSLog("Guest House: mouse button gated — locked=\(isLocked), input=\(input != nil ? "present" : "nil")")
             return
         }
         // A press while it was on still gets its release.
@@ -2425,7 +2425,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
     }
 
     func spiceInputAvailable(_ connection: CSConnection, input: CSInput) {
-        NSLog("AVM: SPICE input channel available.")
+        NSLog("Guest House: SPICE input channel available.")
         // Set on the main thread, where keys read it (2026-10-29, sixth
         // audit): written from SPICE's thread, a key typed as QEMU went away
         // could read a reference being freed.
@@ -2458,7 +2458,7 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
     }
 
     func spiceInputUnavailable(_ connection: CSConnection, input: CSInput) {
-        NSLog("AVM: SPICE input channel unavailable.")
+        NSLog("Guest House: SPICE input channel unavailable.")
         // By identity, with the last release on the SPICE context (seventh
         // audit): held in this block, the main thread owned the last
         // reference and blocked in its dealloc at every stop.
@@ -2471,11 +2471,11 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
     }
 
     func spiceAgentConnected(_ connection: CSConnection, supportingFeatures features: CSConnectionAgentFeature) {
-        NSLog("AVM: SPICE agent connected, features: \(features.rawValue)")
+        NSLog("Guest House: SPICE agent connected, features: \(features.rawValue)")
         DispatchQueue.main.async { [machineID] in
             MainActor.assumeIsolated { AVMPasteboard.shared.offerToNewGuest(machine: machineID) }
         }
-        // In AVM's own log for USB 2c timing (2026-10-18). NSLog lines
+        // In Guest House's own log for USB 2c timing (2026-10-18). NSLog lines
         // never showed up in the unified log.
         AVMLog.write("VMView: SPICE agent connected, features \(features.rawValue)", category: "USBHotPlug")
         // USB 2c: the agent is a service inside Windows, so its first
@@ -2487,14 +2487,14 @@ final class SPICECoordinator: NSObject, CSConnectionDelegate {
         }
     }
     func spiceAgentDisconnected(_ connection: CSConnection) {
-        NSLog("AVM: SPICE agent disconnected.")
+        NSLog("Guest House: SPICE agent disconnected.")
         AVMLog.write("VMView: SPICE agent disconnected", category: "USBHotPlug")
     }
     func spiceForwardedPortOpened(_ connection: CSConnection, port: CSPort) {
-        NSLog("AVM: SPICE port opened.")
+        NSLog("Guest House: SPICE port opened.")
     }
     func spiceForwardedPortClosed(_ connection: CSConnection, port: CSPort) {
-        NSLog("AVM: SPICE port closed.")
+        NSLog("Guest House: SPICE port closed.")
     }
 }
 

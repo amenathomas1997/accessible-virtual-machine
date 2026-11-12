@@ -1,5 +1,5 @@
 // VMSession.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 
 import Foundation
 import Combine
@@ -15,7 +15,7 @@ final class VMSession: ObservableObject {
     @Published private(set) var consoleOutput: String = ""
     @Published private(set) var qemuVersion: String = ""
     /// Mirror of manager.restartingAfterInstall, so SessionGate can react
-    /// when AVM's restart after an Ubuntu install ends (see VMManager).
+    /// when Guest House's restart after an Ubuntu install ends (see VMManager).
     @Published private(set) var restartingAfterInstall = false
 
     // MARK: - Dependencies
@@ -24,7 +24,7 @@ final class VMSession: ObservableObject {
     /// As started; only its name follows a rename (noteRenamed).
     private(set) var configuration: VMConfiguration
     /// false: the machine's window opens without taking the Mac's
-    /// keyboard (2026-10-28): a machine started when AVM opens that has a
+    /// keyboard (2026-10-28): a machine started when Guest House opens that has a
     /// keyboard for Windows of its own.
     var entersOnFirstShow = true
     /// Its screen is being rebuilt for a QEMU started again (2026-10-28,
@@ -44,14 +44,14 @@ final class VMSession: ObservableObject {
     // MARK: - Init
 
     /// The session for the VM that is running now, for code outside the
-    /// view tree: quitting AVM shuts it down through here (2026-10-25).
+    /// view tree: quitting Guest House shuts it down through here (2026-10-25).
     /// Weak, like VMManager.shared: ContentView owns the session.
     /// The machine in front (MachineSessions), several being able to run
     /// at once since 2026-10-27.
     static var current: VMSession? { MachineSessions.shared.current }
 
     /// Renamed while running (2026-11-10, fourth audit of 2026-11-09 #18):
-    /// what AVM said kept the old name. The rest waits for the next start.
+    /// what Guest House said kept the old name. The rest waits for the next start.
     func noteRenamed(_ name: String) {
         configuration.name = name
         manager.noteRenamed(name)
@@ -219,7 +219,7 @@ final class VMSession: ObservableObject {
             // "save changes?" question nobody heard.
             if !warnedAboutAgent, Date().timeIntervalSince(started) >= agentAfter - 15 {
                 warnedAboutAgent = true
-                // Only a promise AVM can keep (2026-10-28, fifth audit): with
+                // Only a promise Guest House can keep (2026-10-28, fifth audit): with
                 // no agent answering, nothing happened at 60 seconds, and
                 // the user waited for a shut down that never came.
                 let answers = await manager.guestAgentAnswers()
@@ -229,22 +229,22 @@ final class VMSession: ObservableObject {
                 guard case .stopping = manager.state else { continue }
                 if answers {
                     agentAt = Date().timeIntervalSince(started) + 15
-                    Announcer.shared.announce("\(configuration.name) is still shutting down. It may be asking whether to save your work; enter it to answer. In 15 seconds AVM makes it shut down, closing its apps without saving.", tone: .info)
+                    Announcer.shared.announce("\(configuration.name) is still shutting down. It may be asking whether to save your work; enter it to answer. In 15 seconds Guest House makes it shut down, closing its apps without saving.", tone: .info)
                 } else {
                     askedAgent = true
-                    Announcer.shared.announce("\(configuration.name) is still shutting down. It may be asking whether to save your work; enter it to answer. AVM can't hurry it, as its agent isn't answering; if it doesn't finish, Force Stop ends it.", tone: .info)
+                    Announcer.shared.announce("\(configuration.name) is still shutting down. It may be asking whether to save your work; enter it to answer. Guest House can't hurry it, as its agent isn't answering; if it doesn't finish, Force Stop ends it.", tone: .info)
                 }
             }
             if !askedAgent, Date().timeIntervalSince(started) >= agentAt {
                 askedAgent = true
                 if await manager.askGuestToShutDown() {
                     AVMLog.write("VMSession: stopGracefully: no shutdown after \(Int(agentAfter)) seconds; asked the guest agent")
-                    Announcer.shared.announce("\(configuration.name) hasn't shut down yet. AVM is asking it again through its agent, which closes its open apps without saving.", tone: .info)
+                    Announcer.shared.announce("\(configuration.name) hasn't shut down yet. Guest House is asking it again through its agent, which closes its open apps without saving.", tone: .info)
                 } else {
                     AVMLog.write("VMSession: stopGracefully: no shutdown after \(Int(agentAfter)) seconds, and no guest agent to ask")
                     // The promise was made (seventh audit): say it can't be kept.
                     if warnedAboutAgent, case .stopping = manager.state {
-                        Announcer.shared.announce("\(configuration.name)'s agent stopped answering, so AVM can't hurry it. If it doesn't finish, Force Stop ends it.", tone: .info)
+                        Announcer.shared.announce("\(configuration.name)'s agent stopped answering, so Guest House can't hurry it. If it doesn't finish, Force Stop ends it.", tone: .info)
                     }
                 }
             }
@@ -314,7 +314,7 @@ final class VMSession: ObservableObject {
 
     /// Sends Ctrl+Alt+Delete to the guest via VMManager's QMP-level key
     /// injection. This chord CANNOT be typed from the host: Control+Option is
-    /// the VoiceOver modifier, so macOS/VoiceOver consumes it before AVM ever
+    /// the VoiceOver modifier, so macOS/VoiceOver consumes it before Guest House ever
     /// sees a keydown (verified by test — VoiceOver pings and nothing transits,
     /// even with the VO pass-through command). QMP send-key injects at the
     /// virtual-hardware level, bypassing host keyboard forwarding entirely.

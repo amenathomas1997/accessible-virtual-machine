@@ -5,7 +5,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>AVM speaks its messages through VoiceOver, in your own VoiceOver voice, while you're in other apps.</string>
+	<string>Guest House speaks its messages through VoiceOver, in your own VoiceOver voice, while you're in other apps.</string>
 	<!-- MacPrinters resolves the Mac's _ipp._tcp. printers with NetService
 	     (2026-10-29, seventh audit): since macOS 15 only the service types
 	     declared here resolve, so without it a Bonjour printer was left out
@@ -15,13 +15,13 @@
 		<string>_ipp._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>AVM lets a virtual machine use your Mac's camera, when you turn that on in its Settings, for video calls and camera apps inside it.</string>
+	<string>Guest House lets a virtual machine use your Mac's camera, when you turn that on in its Settings, for video calls and camera apps inside it.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>AVM lets a virtual machine use your Mac's microphone, when you turn that on in its Settings, for dictation, calls and recordings inside it.</string>
+	<string>Guest House lets a virtual machine use your Mac's microphone, when you turn that on in its Settings, for dictation, calls and recordings inside it.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>AVM needs local network access so Windows inside your virtual machine can connect to the internet.</string>
+	<string>Guest House needs local network access so Windows inside your virtual machine can connect to the internet.</string>
 	<key>NSRemovableVolumesUsageDescription</key>
-	<string>AVM needs access to removable drives to store virtual machines on them, and to send them to your Windows virtual machine.</string>
+	<string>Guest House needs access to removable drives to store virtual machines on them, and to send them to your Windows virtual machine.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSExceptionDomains</key>
@@ -34,7 +34,7 @@
 		</dict>
 	</dict>
 	<key>NSUSBDeviceUsageDescription</key>
-	<string>AVM needs USB access to connect peripherals to your Windows virtual machine.</string>
+	<string>Guest House needs USB access to connect peripherals to your Windows virtual machine.</string>
 	<key>NSServices</key>
 	<array>
 		<dict>
@@ -46,7 +46,7 @@
 			<key>NSMessage</key>
 			<string>sendToVirtualMachine</string>
 			<key>NSPortName</key>
-			<string>AVM</string>
+			<string>Guest House</string>
 			<key>NSRequiredContext</key>
 			<dict/>
 			<key>NSSendFileTypes</key>

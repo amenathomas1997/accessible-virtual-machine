@@ -1,6 +1,6 @@
 //
 //  USBBrailleDeviceTable.swift
-//  AVM
+//  Guest House
 //
 //  GENERATED FILE. Do not edit by hand. Regenerate with
 //  make-braille-table.py from a newer BRLTTY instead.
@@ -8,17 +8,17 @@
 //  Source: BRLTTY revision d0ea21c2340ccdc67325e31f2a0f8ca6f53830f4, Autostart/Hotplug/brltty.usermap.
 //  BRLTTY is Copyright (C) 1995-2026 by The BRLTTY Developers and is
 //  licensed under the GNU Lesser General Public License, version 2.1
-//  or later. https://brltty.app/  AVM uses only the list of USB vendor
+//  or later. https://brltty.app/  Guest House uses only the list of USB vendor
 //  and product IDs, and the model names as comments.
 //
-//  Why AVM needs this: braille displays that speak HID braille, like
+//  Why Guest House needs this: braille displays that speak HID braille, like
 //  the Monarch, identify themselves by usage page 0x41 and need no
 //  table. Older displays use serial-style or vendor-specific USB
 //  interfaces and can only be recognized by their IDs.
 //
 //  Generic chips: six entries are USB-to-serial chips that braille
 //  displays share with unrelated gadgets such as Arduino boards.
-//  Decision of record (2026-09-26): AVM treats every one of them as a
+//  Decision of record (2026-09-26): Guest House treats every one of them as a
 //  possible braille display. Missing a braille display would take
 //  someone's braille away without asking; an extra question for a
 //  gadget costs little.

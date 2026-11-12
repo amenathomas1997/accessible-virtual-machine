@@ -1,10 +1,10 @@
 // ControlServer.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
-// AVM FROM THE COMMAND LINE (2026-10-27), as Hyper-V's PowerShell and
+// Guest House FROM THE COMMAND LINE (2026-10-27), as Hyper-V's PowerShell and
 // VMware's vmrun: the running app listens on a socket in its own data
 // folder (control.sock, owner-only, and the peer must be the same user),
-// and `AVM ctl …` (or Tools/avmctl) sends it one request a line, as JSON,
+// and `Guest House ctl …` (or Tools/avmctl) sends it one request a line, as JSON,
 // and prints the answer:
 //
 //   avmctl list
@@ -15,7 +15,7 @@
 //   avmctl force-stop <machine>
 //   avmctl send-file <machine> <file>
 //
-// <machine> is its name (any case) or id. If AVM isn't running, the tool
+// <machine> is its name (any case) or id. If Guest House isn't running, the tool
 // opens it in the background first. Exit status 0 on success, 1 otherwise.
 
 import AppKit
@@ -35,23 +35,23 @@ final class ControlServer {
     func start() {
         guard fd < 0, let url = Self.socketURL else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        // Not over another AVM that's listening (2026-11-09, fourth audit
+        // Not over another Guest House that's listening (2026-11-09, fourth audit
         // #20): unlinking took avmctl, the Windows apps and Send to Virtual
         // Machine away from it in silence. A socket no one answers on is left
         // from a crash and goes.
         if Self.someoneAnswers(at: url.path) {
-            AVMLog.write("AVM: Control — another AVM is listening at \(url.path); leaving it.")
-            Announcer.shared.announce("This copy of AVM can't be reached by avmctl or Send to Virtual Machine. Reason: another copy of AVM is already answering them. Next: quit the other copy, then open this one again.", tone: .failure)
+            AVMLog.write("Guest House: Control — another Guest House is listening at \(url.path); leaving it.")
+            Announcer.shared.announce("This copy of Guest House can't be reached by avmctl or Send to Virtual Machine. Reason: another copy of Guest House is already answering them. Next: quit the other copy, then open this one again.", tone: .failure)
             return
         }
         unlink(url.path)
         let s = socket(AF_UNIX, SOCK_STREAM, 0)
         guard s >= 0, Self.bind(s, to: url.path) else {
-            AVMLog.write("AVM: Control — couldn't listen at \(url.path); avmctl won't reach AVM.")
+            AVMLog.write("Guest House: Control — couldn't listen at \(url.path); avmctl won't reach Guest House.")
             if s >= 0 { close(s) }
             // Said (2026-11-09, fourth audit #20): a long home-folder path
             // over the socket limit only reached the log.
-            Announcer.shared.announce("avmctl and Send to Virtual Machine won't reach AVM this time. Reason: AVM couldn't open its control connection. Next: quit and open AVM again, and if it happens again, report the problem from the Help menu.", tone: .failure)
+            Announcer.shared.announce("avmctl and Send to Virtual Machine won't reach Guest House this time. Reason: Guest House couldn't open its control connection. Next: quit and open Guest House again, and if it happens again, report the problem from the Help menu.", tone: .failure)
             return
         }
         chmod(url.path, 0o600)
@@ -63,7 +63,7 @@ final class ControlServer {
         }
         source.resume()
         self.source = source
-        AVMLog.write("AVM: Control — listening for avmctl.")
+        AVMLog.write("Guest House: Control — listening for avmctl.")
     }
 
     nonisolated static func bind(_ s: Int32, to path: String) -> Bool {
@@ -100,7 +100,7 @@ final class ControlServer {
         guard getpeereid(client, &uid, &gid) == 0, uid == getuid() else { close(client); return }
         // On its own thread, with a time limit (2026-10-28, security
         // review): blocking reads on Swift's task threads let a client
-        // that sent nothing stop every task in AVM.
+        // that sent nothing stop every task in Guest House.
         var wait = timeval(tv_sec: 5, tv_usec: 0)
         setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
         // A client that stops reading can't hold a thread (2026-11-09, fourth audit #20).
@@ -125,7 +125,7 @@ final class ControlServer {
     /// `limit` nil for avmctl waiting on a reply (2026-11-09, audit of 0.4.41
     /// #1): a save takes minutes, its reply's first byte came after the 15
     /// seconds, and the line ended there, so a request that worked was
-    /// reported as "AVM didn't answer."
+    /// reported as "Guest House didn't answer."
     nonisolated static func readLine(_ fd: Int32, limit: TimeInterval? = 15) -> Data {
         var data = Data()
         var byte: UInt8 = 0
@@ -168,7 +168,7 @@ final class ControlServer {
     private func handle(_ line: Data) async -> [String: Any] {
         guard let request = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
               let command = request["command"] as? String else {
-            return fail("AVM didn't understand the request.")
+            return fail("Guest House didn't understand the request.")
         }
         let store = VMStore.shared
         if command == "list" {
@@ -185,7 +185,7 @@ final class ControlServer {
         let session = MachineSessions.shared.session(for: config.id)
         let mac = MacGuestRunner.shared
         let isMac = config.guestOS == .macOS
-        AVMLog.write("AVM: Control — \(command) for '\(name)'.")
+        AVMLog.write("Guest House: Control — \(command) for '\(name)'.")
 
         switch command {
         case "status":
@@ -209,7 +209,7 @@ final class ControlServer {
                 // was "already running".
                 return fail(session.vmState == .stopping ? "\(name) is shutting down. Start it again once it has." : "\(name) is already running.")
             }
-            if RestorePoints.restoringIDs.contains(config.id) { return fail("\(name) is being put back to a restore point. Start it once AVM says it's back.") }
+            if RestorePoints.restoringIDs.contains(config.id) { return fail("\(name) is being put back to a restore point. Start it once Guest House says it's back.") }
             let windowless = request["noWindow"] as? Bool == true || config.startsWithoutWindow
             MachineSessions.shared.start(config, vmStore: store, focusLock: FocusLockManager.shared, windowless: windowless, takesKeyboard: false)
             return ["ok": true, "message": "Starting \(name)\(windowless ? " without a window" : ""). Your keyboard stays on the Mac until you enter it."]
@@ -297,7 +297,7 @@ final class ControlServer {
             guard config.guestOS == .windows else { return fail("\(name) isn't a Windows machine.") }
             let key = request["app"] as? String ?? ""
             let appName = request["name"] as? String ?? "The app"
-            guard !key.isEmpty else { return fail("AVM didn't understand the request.") }
+            guard !key.isEmpty else { return fail("Guest House didn't understand the request.") }
             let result = switch command {
             case "launch-app": WindowsApps.shared.launch(machine: config.id, appKey: key, name: appName)
             case "pin-app": await WindowsApps.shared.pin(machine: config.id, appKey: key, name: appName)
@@ -316,10 +316,10 @@ final class ControlServer {
             }
             return await session.manager.sendFile(URL(fileURLWithPath: path))
                 ? ["ok": true, "message": "Sent \((path as NSString).lastPathComponent) to Downloads in \(name)."]
-                : fail("It wasn't sent; AVM said why.")
+                : fail("It wasn't sent; Guest House said why.")
 
         default:
-            return fail("AVM doesn't know the command \(command).")
+            return fail("Guest House doesn't know the command \(command).")
         }
     }
 
@@ -352,7 +352,7 @@ final class ControlServer {
 
 // MARK: - The command line
 
-/// `AVM ctl <command> …`: sends one request to the running AVM, opening it
+/// `Guest House ctl <command> …`: sends one request to the running Guest House, opening it
 /// in the background if it isn't running, and prints the answer.
 enum ControlClient {
     static func runIfAsked(arguments: [String] = CommandLine.arguments) {
@@ -385,7 +385,7 @@ enum ControlClient {
             }
         }
         guard let reply = send(request) else {
-            print("AVM didn't answer.")
+            print("Guest House didn't answer.")
             exit(1)
         }
         if let machines = reply["machines"] as? [[String: Any]] {
@@ -423,7 +423,7 @@ enum ControlClient {
             // Not running: open it in the background, and wait for it.
             let open = Process()
             open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            // With an argument, so AVM doesn't start its "start when AVM
+            // With an argument, so Guest House doesn't start its "start when Guest House
             // opens" machine for an avmctl request (2026-10-28, fourth audit):
             // `avmctl list` started it, and it took the keyboard.
             open.arguments = ["-g", "-b", bundleID, "--args", "--from-avmctl"]
@@ -438,13 +438,13 @@ enum ControlClient {
         defer { close(s) }
         ControlServer.write(s, data + Data("\n".utf8))
         // Minutes, not for ever (2026-11-09, third audit of the day #14): the
-        // 0.4.41 fix took the 15 seconds off, and an AVM stuck on a question
+        // 0.4.41 fix took the 15 seconds off, and a Guest House stuck on a question
         // held avmctl, and the script running it, for good.
         let limit: TimeInterval = 900
         let began = ProcessInfo.processInfo.systemUptime
         let line = ControlServer.readLine(s, limit: limit)
         if line.isEmpty, ProcessInfo.processInfo.systemUptime - began >= limit - 1 {
-            print("AVM didn't answer within 15 minutes. It may be stuck, or waiting on a question; look at it on the Mac.")
+            print("Guest House didn't answer within 15 minutes. It may be stuck, or waiting on a question; look at it on the Mac.")
             exit(1)
         }
         return try? JSONSerialization.jsonObject(with: line) as? [String: Any]

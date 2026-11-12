@@ -1,13 +1,13 @@
 // AccessibilityAudit.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
-// An automatic accessibility check of AVM's own windows (2026-10-26), for
+// An automatic accessibility check of Guest House's own windows (2026-10-26), for
 // Tools/audit-accessibility.sh:
 //
-//   AVM.app/Contents/MacOS/AVM --audit-accessibility --out <folder>
+//   Guest House.app/Contents/MacOS/Guest House --audit-accessibility --out <folder>
 //       [--only <screen name>] [--keep]
 //
-// It opens each of AVM's screens with sample machines, the way a person
+// It opens each of Guest House's screens with sample machines, the way a person
 // would meet them, and reads them the way VoiceOver does: through the
 // accessibility tree AppKit and SwiftUI give assistive technology. Then
 // it writes <folder>/accessibility-report.txt (one line per finding:
@@ -23,7 +23,7 @@
 // remembered USB devices and two leftover folders for Reclaim) and every
 // log line go there. The user's own machine list is never opened. The
 // folder is deleted at the end, unless --keep. Announcements are muted,
-// so nothing talks over the user's VoiceOver; AVM takes no Dock icon and
+// so nothing talks over the user's VoiceOver; Guest House takes no Dock icon and
 // never becomes the active app, and its windows are placed off every
 // screen, so nothing takes focus from what the user is doing.
 //
@@ -59,7 +59,7 @@
 //      an all-optional @objc protocol (AXInformal, below), with the older
 //      attribute-name API as a fallback.
 // The AX API (AXUIElementCreateApplication) is not used. In this run
-// mode, before AVM's own launch, every AX request to AVM answers
+// mode, before Guest House's own launch, every AX request to Guest House answers
 // kAXErrorCannotComplete, and after NSApp.finishLaunching the AX server
 // gives only the application element, as its own window and child, from
 // this process or another; the in-process objects are the ones the AX
@@ -67,7 +67,7 @@
 // no controls, it is reported as not checked, at error level.
 //
 // KEYBOARD. Tab can't be pressed for real: SwiftUI moves keyboard focus
-// only in the key window of the active app, and the audit never makes AVM
+// only in the key window of the active app, and the audit never makes Guest House
 // the active app (it would take focus from the user). So each enabled
 // control is asked whether focus can be put on it: an NSView that can
 // become the key view, or an element whose AXFocused can be set, which is
@@ -102,7 +102,7 @@ enum AccessibilityAudit {
             return arguments[i + 1]
         }
         guard let out = value("--out") else {
-            print("Usage: AVM \(flag) --out <folder> [--only <screen name>] [--keep]")
+            print("Usage: Guest House \(flag) --out <folder> [--only <screen name>] [--keep]")
             exit(64)
         }
         let keep = arguments.contains("--keep")
@@ -273,7 +273,7 @@ private final class Auditor {
     }()
 
     func run() async -> Int32 {
-        print("AVM accessibility audit")
+        print("Guest House accessibility audit")
         print("Sample machines in \(scratch.path) (the real machine list is not opened).")
         print("Keyboard navigation is \(keyboardNavigationOn ? "on: every control should take keyboard focus" : "off: only text fields are expected to take keyboard focus with Tab").")
         fflush(stdout)
@@ -315,7 +315,7 @@ private final class Auditor {
         // machine's name a heading in the table of machines, the chosen one's
         // controls (the first, at first) below it (2026-10-30), Status at
         // level three.
-        var dashboard = [ExpectedHeading(text: "Accessible Virtual Machine", level: 1, source: "guide section 5: the app title, a level-one heading")]
+        var dashboard = [ExpectedHeading(text: "Guest House", level: 1, source: "guide section 5: the app title, a level-one heading")]
         for config in store.configurations {
             dashboard.append(ExpectedHeading(text: config.name, level: 0, source: "guide section 5: each machine's name, a heading in the table"))
         }
@@ -360,10 +360,10 @@ private final class Auditor {
                 host(MacSetupView())
             },
         ] + PreferencesCategory.allCases.map { [updater = AVMUpdater(starting: false)] category -> Screen in
-            // Every category of AVM's own Settings (2026-10-30).
+            // Every category of Guest House's own Settings (2026-10-30).
             let name = category == .general ? "" : ", \(category.title)"
-            return Screen(name: "AVM Settings\(name)", size: NSSize(width: 560, height: 580),
-                          headings: title("AVM Settings: \(category.title)")) {
+            return Screen(name: "Guest House Settings\(name)", size: NSSize(width: 560, height: 580),
+                          headings: title("Guest House Settings: \(category.title)")) {
                 host(AppPreferencesView(startCategory: category).environmentObject(updater))
             }
         } + SettingsCategory.allCases.map { category -> Screen in
@@ -388,12 +388,12 @@ private final class Auditor {
                 host(USBDevicePickerView(mode: .attach, devices: s.usbDevices))
             },
             // Permissions (2026-10-30, Permissions.swift).
-            Screen(name: "AVM Permissions", size: NSSize(width: 600, height: 640), headings: title("AVM Permissions")) {
+            Screen(name: "Guest House Permissions", size: NSSize(width: 600, height: 640), headings: title("Guest House Permissions")) {
                 host(PermissionsView(close: {}))
             },
             // What's New after an update (2026-10-30, AVMUpdater.swift).
-            Screen(name: "What's New", size: WhatsNewView.size, headings: title("What's New in AVM")) {
-                host(WhatsNewView(title: "What's New in AVM", notes: ReleaseNotes.recent, close: {}))
+            Screen(name: "What's New", size: WhatsNewView.size, headings: title("What's New in Guest House")) {
+                host(WhatsNewView(title: "What's New in Guest House", notes: ReleaseNotes.recent, close: {}))
             },
         ]
     }
@@ -435,7 +435,7 @@ private final class Auditor {
         let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -40_000, y: -40_000), size: screen.size),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.title = "AVM audit: \(screen.name)"
+        window.title = "Guest House audit: \(screen.name)"
         let hosting = NSHostingView(rootView: screen.make())
         hosting.frame = NSRect(origin: .zero, size: screen.size)
         window.contentView = hosting
@@ -495,7 +495,7 @@ private final class Auditor {
         var nodes: [AuditNode] = []
         var visited = Set<ObjectIdentifier>()
         // From the content view down: the title bar's own buttons are
-        // AppKit's, and the real AVM window has them anyway.
+        // AppKit's, and the real Guest House window has them anyway.
         let roots = (window.contentView?.accessibilityChildren() ?? []).map { $0 as AnyObject }
         for (i, child) in roots.enumerated() {
             walk(child, path: "window", index: i, depth: 0, into: &nodes, visited: &visited)
@@ -679,8 +679,8 @@ private final class Auditor {
         let errors = findings.filter { $0.level == .error }
         let warnings = findings.filter { $0.level == .warning }
         var lines = [
-            "AVM accessibility audit, \(ISO8601DateFormatter().string(from: Date()))",
-            "AVM \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")), \(Bundle.main.bundlePath)",
+            "Guest House accessibility audit, \(ISO8601DateFormatter().string(from: Date()))",
+            "Guest House \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")), \(Bundle.main.bundlePath)",
             "Keyboard navigation: \(keyboardNavigationOn ? "on" : "off").",
             "\(errors.count) errors, \(warnings.count) warnings.",
             "Columns, tab-separated: level, screen, role, path, problem.",
@@ -814,7 +814,7 @@ private struct Samples {
         let fm = FileManager.default
         let store = VMStore()
         guard store.configurations.isEmpty else {
-            throw NSError(domain: "AVM.Audit", code: 1, userInfo: [NSLocalizedDescriptionKey:
+            throw NSError(domain: "GuestHouse.Audit", code: 1, userInfo: [NSLocalizedDescriptionKey:
                 "The audit's machine list wasn't empty, so it isn't the sample one."])
         }
 
@@ -865,7 +865,7 @@ private struct Samples {
         }
         store.save(mac)
 
-        // Two leftover folders, as an old AVM's delete left them.
+        // Two leftover folders, as an old Guest House's delete left them.
         let container = try VMConfiguration.defaultVMsContainer()
         for size in [3_000_000, 1_500_000] {
             let orphan = container.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -885,11 +885,11 @@ private struct Samples {
                        usbDevices: devices)
     }
 
-    /// A small, empty qcow2 disk made with AVM's own qemu-img.
+    /// A small, empty qcow2 disk made with Guest House's own qemu-img.
     private static func makeQcow2(at url: URL) throws {
         guard let tool = Bundle.main.resourceURL?.appendingPathComponent("qemu-img"),
               FileManager.default.isExecutableFile(atPath: tool.path) else {
-            throw NSError(domain: "AVM.Audit", code: 2, userInfo: [NSLocalizedDescriptionKey: "qemu-img is missing from this AVM build."])
+            throw NSError(domain: "GuestHouse.Audit", code: 2, userInfo: [NSLocalizedDescriptionKey: "qemu-img is missing from this Guest House build."])
         }
         let process = Process()
         process.executableURL = tool
@@ -897,7 +897,7 @@ private struct Samples {
         try process.run()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            throw NSError(domain: "AVM.Audit", code: 3, userInfo: [NSLocalizedDescriptionKey: "qemu-img couldn't make the sample disk."])
+            throw NSError(domain: "GuestHouse.Audit", code: 3, userInfo: [NSLocalizedDescriptionKey: "qemu-img couldn't make the sample disk."])
         }
     }
 }

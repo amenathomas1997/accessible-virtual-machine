@@ -1,5 +1,5 @@
 // DescribeScreenLogic.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Describe Screen's pure parts (2026-10-31, the user's request): the words
 // for what the Mac's own recognition found, and the request to Claude and
@@ -100,7 +100,7 @@ nonisolated enum ClaudeDescribe {
         }
         if status != 200 {
             let message = (json["error"] as? [String: Any])?["message"] as? String ?? "HTTP \(status)"
-            return .failed(status == 401 ? "Claude refused the API key. Check it in AVM's Settings." : message)
+            return .failed(status == 401 ? "Claude refused the API key. Check it in Guest House's Settings." : message)
         }
         if json["stop_reason"] as? String == "refusal" { return .declined }
         let text = (json["content"] as? [[String: Any]] ?? [])

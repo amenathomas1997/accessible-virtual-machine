@@ -1,5 +1,5 @@
 // WindowsKeyboard.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // A keyboard for Windows (2026-10-26): a second keyboard, USB or
 // Bluetooth, that types only into Windows, so there is no switching the
@@ -9,7 +9,7 @@
 //
 // The privileged helper holds the keyboard (macOS lets only a privileged
 // process take a keyboard over; AVMUSBHelper/KeyboardHold.swift) and
-// passes each key here as a HID usage. AVM turns it into the scancode a PC
+// passes each key here as a HID usage. Guest House turns it into the scancode a PC
 // keyboard sends (HIDKeyMap.swift) and sends it to QEMU's own input
 // through its control connection (QMP input-send-event), in order.
 // Keys still down are released when the keyboard goes back to the Mac,
@@ -93,10 +93,10 @@ final class WindowsKeyboard {
                 if self.keyboardID == keyboardID {
                     Announcer.shared.announce("\(keyboardName) is in \(holder) already, so it types there, not in \(target.machineName).", tone: .info)
                 } else {
-                    // A different keyboard (2026-10-28, fifth audit): AVM holds
+                    // A different keyboard (2026-10-28, fifth audit): Guest House holds
                     // one keyboard for Windows at a time, and the refusal
                     // named the wrong one.
-                    Announcer.shared.announce("\(name ?? "The keyboard") can't go to \(target.machineName) while \(keyboardName) is in \(holder): AVM holds one keyboard for Windows at a time.", tone: .info)
+                    Announcer.shared.announce("\(name ?? "The keyboard") can't go to \(target.machineName) while \(keyboardName) is in \(holder): Guest House holds one keyboard for Windows at a time.", tone: .info)
                 }
             }
             return
@@ -119,47 +119,47 @@ final class WindowsKeyboard {
         // password. Asked for at the unlock, like one given back for a lock.
         if screenLocked {
             releasedForScreenLock = true
-            AVMLog.write("AVM: WindowsKeyboard — the screen is locked; the keyboard stays with the Mac, and the helper is asked at the unlock.")
+            AVMLog.write("Guest House: WindowsKeyboard — the screen is locked; the keyboard stays with the Mac, and the helper is asked at the unlock.")
             return
         }
-        AVMLog.write("AVM: WindowsKeyboard — asking the helper for the keyboard for Windows.")
+        AVMLog.write("Guest House: WindowsKeyboard — asking the helper for the keyboard for Windows.")
         askHelper(for: keyboardID, generation: startGeneration)
     }
 
     /// Asks the helper for the keyboard and acts on its answer: from
     /// start(), and at the unlock after a screen lock gave it back
     /// (2026-10-29, seventh audit: that ask dropped the answer, so a
-    /// refusal left the keyboard typing on the Mac while AVM believed it
+    /// refusal left the keyboard typing on the Mac while Guest House believed it
     /// was in Windows). `generation`: the start this ask belongs to; a
     /// stop or a newer start meanwhile makes the answer nobody's.
     private func askHelper(for keyboardID: String, generation: Int) {
         Task { @MainActor in
             // Input Monitoring first (2026-10-29): macOS lets the helper take
-            // a keyboard only when AVM is allowed there, and refused it
+            // a keyboard only when Guest House is allowed there, and refused it
             // without a word (InputMonitoring.swift). Not asked again in this
             // run after a Not Now, at every start and unlock; the helper's
             // refusal then says what to do.
             // Not a question at login (2026-10-30, a tester's log): asked
-            // while AVM was out of sight, it sat unanswered for two and a
-            // half minutes and held the rest of AVM up. Said instead; the
-            // Permissions window asks when the user opens AVM.
+            // while Guest House was out of sight, it sat unanswered for two and a
+            // half minutes and held the rest of Guest House up. Said instead; the
+            // Permissions window asks when the user opens Guest House.
             if !InputMonitoring.isAllowed, BackgroundMode.shared.quietUntilOpened {
-                AVMLog.write("AVM: WindowsKeyboard — Input Monitoring not allowed yet, at login; the keyboard stays with the Mac.")
-                Announcer.shared.announce("\(keyboardName) types on the Mac for now: AVM isn't allowed under Input Monitoring yet. Open AVM to allow it in its Permissions window; then it goes to Windows the next time the machine starts.", tone: .info)
+                AVMLog.write("Guest House: WindowsKeyboard — Input Monitoring not allowed yet, at login; the keyboard stays with the Mac.")
+                Announcer.shared.announce("\(keyboardName) types on the Mac for now: Guest House isn't allowed under Input Monitoring yet. Open Guest House to allow it in its Permissions window; then it goes to Windows the next time the machine starts.", tone: .info)
                 self.keyboardID = nil
                 return
             }
             if !InputMonitoring.isAllowed, !Self.inputMonitoringNotNow {
                 let outcome = await InputMonitoring.ask(
-                    title: "AVM needs Input Monitoring for the keyboard for Windows",
-                    why: "macOS lets AVM's helper take a keyboard only when AVM is allowed under Input Monitoring.",
+                    title: "Guest House needs Input Monitoring for the keyboard for Windows",
+                    why: "macOS lets Guest House's helper take a keyboard only when Guest House is allowed under Input Monitoring.",
                     then: "\(keyboardName) types only in Windows as soon as it's allowed.",
                     while: { self.keyboardID == keyboardID && self.startGeneration == generation })
                 guard self.keyboardID == keyboardID, self.startGeneration == generation else { return }
                 if outcome == .notNow {
                     Self.inputMonitoringNotNow = true
-                    AVMLog.write("AVM: WindowsKeyboard — Input Monitoring not allowed (Not Now); the keyboard stays with the Mac.")
-                    Announcer.shared.announce("\(keyboardName) types on the Mac for now. Once AVM is allowed under Input Monitoring, it goes to Windows the next time the machine starts.", tone: .info)
+                    AVMLog.write("Guest House: WindowsKeyboard — Input Monitoring not allowed (Not Now); the keyboard stays with the Mac.")
+                    Announcer.shared.announce("\(keyboardName) types on the Mac for now. Once Guest House is allowed under Input Monitoring, it goes to Windows the next time the machine starts.", tone: .info)
                     self.keyboardID = nil
                     return
                 }
@@ -170,8 +170,8 @@ final class WindowsKeyboard {
             // used to continue nothing for this keyboard. Wait, then ask
             // again.
             if case .failure(.notEnabled(.requiresApproval)) = result {
-                AVMLog.write("AVM: WindowsKeyboard — waiting for the helper's approval.")
-                Announcer.shared.announce("\(keyboardName) goes to Windows once AVM's helper is allowed in Login Items.", tone: .info)
+                AVMLog.write("Guest House: WindowsKeyboard — waiting for the helper's approval.")
+                Announcer.shared.announce("\(keyboardName) goes to Windows once Guest House's helper is allowed in Login Items.", tone: .info)
                 if await USBHelperClient.shared.waitForApproval(while: { self.keyboardID == keyboardID && self.startGeneration == generation }) {
                     guard self.keyboardID == keyboardID, self.startGeneration == generation else { return }
                     result = await USBHelperClient.shared.holdKeyboard(keyboardID)
@@ -183,22 +183,22 @@ final class WindowsKeyboard {
             if case .success = result, self.keyboardID != keyboardID || self.startGeneration != generation {
                 // Only when no newer start wants a keyboard (2026-10-29, sixth
                 // audit): the helper's release takes no id, and it let go of
-                // the newer start's hold, while AVM said the keyboard typed in
+                // the newer start's hold, while Guest House said the keyboard typed in
                 // the machine. A newer start for another keyboard asks for
                 // that one again, in case the helper took this one after it.
                 if self.keyboardID == nil {
-                    AVMLog.write("AVM: WindowsKeyboard — the machine stopped while the helper took the keyboard; giving it back.")
+                    AVMLog.write("Guest House: WindowsKeyboard — the machine stopped while the helper took the keyboard; giving it back.")
                     await USBHelperClient.shared.releaseKeyboard()
                 } else if let newer = self.keyboardID, newer != keyboardID {
-                    AVMLog.write("AVM: WindowsKeyboard — a newer start wants another keyboard; asking for it again.")
+                    AVMLog.write("Guest House: WindowsKeyboard — a newer start wants another keyboard; asking for it again.")
                     _ = await USBHelperClient.shared.holdKeyboard(newer)
                 } else {
-                    AVMLog.write("AVM: WindowsKeyboard — a newer start for the same keyboard; its hold stays.")
+                    AVMLog.write("Guest House: WindowsKeyboard — a newer start for the same keyboard; its hold stays.")
                 }
                 return
             }
             if case .failure(let error) = result {
-                AVMLog.write("AVM: WindowsKeyboard — the helper couldn't hold it: \(error)")
+                AVMLog.write("Guest House: WindowsKeyboard — the helper couldn't hold it: \(error)")
                 // Only if no newer start has replaced this one meanwhile, the
                 // same keyboard's included (sixth audit: its failure ended the
                 // newer start's wait for the helper's approval).
@@ -223,21 +223,21 @@ final class WindowsKeyboard {
         target = nil
         retriedAfterHelperLoss = false
         releasedForScreenLock = false
-        AVMLog.write("AVM: WindowsKeyboard — giving the keyboard back to the Mac.")
+        AVMLog.write("Guest House: WindowsKeyboard — giving the keyboard back to the Mac.")
         Task { await USBHelperClient.shared.releaseKeyboard() }
     }
 
-    /// AVM's helper stopped while holding the keyboard: keys still down are
-    /// let go in Windows, and AVM asks for the keyboard once more.
+    /// Guest House's helper stopped while holding the keyboard: keys still down are
+    /// let go in Windows, and Guest House asks for the keyboard once more.
     private var retriedAfterHelperLoss = false
     func helperLost() {
         guard let id = keyboardID else { return }
         releaseAllKeys()
         keyboardID = nil
         isHeld = false
-        AVMLog.write("AVM: WindowsKeyboard — the helper stopped while holding the keyboard.")
+        AVMLog.write("Guest House: WindowsKeyboard — the helper stopped while holding the keyboard.")
         guard !retriedAfterHelperLoss else {
-            Announcer.shared.announce("\(keyboardName) types on the Mac again: AVM's helper stopped. Restart the machine to try again.", tone: .failure)
+            Announcer.shared.announce("\(keyboardName) types on the Mac again: Guest House's helper stopped. Restart the machine to try again.", tone: .failure)
             return
         }
         retriedAfterHelperLoss = true
@@ -250,7 +250,7 @@ final class WindowsKeyboard {
         // with no target, keys went to the front machine, and any machine
         // stopping ended the keyboard.
         let machine = target
-        Announcer.shared.announce("\(keyboardName) types on the Mac for a moment: AVM's helper restarted. Asking for it again.", tone: .info)
+        Announcer.shared.announce("\(keyboardName) types on the Mac for a moment: Guest House's helper restarted. Asking for it again.", tone: .info)
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, VMManager.shared != nil, self.keyboardID == nil else { return }
@@ -286,7 +286,7 @@ final class WindowsKeyboard {
                         // Taken again at the unlock.
                         self.releasedForScreenLock = true
                         self.isHeld = false
-                        AVMLog.write("AVM: WindowsKeyboard — the screen locked; the keyboard goes back to the Mac until it's unlocked.")
+                        AVMLog.write("Guest House: WindowsKeyboard — the screen locked; the keyboard goes back to the Mac until it's unlocked.")
                         Task { await USBHelperClient.shared.releaseKeyboard() }
                     }
                 }
@@ -298,7 +298,7 @@ final class WindowsKeyboard {
                     if self.releasedForScreenLock {
                         self.releasedForScreenLock = false
                         if let id = self.keyboardID {
-                            AVMLog.write("AVM: WindowsKeyboard — the screen is unlocked; asking for the keyboard again.")
+                            AVMLog.write("Guest House: WindowsKeyboard — the screen is unlocked; asking for the keyboard again.")
                             // The one ask (2026-10-29, seventh audit): this
                             // one dropped the helper's answer. Its own
                             // generation, so a wait left by the start (for
@@ -327,7 +327,7 @@ final class WindowsKeyboard {
         guard id == keyboardID else { return }
         isHeld = held
         if held {
-            AVMLog.write("AVM: WindowsKeyboard — held.")
+            AVMLog.write("Guest House: WindowsKeyboard — held.")
             // Held again, so a later helper loss gets its retry too
             // (2026-10-28, code review: the second restart in one session
             // stranded the keyboard).
@@ -340,26 +340,26 @@ final class WindowsKeyboard {
             }
         } else if detail == "disconnected" {
             releaseAllKeys()
-            AVMLog.write("AVM: WindowsKeyboard — disconnected; the helper will take it again when it's back.")
+            AVMLog.write("Guest House: WindowsKeyboard — disconnected; the helper will take it again when it's back.")
             Announcer.shared.announce("\(keyboardName) disconnected. It types in Windows again as soon as it reconnects.", tone: .info)
         } else if detail == "away" {
             releaseAllKeys()
-            AVMLog.write("AVM: WindowsKeyboard — its user left the screen; the helper takes it again when they're back.")
+            AVMLog.write("Guest House: WindowsKeyboard — its user left the screen; the helper takes it again when they're back.")
             Announcer.shared.announce("\(keyboardName) types on the Mac while another user is at the screen. It types in Windows again when you're back.", tone: .info)
         } else if detail == "waiting" {
             // The Mac has no other keyboard right now (2026-10-28): the
             // helper keeps looking, and takes it once the Mac has one.
             releaseAllKeys()
-            AVMLog.write("AVM: WindowsKeyboard — waiting: the Mac has no other keyboard yet.")
+            AVMLog.write("Guest House: WindowsKeyboard — waiting: the Mac has no other keyboard yet.")
             Announcer.shared.announce("\(keyboardName) types on the Mac for now: the Mac needs a keyboard of its own first. As soon as your Mac has another keyboard connected, \(keyboardName) types only in Windows.", tone: .info)
         } else {
             releaseAllKeys()
             keyboardID = nil
-            AVMLog.write("AVM: WindowsKeyboard — not held: \(detail ?? "no reason")")
+            AVMLog.write("Guest House: WindowsKeyboard — not held: \(detail ?? "no reason")")
             // Refused for want of Input Monitoring (2026-10-29): what to do,
             // not the code. Allowed already, the code is said.
             if let detail, InputMonitoring.refusedHelper(detail), !InputMonitoring.isAllowed {
-                Announcer.shared.announce("\(keyboardName) can't be used for Windows: macOS lets AVM's helper take a keyboard only when AVM is allowed under Input Monitoring. \(InputMonitoring.steps) Then it goes to Windows the next time the machine starts. It still types on the Mac.", tone: .failure)
+                Announcer.shared.announce("\(keyboardName) can't be used for Windows: macOS lets Guest House's helper take a keyboard only when Guest House is allowed under Input Monitoring. \(InputMonitoring.steps) Then it goes to Windows the next time the machine starts. It still types on the Mac.", tone: .failure)
             } else {
                 // Not "on the Mac" when it's in a machine already, through
                 // Bluetooth Devices (2026-10-29, sixth audit).
@@ -398,8 +398,8 @@ final class WindowsKeyboard {
     private static func reason(_ error: USBHelperError) -> String {
         switch error {
         case .helper(_, let detail) where !detail.isEmpty: return detail
-        case .notEnabled: return "AVM's helper isn't allowed yet; allow it in System Settings, General, Login Items."
-        default: return "AVM's helper didn't answer."
+        case .notEnabled: return "Guest House's helper isn't allowed yet; allow it in System Settings, General, Login Items."
+        default: return "Guest House's helper didn't answer."
         }
     }
 }

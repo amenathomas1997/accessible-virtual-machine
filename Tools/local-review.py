@@ -12,7 +12,7 @@ model, path = sys.argv[1], sys.argv[2]
 focus = " ".join(sys.argv[3:])
 code = open(path, errors="replace").read()
 brief = (
- "You are reviewing part of AVM, a macOS app for blind users that runs Windows and Linux in QEMU. "
+ "You are reviewing part of Guest House, a macOS app for blind users that runs Windows and Linux in QEMU. "
  "Report ONLY real bugs you can trigger: for each, give the line, the exact input or sequence that triggers it, "
  "and what goes wrong. Then a separate short list of things you suspected but could not confirm. "
  "No style notes, no praise, no summaries of what the code does. " + focus)

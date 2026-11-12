@@ -1,5 +1,5 @@
 // InstallApps.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Install Apps (2026-11-03, the user's request): tick apps in a list, and they
 // install in a running Windows machine one at a time with no questions, through
@@ -45,7 +45,7 @@ final class InstallApps: ObservableObject {
             if stopAfterThis || machine.state != .running { break }
             current = app.name
             remaining = apps.count - done.count - failed.count
-            AVMLog.write("AVM: Install Apps — \(app.id) in \(name)")
+            AVMLog.write("Guest House: Install Apps — \(app.id) in \(name)")
             switch await install(app, in: machine) {
             case .installed(let restartNeeded):
                 restart = restart || restartNeeded
@@ -56,7 +56,7 @@ final class InstallApps: ObservableObject {
             }
         }
         var words = done.isEmpty ? "No apps were installed in \(name)." : "Finished installing in \(name): \(done.map(\.name).joined(separator: ", "))."
-        if !failed.isEmpty { words += " These didn't install: \(failed.joined(separator: ", ")). Next: try them again, or get them from their makers. AVM's log says why." }
+        if !failed.isEmpty { words += " These didn't install: \(failed.joined(separator: ", ")). Next: try them again, or get them from their makers. Guest House's log says why." }
         if restart { words += " Windows needs a restart to finish." }
         Announcer.shared.announce(words, tone: failed.isEmpty ? .success : .failure)
         return done
@@ -64,7 +64,7 @@ final class InstallApps: ObservableObject {
 
     private func install(_ app: WindowsApp, in machine: VMManager) async -> WindowsAppManifest.Outcome {
         guard let installer = await Self.latestInstaller(app) else {
-            AVMLog.write("AVM: Install Apps — no installer for \(app.id) in its manifest")
+            AVMLog.write("Guest House: Install Apps — no installer for \(app.id) in its manifest")
             return .download
         }
         let outcome: WindowsAppManifest.Outcome
@@ -73,14 +73,14 @@ final class InstallApps: ObservableObject {
             let output = try await machine.agentRun("powershell.exe", ["-NoProfile", "-EncodedCommand", WindowsAppManifest.encoded(WindowsAppManifest.script(installer))], limit: .seconds(30 * 60))
             outcome = WindowsAppManifest.outcome(of: output)
         } catch {
-            AVMLog.write("AVM: Install Apps — \(app.id): \(error.localizedDescription)")
+            AVMLog.write("Guest House: Install Apps — \(app.id): \(error.localizedDescription)")
             return .noAnswer
         }
-        AVMLog.write("AVM: Install Apps — \(app.id) from \(installer.url.host ?? "?"), \(installer.type): \(outcome)")
+        AVMLog.write("Guest House: Install Apps — \(app.id) from \(installer.url.host ?? "?"), \(installer.type): \(outcome)")
         guard case .installed = outcome else { return outcome }
         // Its own word isn't enough: an installer can end at 0 having done nothing.
         if let names = await listedNames(in: machine), !app.isListed(in: names) {
-            AVMLog.write("AVM: Install Apps — \(app.id) ended well, but Windows doesn't list it")
+            AVMLog.write("Guest House: Install Apps — \(app.id) ended well, but Windows doesn't list it")
             return .failed(code: nil)
         }
         return outcome
@@ -137,14 +137,14 @@ struct InstallAppsView: View {
                 .font(.title2)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityHeading(.h1)
-            Text("Choose apps, and AVM installs them in Windows one at a time, with no questions. Each comes from its maker, using the links and checksums in Microsoft's public package list. Windows needs to be connected to the internet.")
+            Text("Choose apps, and Guest House installs them in Windows one at a time, with no questions. Each comes from its maker, using the links and checksums in Microsoft's public package list. Windows needs to be connected to the internet.")
                 .fixedSize(horizontal: false, vertical: true)
             if let current = installer.current {
                 Text("Installing \(current). \(installer.remaining) left, this one included.")
             } else if !looked {
                 Text("Looking at what's already in Windows.")
             } else if present == nil {
-                Text("AVM couldn't see what's in Windows, so it can't tell which of these are already there.")
+                Text("Guest House couldn't see what's in Windows, so it can't tell which of these are already there.")
                     .fixedSize(horizontal: false, vertical: true)
             }
             ScrollView {

@@ -1,9 +1,9 @@
 // MachineBackups.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Automatic backups (2026-11-01, the user's request): a machine's Export, on a
 // schedule, into one chosen folder, such as an external drive. A machine that's
-// running or saved with its apps open waits until it's shut down; AVM looks
+// running or saved with its apps open waits until it's shut down; Guest House looks
 // every hour. Each is an ordinary .avmvm that Import reads. Only after a new one
 // is whole do older ones of that machine go, past the newest few.
 
@@ -34,7 +34,7 @@ final class MachineBackups {
         guard let path = UserDefaults.standard.string(forKey: BackupSchedule.folderKey), FileManager.default.fileExists(atPath: path) else {
             if toldNoFolder.map({ now.timeIntervalSince($0) > 86_400 }) ?? true {
                 toldNoFolder = now
-                Announcer.shared.announce("AVM couldn't back up \(due[0].name): its backup folder isn't there. Next: connect the drive, or choose a folder in the machine's Settings, under Startup and Recovery.", tone: .failure)
+                Announcer.shared.announce("Guest House couldn't back up \(due[0].name): its backup folder isn't there. Next: connect the drive, or choose a folder in the machine's Settings, under Startup and Recovery.", tone: .failure)
             }
             return
         }

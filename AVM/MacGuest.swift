@@ -1,10 +1,10 @@
 // MacGuest.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // macOS virtual machines (2026-10-26). QEMU can't run macOS on Apple
 // Silicon, so a macOS machine runs on Apple's own Virtualization framework
-// (the com.apple.security.virtualization entitlement AVM already has), a
-// second engine beside QEMU. It shares AVM's dashboard list, spoken status
+// (the com.apple.security.virtualization entitlement Guest House already has), a
+// second engine beside QEMU. It shares Guest House's dashboard list, spoken status
 // and settings store; the parts that differ are here:
 //
 //   MacGuestFiles  — a macOS machine's files in its VM folder: the disk
@@ -29,7 +29,7 @@
 // Command-F5 while working there, as with Windows and JAWS or NVDA.
 // VOICEOVER INSIDE: macOS Setup Assistant offers it itself: wait on its
 // first screen with macOS holding the keyboard, and press Escape when it
-// speaks; macOS then keeps VoiceOver on for good. (AVM's own Command-F5
+// speaks; macOS then keeps VoiceOver on for good. (Guest House's own Command-F5
 // sender was removed, 2026-10-26: it never reached the machine, and typed
 // Command-F5 can only reach it by capturing the keyboard, which also
 // blocked the way back to the Mac.)
@@ -44,7 +44,7 @@ import Virtualization
 @MainActor
 enum MacGuestConfiguration {
 
-    /// The machine as Apple's framework runs it, from AVM's settings.
+    /// The machine as Apple's framework runs it, from Guest House's settings.
     static func make(_ config: VMConfiguration, files: MacGuestFiles,
                      hardwareModel: VZMacHardwareModel? = nil,
                      clipboardFolder: URL? = nil) throws -> VZVirtualMachineConfiguration {
@@ -131,7 +131,7 @@ enum MacGuestConfiguration {
         // The shared folder appears in the machine's Finder by itself, as
         // "My Shared Files", in /Volumes. With clipboard sharing
         // (MacClipboard.swift) there are two folders, so each is a folder
-        // inside My Shared Files: the user's by its own name, and AVM
+        // inside My Shared Files: the user's by its own name, and Guest House
         // Clipboard.
         let fs = VZVirtioFileSystemDeviceConfiguration(tag: VZVirtioFileSystemDeviceConfiguration.macOSGuestAutomountTag)
         if let clipboardFolder {
@@ -200,7 +200,7 @@ final class MacInstaller: NSObject, URLSessionDownloadDelegate {
             // audit): it was "used again" at every attempt, failing each time.
             if ipsw == nil {
                 try? FileManager.default.removeItem(at: imageURL)
-                throw MacGuestError("The macOS installer AVM downloaded before can't be read, so AVM removed it. Next: try again; AVM downloads macOS afresh.")
+                throw MacGuestError("The macOS installer Guest House downloaded before can't be read, so Guest House removed it. Next: try again; Guest House downloads macOS afresh.")
             }
             throw error
         }
@@ -242,12 +242,12 @@ final class MacInstaller: NSObject, URLSessionDownloadDelegate {
                 }
             }
         }
-        AVMLog.write("AVM: MacGuest — installed macOS \(image.operatingSystemVersion.description) in \(config.name).")
+        AVMLog.write("Guest House: MacGuest — installed macOS \(image.operatingSystemVersion.description) in \(config.name).")
         // A restore point of the fresh install, free on APFS (2026-10-26).
         do {
             try MacRestorePoints.take(files, name: "Fresh install of macOS \(image.operatingSystemVersion.description)")
         } catch {
-            AVMLog.write("AVM: MacGuest — no fresh-install restore point: \(error.localizedDescription)")
+            AVMLog.write("Guest House: MacGuest — no fresh-install restore point: \(error.localizedDescription)")
         }
     }
 
@@ -274,7 +274,7 @@ final class MacInstaller: NSObject, URLSessionDownloadDelegate {
         }
         // The size comes from the download itself (26 GB for macOS 27.0.1,
         // 2026-10-26), in the first progress line.
-        say("Downloading macOS \(latest.operatingSystemVersion.description) from Apple. It's large, usually over 15 gigabytes; AVM says how far it has got every gigabyte.")
+        say("Downloading macOS \(latest.operatingSystemVersion.description) from Apple. It's large, usually over 15 gigabytes; Guest House says how far it has got every gigabyte.")
         lastSpokenGB = 0
         downloadResumes = 0
         downloadDestination = cached
@@ -287,7 +287,7 @@ final class MacInstaller: NSObject, URLSessionDownloadDelegate {
         // each is 15 to 26 GB, and nothing removed them.
         for old in (try? fm.contentsOfDirectory(at: Self.cacheFolder, includingPropertiesForKeys: nil)) ?? []
         where old.pathExtension == "ipsw" && old.lastPathComponent != got.lastPathComponent {
-            AVMLog.write("AVM: macOS — removing the older installer \(old.lastPathComponent)")
+            AVMLog.write("Guest House: macOS — removing the older installer \(old.lastPathComponent)")
             try? fm.removeItem(at: old)
         }
         return got
@@ -339,8 +339,8 @@ final class MacInstaller: NSObject, URLSessionDownloadDelegate {
             if let error, downloadContinuation != nil, downloadResumes < 5,
                let resumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
                 downloadResumes += 1
-                AVMLog.write("AVM: MacGuest — the macOS download stopped (\(error.localizedDescription)); carrying on from where it got to (time \(downloadResumes) of 5)")
-                say("The macOS download stopped. AVM is carrying on from where it got to.")
+                AVMLog.write("Guest House: MacGuest — the macOS download stopped (\(error.localizedDescription)); carrying on from where it got to (time \(downloadResumes) of 5)")
+                say("The macOS download stopped. Guest House is carrying on from where it got to.")
                 DispatchQueue.main.asyncAfter(deadline: .now() + Double(5 * downloadResumes)) { [weak self] in
                     guard let self, self.downloadContinuation != nil else { session.invalidateAndCancel(); return }
                     session.downloadTask(withResumeData: resumeData).resume()
@@ -358,7 +358,7 @@ final class MacInstaller: NSObject, URLSessionDownloadDelegate {
     private func say(_ message: String) {
         onProgress?(message)
         Announcer.shared.announce(message, tone: .info)
-        AVMLog.write("AVM: MacGuest — \(message)")
+        AVMLog.write("Guest House: MacGuest — \(message)")
     }
 }
 
@@ -471,7 +471,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             // storage for a few seconds, and the start fails with "Failed
             // to lock auxiliary storage". Tried again, quietly, for 15 s.
             if error.localizedDescription.localizedCaseInsensitiveContains("lock"), attempt < 6 {
-                AVMLog.write("AVM: MacGuest — \(config.name)'s files are still in use (\(error.localizedDescription)); trying again in 3 seconds.")
+                AVMLog.write("Guest House: MacGuest — \(config.name)'s files are still in use (\(error.localizedDescription)); trying again in 3 seconds.")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
                     MainActor.assumeIsolated { self?.start(config, attempt: attempt + 1) }
                 }
@@ -489,7 +489,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             // started again.
             if case .failure(let error) = result,
                error.localizedDescription.localizedCaseInsensitiveContains("lock"), attempt < 6 {
-                AVMLog.write("AVM: MacGuest — \(config.name)'s files are still in use as it starts (\(error.localizedDescription)); trying again in 3 seconds.")
+                AVMLog.write("Guest House: MacGuest — \(config.name)'s files are still in use as it starts (\(error.localizedDescription)); trying again in 3 seconds.")
                 self.ended(spoken: nil, tone: .info)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
                     MainActor.assumeIsolated { self?.start(config, attempt: attempt + 1) }
@@ -498,7 +498,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             }
             switch result {
             case .success:
-                AVMLog.write("AVM: MacGuest — \(config.name) started.")
+                AVMLog.write("Guest House: MacGuest — \(config.name) started.")
                 Announcer.shared.announce("\(config.name) is running.", tone: .success)
                 self.enterIfWanted()
                 // Set up for the user when chosen (2026-10-30,
@@ -547,7 +547,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                 MainActor.assumeIsolated {
                     // This run's machine still (2026-10-28, fourth audit): a
                     // run that was ended meanwhile neither deletes the saved
-                    // state nor starts the machine AVM let go of.
+                    // state nor starts the machine Guest House let go of.
                     guard let self, self.runToken == run, self.machine === machine else { return }
                     // Refused while the Mac is locked (2026-10-30, the
                     // twelfth macOS test run was refused "permission
@@ -557,7 +557,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                     // It's kept, and the resume tried again at the unlock,
                     // instead of a fresh start losing the session.
                     if let error, FocusLockManager.screenIsLockedNow {
-                        AVMLog.write("AVM: MacGuest — resume refused with the Mac locked (\(error.localizedDescription)); trying again at the unlock.")
+                        AVMLog.write("Guest House: MacGuest — resume refused with the Mac locked (\(error.localizedDescription)); trying again at the unlock.")
                         Announcer.shared.announce("\(config.name) resumes when you unlock the Mac.", tone: .info)
                         self.unlockObserver = DistributedNotificationCenter.default().addObserver(
                             forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
@@ -572,7 +572,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                         return
                     }
                     if let error {
-                        AVMLog.write("AVM: MacGuest — saved state not usable: \(error.localizedDescription)")
+                        AVMLog.write("Guest House: MacGuest — saved state not usable: \(error.localizedDescription)")
                         // Asked, not assumed (2026-11-09, fifth audit #7): any
                         // error, even a passing one, deleted the whole session.
                         let testing = CommandLine.arguments.contains { $0.hasPrefix("--test-") }
@@ -606,7 +606,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                         case .success:
                             // Only now (2026-11-09, fifth audit #7).
                             try? FileManager.default.removeItem(at: files.savedState)
-                            AVMLog.write("AVM: MacGuest — \(config.name) resumed from its saved state.")
+                            AVMLog.write("Guest House: MacGuest — \(config.name) resumed from its saved state.")
                             Announcer.shared.announce("\(config.name) is running again.", tone: .success)
                             self.enterIfWanted()
                         case .failure(let error):
@@ -637,7 +637,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             try vzConfiguration.validateSaveRestoreSupport()
             return true
         } catch {
-            AVMLog.write("AVM: MacGuest — this machine can't be saved: \(error.localizedDescription)")
+            AVMLog.write("Guest House: MacGuest — this machine can't be saved: \(error.localizedDescription)")
             return false
         }
     }
@@ -651,14 +651,14 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         let finish: @MainActor (Error?) -> Void = { [weak self] error in
             guard let self else { done(false); return }
             if let error {
-                AVMLog.write("AVM: MacGuest — couldn't save: \(error.localizedDescription)")
+                AVMLog.write("Guest House: MacGuest — couldn't save: \(error.localizedDescription)")
                 try? FileManager.default.removeItem(at: files.savedState)
                 Announcer.shared.announce("\(self.name) couldn't be saved. Reason: \(error.localizedDescription)", tone: .failure)
                 if machine.state == .paused { machine.resume { _ in } }
                 done(false)
                 return
             }
-            AVMLog.write("AVM: MacGuest — saved; stopping.")
+            AVMLog.write("Guest House: MacGuest — saved; stopping.")
             machine.stop { [weak self] _ in
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
@@ -689,7 +689,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
     // MARK: VoiceOver at the first start (2026-10-26)
 
     /// A new machine's first start: when Setup Assistant should be up
-    /// (about 3 minutes, measured), AVM runs the Command-F5 pass itself,
+    /// (about 3 minutes, measured), Guest House runs the Command-F5 pass itself,
     /// so turning on macOS's VoiceOver needs no button. Once per machine.
     private func offerVoiceOverOnce(_ config: VMConfiguration) {
         // false only for machines made since this existed (MacSetupView):
@@ -701,7 +701,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             updated.macVoiceOverOffered = true
             VMStore.shared?.save(updated)
         }
-        Announcer.shared.announce("When macOS's Setup Assistant is up, in about 3 minutes, AVM will ask you to press Command-F5 to turn on its VoiceOver.", tone: .info)
+        Announcer.shared.announce("When macOS's Setup Assistant is up, in about 3 minutes, Guest House will ask you to press Command-F5 to turn on its VoiceOver.", tone: .info)
         let id = config.id
         // This run's, not a later one's (2026-10-26, code audit): a machine
         // stopped and started again inside 200 s had the first run's timer
@@ -714,7 +714,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                     Announcer.shared.announce("Setup Assistant should be up in \(self.name). To turn on its VoiceOver, choose Turn On VoiceOver in macOS in its window.", tone: .info)
                     return
                 }
-                AVMLog.write("AVM: MacGuest — first start: passing Command-F5 for macOS's VoiceOver.")
+                AVMLog.write("Guest House: MacGuest — first start: passing Command-F5 for macOS's VoiceOver.")
                 self.passSystemKeysBriefly()
             }
         }
@@ -743,7 +743,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         machine.stop { [weak self] error in
             // Only if it did stop (2026-10-28, fourth audit).
             if let error {
-                AVMLog.write("AVM: MacGuest — stop refused: \(error.localizedDescription)")
+                AVMLog.write("Guest House: MacGuest — stop refused: \(error.localizedDescription)")
                 Announcer.shared.announce("\(self?.name ?? "macOS") couldn't be turned off yet. Reason: \(error.localizedDescription)", tone: .failure)
                 return
             }
@@ -767,7 +767,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         if entersOnStart {
             enterUnlessInAnotherMachine()
         } else {
-            Announcer.shared.announce("Enter it from AVM's list to use the keyboard there.", tone: .info)
+            Announcer.shared.announce("Enter it from Guest House's list to use the keyboard there.", tone: .info)
         }
     }
 
@@ -796,28 +796,28 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         // Command-Return.
         whenModifiersReleased { [weak self] in
             guard let self, self.keyboardInGuest, let window = self.window, let machineView = self.machineView else { return }
-            // AVM wasn't let in front (2026-10-26, code audit: another app
+            // Guest House wasn't let in front (2026-10-26, code audit: another app
             // was in front as a start finished, and macOS 14's activation
-            // can refuse): keys would go to that app while AVM thinks macOS
+            // can refuse): keys would go to that app while Guest House thinks macOS
             // has them, with Control-Command-Escape taken system-wide.
             guard window.isKeyWindow, NSApp.isActive else {
                 self.releaseFullControl()
                 self.setKeyboard(inGuest: false)
-                Announcer.shared.announce("\(self.guestName) didn't get the keyboard, because AVM isn't in front. To give it the keyboard, switch to AVM and choose Enter macOS.", tone: .leaveGuest)
-                AVMLog.write("AVM: MacGuest — keyboard NOT given to macOS: AVM's window isn't key.")
+                Announcer.shared.announce("\(self.guestName) didn't get the keyboard, because Guest House isn't in front. To give it the keyboard, switch to Guest House and choose Enter macOS.", tone: .leaveGuest)
+                AVMLog.write("Guest House: MacGuest — keyboard NOT given to macOS: Guest House's window isn't key.")
                 return
             }
             window.makeFirstResponder(machineView)
-            AVMLog.write("AVM: MacGuest — machine's screen is \(window.firstResponder === machineView ? "" : "NOT ")first responder; window is \(window.isKeyWindow ? "" : "NOT ")key; AVM is \(NSApp.isActive ? "" : "NOT ")active.")
+            AVMLog.write("Guest House: MacGuest — machine's screen is \(window.firstResponder === machineView ? "" : "NOT ")first responder; window is \(window.isKeyWindow ? "" : "NOT ")key; Guest House is \(NSApp.isActive ? "" : "NOT ")active.")
             // Only now that the screen has the keyboard (2026-10-28, code
             // review): these three used to run whether or not it did, so a
             // refused activation left the hotkey taken system-wide, the
             // VoiceOver flag set, and "Entering macOS" said right after
             // "didn't get the keyboard".
             // NEVER capturesSystemKeys = true here (2026-10-26, a user stuck
-            // in macOS): Apple's capture takes the keyboard below AVM's key
+            // in macOS): Apple's capture takes the keyboard below Guest House's key
             // monitor AND its system-wide hotkey, so Control-Command-Escape
-            // stopped working and only quitting AVM got the keyboard back.
+            // stopped working and only quitting Guest House got the keyboard back.
             // Command-Tab and Command-F5 stay the Mac's. The hotkey stays as
             // a second way out.
             self.registerEscapeHotKey()
@@ -828,16 +828,16 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             // machine still sees the Control and Option presses alone, and
             // macOS's VoiceOver dings at the half-chords. Said every time
             // the Mac's VoiceOver is on as macOS takes the keyboard.
-            // AVM can't turn it off for good (measured; MacVoiceOver below),
+            // Guest House can't turn it off for good (measured; MacVoiceOver below),
             // so it asks for Command-F5, and turns it back on itself when
             // the keyboard leaves macOS.
             var entering = self.hintGiven ? "Entering \(self.guestName)" : "Entering \(self.guestName). Control-Command-Escape returns to your Mac."
             if MacVoiceOver.noteEnteringGuest() {
-                entering += (entering.hasSuffix(".") ? " " : ". ") + "Press Command-F5 to turn your Mac's VoiceOver off while you're in \(self.guestName); AVM turns it back on when you return."
+                entering += (entering.hasSuffix(".") ? " " : ". ") + "Press Command-F5 to turn your Mac's VoiceOver off while you're in \(self.guestName); Guest House turns it back on when you return."
             }
             Announcer.shared.announce(entering, tone: .enterGuest)
             self.hintGiven = true
-            AVMLog.write("AVM: MacGuest — keyboard to macOS.")
+            AVMLog.write("Guest House: MacGuest — keyboard to macOS.")
         }
     }
 
@@ -858,12 +858,12 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                 main.makeKeyAndOrderFront(nil)
             }
         }
-        AVMLog.write("AVM: MacGuest — keyboard to the Mac.")
+        AVMLog.write("Guest House: MacGuest — keyboard to the Mac.")
     }
 
     /// The next Command-F5 goes to macOS, to start its VoiceOver from any
     /// screen (2026-10-26). The Mac keeps Command-F5 unless the machine's
-    /// view captures system keys, so AVM captures them until that one
+    /// view captures system keys, so Guest House captures them until that one
     /// Command-F5 has gone through, then stops; and 10 seconds after asking
     /// whatever happens. The first try failed twice: "Press Command-F5 now"
     /// was said BEFORE capturing began and used up half the time, and
@@ -884,7 +884,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             guard let self, self.keyboardInGuest, generation == self.systemKeysGeneration else { return }
             self.passingCommandF5 = true
             self.setCapturesSystemKeys(true)
-            AVMLog.write("AVM: MacGuest — the next Command-F5 goes to macOS (10 seconds at most).")
+            AVMLog.write("Guest House: MacGuest — the next Command-F5 goes to macOS (10 seconds at most).")
             // Said once capturing has begun, so a quick Command-F5 can't
             // come too early.
             Announcer.shared.announce("Press Command-F5 now. It goes to \(self.guestName).", tone: .info)
@@ -916,7 +916,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         guard passingCommandF5 else { return }
         passingCommandF5 = false
         setCapturesSystemKeys(false)
-        AVMLog.write("AVM: MacGuest — system keys back to the Mac\(timedOut ? " (10 seconds passed)" : "").")
+        AVMLog.write("Guest House: MacGuest — system keys back to the Mac\(timedOut ? " (10 seconds passed)" : "").")
         var said = timedOut ? "Command-F5 is your Mac's again." : ""
         if NSWorkspace.shared.isVoiceOverEnabled {
             said += (said.isEmpty ? "" : " ") + "If you hear both VoiceOvers, press Command-F5 to turn your Mac's off."
@@ -965,7 +965,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         }, 1, &type, nil, &hotKeyHandler)
         let status = RegisterEventHotKey(UInt32(kVK_Escape), UInt32(controlKey | cmdKey), Self.escapeHotKeyID,
                                          GetApplicationEventTarget(), 0, &hotKeyRef)
-        AVMLog.write("AVM: MacGuest — Control-Command-Escape hotkey \(status == noErr ? "registered" : "not registered (\(status))").")
+        AVMLog.write("Guest House: MacGuest — Control-Command-Escape hotkey \(status == noErr ? "registered" : "not registered (\(status))").")
         // Not registered: its handler goes too, or each later try installs
         // another that is never removed (2026-10-26, code audit).
         if status != noErr {
@@ -987,12 +987,12 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
 
     private func setKeyboard(inGuest: Bool) {
         // Back to the Mac, however it happens: the Mac's VoiceOver comes
-        // back on if AVM turned it off.
+        // back on if Guest House turned it off.
         if keyboardInGuest && !inGuest {
             MacVoiceOver.restoreAfterGuest()
         }
         if keyboardInGuest && !inGuest {
-            AVMLog.write("AVM: MacGuest — while macOS had the keyboard: \(keysToMacOS) key presses went to the machine's window, \(keysElsewhere) to another window.")
+            AVMLog.write("Guest House: MacGuest — while macOS had the keyboard: \(keysToMacOS) key presses went to the machine's window, \(keysElsewhere) to another window.")
         }
         if inGuest {
             keysToMacOS = 0
@@ -1066,9 +1066,9 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         // THE ONE KEYBOARD RULE (2026-10-26, after "switching is unclear and
         // keystrokes don't work consistently"): keys reach macOS only after
         // Enter (Command-Shift-E or the button), and then go to it the
-        // normal way. One chord is AVM's: Control-Command-Escape, back to
-        // the Mac. (Command shortcuts that are AVM menu items, like
-        // Command-Q, are AVM's; quitting asks first while macOS runs.)
+        // normal way. One chord is Guest House's: Control-Command-Escape, back to
+        // the Mac. (Command shortcuts that are Guest House menu items, like
+        // Command-Q, are Guest House's; quitting asks first while macOS runs.)
         // Command-F5 and Command-Tab are the Mac's own: macOS lets no app see
         // them without capturing the keyboard, and capturing it disables the
         // way out (see enter()).
@@ -1079,7 +1079,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self, self.keyboardInGuest, let screen = self.machineView else { return event }
             guard event.window === self.window else {
-                // A key typed while AVM thinks macOS has the keyboard, but
+                // A key typed while Guest House thinks macOS has the keyboard, but
                 // into another window: counted, never identified.
                 if event.type == .keyDown { self.keysElsewhere += 1 }
                 return event
@@ -1092,7 +1092,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             // The one Command-F5 being passed to macOS: it goes through,
             // then the Mac gets its system keys back once it's let go.
             if self.passingCommandF5, event.keyCode == UInt16(kVK_F5), mods.contains(.command) {
-                AVMLog.write("AVM: MacGuest — Command-F5 went to macOS.")
+                AVMLog.write("Guest House: MacGuest — Command-F5 went to macOS.")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     MainActor.assumeIsolated { self?.endPassingCommandF5(timedOut: false) }
                 }
@@ -1110,7 +1110,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
                 // is the Mac's (a key nothing took) or macOS's.
                 if self.keysToMacOS <= 5 {
                     let responder = self.window?.firstResponder.map { String(describing: type(of: $0)) } ?? "none"
-                    AVMLog.write("AVM: MacGuest — a key to the machine's window: first responder \(responder), window \(self.window?.isKeyWindow == true ? "key" : "NOT key"), AVM \(NSApp.isActive ? "active" : "NOT active"), modifiers held: \(event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty ? "none" : "some").")
+                    AVMLog.write("Guest House: MacGuest — a key to the machine's window: first responder \(responder), window \(self.window?.isKeyWindow == true ? "key" : "NOT key"), Guest House \(NSApp.isActive ? "active" : "NOT active"), modifiers held: \(event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty ? "none" : "some").")
                 }
             }
             return event
@@ -1130,7 +1130,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
             setKeyboard(inGuest: false)
             window?.makeFirstResponder(giveButton)
             Announcer.shared.announce("Entering Mac", tone: .leaveGuest)
-            AVMLog.write("AVM: MacGuest — keyboard to the Mac (window left).")
+            AVMLog.write("Guest House: MacGuest — keyboard to the Mac (window left).")
         }
     }
 
@@ -1181,7 +1181,7 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
 
     /// `spoken` nil: closed quietly, to be started again at once.
     private func ended(spoken: String?, tone: Announcer.Tone) {
-        if let spoken { AVMLog.write("AVM: MacGuest — \(spoken)") }
+        if let spoken { AVMLog.write("Guest House: MacGuest — \(spoken)") }
         releaseFullControl()
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
@@ -1213,19 +1213,19 @@ final class MacGuestRunner: NSObject, ObservableObject, VZVirtualMachineDelegate
 /// With both on, the Mac's VoiceOver takes arrow keys (Quick Nav) and its
 /// Control-Option commands, and macOS's dings at what's left.
 ///
-/// AVM CAN'T TURN IT OFF, MEASURED 2026-10-26: VoiceOver's AppleScript
+/// Guest House CAN'T TURN IT OFF, MEASURED 2026-10-26: VoiceOver's AppleScript
 /// "quit" stops it, but macOS's own setting (com.apple.universalaccess
 /// voiceOverOnOffKey) stays on, and launchd starts VoiceOver again within
 /// 2 seconds (new process each time, the setting 1 throughout). That
 /// setting can't be written from outside ("Could not write domain"), and
 /// macOS ignores a Command-F5 a program sends (CGEvent, posting allowed).
-/// Only the person's own Command-F5 turns it off for good, so AVM asks for
+/// Only the person's own Command-F5 turns it off for good, so Guest House asks for
 /// it on entering, and turns VoiceOver back on itself on leaving: opening
 /// VoiceOver.app starts it the way Command-F5 does, and that works.
 @MainActor
 enum MacVoiceOver {
 
-    /// Kept on disk, not just in memory: if AVM crashes or is force-quit
+    /// Kept on disk, not just in memory: if Guest House crashes or is force-quit
     /// while macOS has the keyboard, applicationWillTerminate never runs,
     /// and the Mac would stay without its screen reader. recoverAtLaunch
     /// turns it back on next time.
@@ -1235,20 +1235,20 @@ enum MacVoiceOver {
         set { UserDefaults.standard.set(newValue, forKey: flagKey) }
     }
 
-    /// On entering macOS: true if the Mac's VoiceOver is on (AVM then asks
+    /// On entering macOS: true if the Mac's VoiceOver is on (Guest House then asks
     /// for Command-F5), remembering to bring it back on the way out.
     static func noteEnteringGuest() -> Bool {
         let on = NSWorkspace.shared.isVoiceOverEnabled
-        AVMLog.write("AVM: MacVoiceOver — \(on ? "on" : "off") on entering macOS.")
+        AVMLog.write("Guest House: MacVoiceOver — \(on ? "on" : "off") on entering macOS.")
         if on { bringBack = true }
         return on
     }
 
-    /// At launch: VoiceOver back on if a previous AVM ended while macOS had
+    /// At launch: VoiceOver back on if a previous Guest House ended while macOS had
     /// the keyboard. Touches nothing otherwise.
     static func recoverAtLaunch() {
         guard bringBack else { return }
-        AVMLog.write("AVM: MacVoiceOver — AVM ended while macOS had the keyboard; bringing the Mac's VoiceOver back.")
+        AVMLog.write("Guest House: MacVoiceOver — Guest House ended while macOS had the keyboard; bringing the Mac's VoiceOver back.")
         restoreAfterGuest()
     }
 
@@ -1261,7 +1261,7 @@ enum MacVoiceOver {
         guard bringBack else { return }
         if NSWorkspace.shared.isVoiceOverEnabled {
             bringBack = false
-            AVMLog.write("AVM: MacVoiceOver — still on on leaving macOS.")
+            AVMLog.write("Guest House: MacVoiceOver — still on on leaving macOS.")
             return
         }
         let app = URL(fileURLWithPath: "/System/Library/CoreServices/VoiceOver.app")
@@ -1273,14 +1273,14 @@ enum MacVoiceOver {
                 open.waitUntilExit()
                 if open.terminationStatus == 0 { bringBack = false }
             }
-            NSLog("AVM: MacVoiceOver — opened before quitting (status \(open.terminationStatus)).")
+            NSLog("Guest House: MacVoiceOver — opened before quitting (status \(open.terminationStatus)).")
             return
         }
         NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration()) { _, error in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { if error == nil { bringBack = false } }
             }
-            AVMLog.write("AVM: MacVoiceOver — \(error == nil ? "turned back on" : "couldn't turn it back on: \(error!.localizedDescription)").")
+            AVMLog.write("Guest House: MacVoiceOver — \(error == nil ? "turned back on" : "couldn't turn it back on: \(error!.localizedDescription)").")
         }
     }
 }

@@ -1,11 +1,11 @@
 #!/bin/bash
 # publish-release.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
 # Publishes the release Tools/build-installer.sh made (2026-10-26): a
 # GitHub release v<version> in this repository with the DMG and the Sparkle zip,
 # then the update feed entry added to appcast.xml, committed and pushed,
-# so installed copies of AVM are offered the update. Asks before it
+# so installed copies of Guest House are offered the update. Asks before it
 # publishes anything.
 #
 #   Tools/publish-release.sh            publish build/installer's release
@@ -50,15 +50,15 @@ git -C "$REPO_ROOT" fetch -q origin "$FEED_BRANCH" || fail "Couldn't reach GitHu
 ITEM="$OUT_DIR/appcast-item.xml"
 [ -f "$ITEM" ] || fail "There is no build to publish in $OUT_DIR." "Run Tools/build-installer.sh first."
 VERSION="$(sed -nE 's#.*<sparkle:shortVersionString>(.*)</sparkle:shortVersionString>.*#\1#p' "$ITEM" | sed -n 1p)"
-DMG="$OUT_DIR/AVM-$VERSION.dmg"
-ZIP="$OUT_DIR/AVM-$VERSION.zip"
-[ -f "$DMG" ] && [ -f "$ZIP" ] || fail "AVM-$VERSION.dmg or .zip is missing from $OUT_DIR." "Run Tools/build-installer.sh again."
+DMG="$OUT_DIR/GuestHouse-$VERSION.dmg"
+ZIP="$OUT_DIR/GuestHouse-$VERSION.zip"
+[ -f "$DMG" ] && [ -f "$ZIP" ] || fail "GuestHouse-$VERSION.dmg or .zip is missing from $OUT_DIR." "Run Tools/build-installer.sh again."
 grep -q "edSignature" "$ITEM" || fail "The update feed entry has no signature." "Run Tools/build-installer.sh again and allow keychain access."
 # Notarized, and built from what's being tagged (2026-10-26, code audit): a
 # --skip-notarize build was otherwise publishable, and Gatekeeper then
 # blocked it for every new user; and a build made on another branch was
 # tagged at main's tip.
-xcrun stapler validate "$DMG" >/dev/null 2>&1 || fail "AVM-$VERSION.dmg isn't notarized." "Run Tools/build-installer.sh without --skip-notarize."
+xcrun stapler validate "$DMG" >/dev/null 2>&1 || fail "GuestHouse-$VERSION.dmg isn't notarized." "Run Tools/build-installer.sh without --skip-notarize."
 BUILT="$(cat "$OUT_DIR/built-commit.txt" 2>/dev/null || true)"
 [ -n "$BUILT" ] && [ "$BUILT" = "$(git -C "$REPO_ROOT" rev-parse HEAD)" ] || fail "The build in $OUT_DIR wasn't made from this commit of $FEED_BRANCH." "Run Tools/build-installer.sh again here, on $FEED_BRANCH."
 if grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" "$REPO_ROOT/appcast.xml"; then
@@ -106,7 +106,7 @@ if ! "$(dirname "$0")/test-release.sh" --dmg "$DMG"; then
     fail "The release test failed." "Read the NO lines above, rebuild with Tools/build-installer.sh, and publish again."
 fi
 echo
-echo "About to publish AVM $VERSION to https://github.com/$REPO_SLUG"
+echo "About to publish Guest House $VERSION to https://github.com/$REPO_SLUG"
 echo "  $(basename "$DMG"), $(du -h "$DMG" | cut -f1)"
 echo "  $(basename "$ZIP"), $(du -h "$ZIP" | cut -f1)"
 [ "$DRAFT" = "1" ] && echo "  as a DRAFT release; appcast.xml is not changed"
@@ -137,12 +137,12 @@ if [ "$EXISTING" = "1" ]; then
 else
     # The built commit itself, not the branch (sixth audit): a push to the
     # branch while this waited for "yes" tagged a newer commit.
-    # What's new, as AVM's What's New window says it (2026-10-30,
+    # What's new, as Guest House's What's New window says it (2026-10-30,
     # release-notes.md from build-installer.sh), then how to install.
-    NOTES="AVM $VERSION. Install from the DMG; existing installs update from inside AVM."
+    NOTES="Guest House $VERSION. Install from the DMG; existing installs update from inside Guest House."
     [ -s "$OUT_DIR/release-notes.md" ] && NOTES="$(cat "$OUT_DIR/release-notes.md")"$'\n\n'"$NOTES"
     gh release create "v$VERSION" "$DMG" "$ZIP" --repo "$REPO_SLUG" --target "$BUILT" \
-        --title "AVM $VERSION" --notes "$NOTES" \
+        --title "Guest House $VERSION" --notes "$NOTES" \
         ${DRAFT_FLAG[@]+"${DRAFT_FLAG[@]}"} || fail "gh could not create the release."
     echo "Created release v$VERSION."
 fi
@@ -175,6 +175,6 @@ git -C "$REPO_ROOT" push -q \
 if [ "$EARLY" = "1" ]; then
     echo "Update feed updated and pushed. Only copies with early updates on will be offered $VERSION. For everyone: Tools/promote-release.sh $VERSION"
 else
-    echo "Update feed updated and pushed. Installed copies of AVM will be offered $VERSION."
+    echo "Update feed updated and pushed. Installed copies of Guest House will be offered $VERSION."
 fi
-command -v say >/dev/null && say "AVM $VERSION is published." || true
+command -v say >/dev/null && say "Guest House $VERSION is published." || true

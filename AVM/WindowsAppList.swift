@@ -1,5 +1,5 @@
 // WindowsAppList.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // The apps Install Apps offers (2026-11-03, the user's request), and what's
 // decided from winget's public package manifests: which installer suits

@@ -1,4 +1,4 @@
-# AVM: run one installer with a time limit (2026-10-30).
+# Guest House: run one installer with a time limit (2026-10-30).
 # Usage: AVMRUN.PS1 <minutes> <program> ["<arguments>"]
 # Windows 11 24H2 (26100) left the SPICE agent's msiexec waiting forever in
 # the specialize pass, and Setup waits for every step there, so the install

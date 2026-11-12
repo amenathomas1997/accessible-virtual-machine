@@ -1,6 +1,6 @@
 #!/bin/bash
 # run-tests-parallel.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
 # The whole suite in about half the time (2026-11-01, the user's request): one
 # group for each Linux distribution, side by side, then what can't be.
@@ -11,7 +11,7 @@
 #   - A second group can't use a machine's disk, so the Debian tests that need
 #     the app's own signature (camera, microphone) or that a clone can't do
 #     (Finder send) run last, one at a time, with two machines at once.
-#   - With AVM open, even the app's own groups run from a copy: quit AVM first,
+#   - With Guest House open, even the app's own groups run from a copy: quit Guest House first,
 #     or the camera and microphone tests fail for want of its signature.
 #   - A clone may not be able to look up .local names, so Remote Desktop's name is checked
 #     only on the app's own identifier.

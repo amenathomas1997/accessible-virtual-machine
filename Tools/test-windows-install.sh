@@ -1,15 +1,15 @@
 #!/bin/bash
 # test-windows-install.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
 # A complete unattended Windows install with no one at the screen
 # (2026-10-26), to prove a change to the answer file or the install media
 # before anyone spends an hour on a test install:
-#   1. builds fresh install media with AVM's own pipeline
-#      (AVM --build-install-media), with NVDA and JAWS, and setup answers
+#   1. builds fresh install media with Guest House's own pipeline
+#      (Guest House --build-install-media), with NVDA and JAWS, and setup answers
 #      for a local test account, so Windows signs in by itself;
 #   2. makes a blank disk, Secure Boot firmware settings and a TPM, and
-#      starts QEMU the way AVM does, with no window;
+#      starts QEMU the way Guest House does, with no window;
 #   3. presses Enter at "Press any key to boot from CD", then waits;
 #   4. reads AVMSTATUS.TXT, the report the answer file writes on the
 #      UNATTEND volume, until the first sign-in has finished;
@@ -22,22 +22,22 @@
 #   Tools/test-windows-install.sh [--iso PATH] [--app PATH] [--minutes N] [--keep] [--disk virtio|nvme] [--keyboard] [--reuse FOLDER]
 #
 # --iso      a Windows 11 ARM64 ISO (default: the newest *arm64*.iso in Downloads)
-# --app      the AVM.app to test (default: the Debug build in ~/Library/Caches/AVM-build)
+# --app      the Guest House.app to test (default: the Debug build in ~/Library/Caches/AVM-build)
 # --minutes  how long to wait before giving up (default 150)
 # --reuse    start a test machine a failed run kept, instead of installing
 #            (with --keyboard: try the keyboard check again in minutes)
 # --keyboard after the install, types a fixed set of keys into Windows
-#            through AVM's own keyboard path (AVM --test-keyboard) and
+#            through Guest House's own keyboard path (Guest House --test-keyboard) and
 #            checks what Windows received: both Shifts released, Delete,
 #            Pause, and no Start menu on the way back to the Mac
-# --latency  plays Windows' sound to the Mac the way AVM does, and after
+# --latency  plays Windows' sound to the Mac the way Guest House does, and after
 #            the install times NVDA's "say the time" (NVDA+F12) 20 times,
 #            from the key to the first sound (Tools/audio-latency)
 
 set -euo pipefail
 
 ISO=""
-APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/AVM.app"
+APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/Guest House.app"
 MINUTES=150
 KEEP=0
 DISK=virtio   # the disk new machines get (2026-10-27); nvme as older ones
@@ -72,13 +72,13 @@ fail() {
 if [ -z "$ISO" ]; then
     ISO="$(ls -t "$HOME"/Downloads/*[Aa][Rr][Mm]64*.iso 2>/dev/null | sed -n 1p || true)"
 fi
-[ -n "$ISO" ] && [ -f "$ISO" ] || fail "No Windows 11 ARM64 ISO found." "Pass one with --iso, or download one with AVM's Download Windows 11 for ARM."
+[ -n "$ISO" ] && [ -f "$ISO" ] || fail "No Windows 11 ARM64 ISO found." "Pass one with --iso, or download one with Guest House's Download Windows 11 for ARM."
 R="$APP/Contents/Resources"
-[ -x "$APP/Contents/MacOS/AVM" ] && [ -x "$R/qemu-system-aarch64" ] || fail "No AVM build at $APP." "Build AVM first, or pass --app."
-# Not cut off while AVM is open (2026-10-30, avm-own-copy.sh): building
-# the install media takes longer than loginwindow allows a second AVM.
+[ -x "$APP/Contents/MacOS/Guest House" ] && [ -x "$R/qemu-system-aarch64" ] || fail "No Guest House build at $APP." "Build Guest House first, or pass --app."
+# Not cut off while Guest House is open (2026-10-30, avm-own-copy.sh): building
+# the install media takes longer than loginwindow allows a second Guest House.
 . "$(dirname "$0")/avm-own-copy.sh"
-avm_own_copy "$APP" test || fail "Couldn't make a copy of AVM for the test." "Check that $APP is a complete AVM build."
+avm_own_copy "$APP" test || fail "Couldn't make a copy of Guest House for the test." "Check that $APP is a complete Guest House build."
 APP="$AVM_COPY"
 for f in qemu-img swtpm mtools edk2-aarch64-secure-code.fd edk2-arm-secure-vars.fd; do
     [ -e "$R/$f" ] || fail "$f is missing from $APP."
@@ -162,7 +162,7 @@ PY
 trap cleanup EXIT
 
 if [ -z "$REUSE" ]; then
-step "Building install media with AVM's pipeline"
+step "Building install media with Guest House's pipeline"
 info "ISO: $ISO"
 # Setup answers for an unattended run: a local account, so Windows signs
 # in by itself and the first sign-in's steps (NVDA) run too.
@@ -173,13 +173,13 @@ encoded = base64.b64encode((password + "Password").encode("utf-16-le")).decode()
 json.dump({
     "locale": "en-US", "inputLocale": "0409:00000409", "computerName": "AVM-TEST",
     "timeZone": "UTC", "privacy": "mostPrivate",
-    "localAccount": {"userName": "avmtest", "displayName": "AVM Test", "encodedPassword": encoded},
+    "localAccount": {"userName": "avmtest", "displayName": "Guest House Test", "encodedPassword": encoded},
 }, open(sys.argv[1], "w"))
 PY
 chmod 600 "$WORK/windows-setup.json"
-"$APP/Contents/MacOS/AVM" --build-install-media --disk "$DISK" --iso "$ISO" --out "$WORK" --screen-readers nvda,jaws \
-    || fail "AVM couldn't build the install media." "See the line above, and AVM's diagnostic log."
-[ -f "$WORK/install-avm.iso" ] && [ -f "$WORK/autounattend.img" ] || fail "AVM said it built the media, but the files aren't there."
+"$APP/Contents/MacOS/Guest House" --build-install-media --disk "$DISK" --iso "$ISO" --out "$WORK" --screen-readers nvda,jaws \
+    || fail "Guest House couldn't build the install media." "See the line above, and Guest House's diagnostic log."
+[ -f "$WORK/install-avm.iso" ] && [ -f "$WORK/autounattend.img" ] || fail "Guest House said it built the media, but the files aren't there."
 
 step "Making the test machine"
 "$R/qemu-img" create -q -f qcow2 "$WORK/disk.qcow2" 64G
@@ -306,12 +306,12 @@ fi
 # KEYBOARD CHECK (2026-10-26): a key watcher (a low-level keyboard hook,
 # in this test machine only) runs in the signed-in user's session through
 # a scheduled task for the Interactive group, so no password is needed;
-# AVM types through its own keyboard path; then the watcher's log is
+# Guest House types through its own keyboard path; then the watcher's log is
 # compared with what should have arrived. The watcher runs elevated
 # (MEASURED 2026-10-26: unelevated, Windows hid from it every key that
 # went to NVDA's welcome dialog, which runs with UI Access).
 if [ "$KEYBOARD" = "1" ] && [ "$MISSING" = "0" ]; then
-    step "Typing into Windows through AVM's keyboard path"
+    step "Typing into Windows through Guest House's keyboard path"
     QGA="$WORK/qga.sock"
     for _ in $(seq 1 60); do
         python3 -I - "$QGA" <<'PY' 2>/dev/null && break
@@ -384,7 +384,7 @@ elif action == "diagnose":
     print(run("cmd.exe", ["/c", "dir C:\\avmkeys & type C:\\avmkeys\\watcher-*.txt & icacls C:\\avmkeys"]))
 PY
     cat > "$WORK/hook.ps1" <<'PS'
-# AVM keyboard test only: logs which keys arrive, and the foreground app.
+# Guest House keyboard test only: logs which keys arrive, and the foreground app.
 $diag = "C:\avmkeys\watcher-$env:USERNAME.txt"
 "started as $env:USERNAME in session $([System.Diagnostics.Process]::GetCurrentProcess().SessionId)" | Out-File $diag
 trap { "ERROR: $_" | Out-File $diag -Append; exit 1 }
@@ -437,10 +437,10 @@ XML
         MISSING=1
     else
         # Not in a pipe set -e can end silently (2026-10-26, code audit): an
-        # AVM that couldn't connect is said as a failure.
-        "$APP/Contents/MacOS/AVM" --test-keyboard --spice "$WORK/spice.sock" --qmp "$QMP" > "$WORK/typing.log" 2>&1 || true
+        # Guest House that couldn't connect is said as a failure.
+        "$APP/Contents/MacOS/Guest House" --test-keyboard --spice "$WORK/spice.sock" --qmp "$QMP" > "$WORK/typing.log" 2>&1 || true
         grep -v "^2026-" "$WORK/typing.log" | sed 's/^/   /' || true
-        grep -q "^SENT" "$WORK/typing.log" || { info "NO   AVM couldn't type into Windows (see typing.log)"; MISSING=1; }
+        grep -q "^SENT" "$WORK/typing.log" || { info "NO   Guest House couldn't type into Windows (see typing.log)"; MISSING=1; }
         sleep 2
         python3 -I "$WORK/qga.py" "$QGA" read > "$WORK/keys.log"
         if python3 -I - "$WORK/keys.log" <<'PY'

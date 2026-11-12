@@ -1,9 +1,9 @@
 #!/bin/bash
 # run-all-tests.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
-# Runs every automatic test AVM has, one after another, and prints one
-# report (2026-10-28). It builds nothing: it uses an AVM build that already
+# Runs every automatic test Guest House has, one after another, and prints one
+# report (2026-10-28). It builds nothing: it uses a Guest House build that already
 # exists, and the test machines that Tools/test-windows-install.sh and
 # Tools/test-linux-install.sh --keep leave in ~/Library/Caches/AVM-build.
 # Nothing of yours is opened: the test jobs run machines from those
@@ -11,7 +11,7 @@
 #
 #   Tools/run-all-tests.sh [options]
 #
-#   --app PATH         the AVM.app to test (default: the Debug build)
+#   --app PATH         the Guest House.app to test (default: the Debug build)
 #   --windows FOLDER   a Windows test machine (default: the newest install-test-*)
 #   --debian FOLDER    a Debian test machine (default: the newest debian-test-*)
 #   --debian2 FOLDER   a second one, for two machines at once (default: the next newest)
@@ -26,11 +26,11 @@
 #   --out FOLDER       keep every test's output there (default: a temporary folder)
 #   --list             print the tests that would run, and stop
 #
-# Every Linux AVM installs gets the same core tests (2026-10-31); Debian
+# Every Linux Guest House installs gets the same core tests (2026-10-31); Debian
 # also gets the rest. A distro with no test machine is skipped: make one
 # with Tools/test-linux-install.sh --guest NAME --keep.
 # The whole run takes about 90 minutes. Each test gets at most 25 minutes.
-# One AVM runs at a time: two launched
+# One Guest House runs at a time: two launched
 # together have lost their arguments before (2026-10-28). The report says
 # PASSED, FAILED (with the checks that said NO), or NO VERDICT (the test
 # ended without saying), and the script exits 1 when anything failed.
@@ -38,7 +38,7 @@
 set -uo pipefail
 
 CACHE="$HOME/Library/Caches/AVM-build"
-APP="$CACHE/DerivedData/Build/Products/Debug/AVM.app"
+APP="$CACHE/DerivedData/Build/Products/Debug/Guest House.app"
 WINDOWS=""; DEBIAN=""; DEBIAN2=""; FEDORA=""; NVME=""
 UBUNTU=""; KALI=""; ALMALINUX=""; ROCKY=""; OPENSUSE=""
 ONLY=""; SKIP=""; DOWNLOADS=0; OUT=""; LIST=0
@@ -87,18 +87,18 @@ second_newest() { local all; all="$(ls -d "$CACHE"/$1 2>/dev/null | sort)"; [ "$
 [ -n "$OUT" ] || OUT="$(mktemp -d "${TMPDIR:-/tmp}/avm-tests-XXXXXX")"
 mkdir -p "$OUT"
 
-[ -x "$APP/Contents/MacOS/AVM" ] || { echo "No AVM at $APP. Build it first, or pass --app."; exit 1; }
-# Not cut off while AVM is open (2026-10-30, avm-own-copy.sh).
+[ -x "$APP/Contents/MacOS/Guest House" ] || { echo "No Guest House at $APP. Build it first, or pass --app."; exit 1; }
+# Not cut off while Guest House is open (2026-10-30, avm-own-copy.sh).
 . "$(dirname "$0")/avm-own-copy.sh"
-avm_own_copy "$APP" test || { echo "Couldn't make a copy of AVM for the tests."; exit 1; }
+avm_own_copy "$APP" test || { echo "Couldn't make a copy of Guest House for the tests."; exit 1; }
 trap '[ -z "$AVM_COPY_DIR" ] || rm -rf "$AVM_COPY_DIR"' EXIT
 if [ "$AVM_COPY" != "$APP" ]; then
-    echo "AVM is open, so the tests run from a copy of it with its own identifier. The camera and microphone tests need AVM's own signature: quit AVM for those."
+    echo "Guest House is open, so the tests run from a copy of it with its own identifier. The camera and microphone tests need Guest House's own signature: quit Guest House for those."
     APP="$AVM_COPY"
 fi
-BIN="$APP/Contents/MacOS/AVM"
+BIN="$APP/Contents/MacOS/Guest House"
 
-# The tests: name | what it needs | the AVM arguments.
+# The tests: name | what it needs | the Guest House arguments.
 # Needs: none, windows, debian, debian2 (both Debian machines), another
 # Linux by name (ubuntu, fedora, kali, almalinux, rocky, opensuse), downloads.
 TESTS=()
@@ -202,7 +202,7 @@ guest_for() {
     esac
 }
 
-# No test AVM may still be running from the last test. Only one running a
+# No test Guest House may still be running from the last test. Only one running a
 # test (2026-11-09, third audit of the day #25): the path alone matched a
 # build copy the user had open from the same DerivedData.
 TEST_AVM="$BIN .*--test-"
@@ -212,7 +212,7 @@ wait_for_quiet() {
         pgrep -f "$TEST_AVM" >/dev/null 2>&1 || return 0
         sleep 1
     done
-    echo "   (an AVM from the last test is still running; stopping it)"
+    echo "   (a Guest House from the last test is still running; stopping it)"
     pkill -f "$TEST_AVM" 2>/dev/null
     sleep 2
 }
@@ -232,7 +232,7 @@ if [ $LIST = 1 ]; then
     exit 0
 fi
 
-echo "AVM tests"
+echo "Guest House tests"
 echo "   app: $APP"
 echo "   Windows: ${WINDOWS:-none}"
 echo "   Debian: ${DEBIAN:-none}${DEBIAN2:+, and $DEBIAN2}"
@@ -304,7 +304,7 @@ run_one() {
             status=$?
             # open -W has come back before the test ended (2026-10-28: a
             # 4-minute test reported in 3 s): the verdict, or the test's
-            # AVM gone, is what ends the wait, within the limit.
+            # Guest House gone, is what ends the wait, within the limit.
             local waited=$(( $(date +%s) - start ))
             while ! grep -qE "^(PASSED|FAILED)" "$log" 2>/dev/null && pgrep -f "$TEST_AVM" >/dev/null 2>&1 && [ $waited -lt "$LIMIT" ]; do
                 sleep 2; waited=$((waited + 2))

@@ -1,5 +1,5 @@
 // WindowsSetupAnswers.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // The answers the setup wizard collects for Windows Setup (2026-10-26),
 // written into this machine's own answer file, so Windows doesn't ask
@@ -143,7 +143,7 @@ nonisolated struct WindowsSetupAnswers: Codable, Equatable, Sendable {
         while name.contains("--") { name = name.replacingOccurrences(of: "--", with: "-") }
         name = String(name.trimmingCharacters(in: CharacterSet(charactersIn: "-")).prefix(15))
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return problem(withComputerName: name) == nil ? name : "AVM-PC"
+        return problem(withComputerName: name) == nil ? name : "GuestHouse-PC"
     }
 
     // MARK: Time zones
@@ -235,7 +235,7 @@ nonisolated struct WindowsSetupAnswers: Codable, Equatable, Sendable {
         return """
         <SynchronousCommand wcm:action="add">
                   <Order>2</Order>
-                  <Description>AVM: NVDA laptop keyboard layout</Description>
+                  <Description>Guest House: NVDA laptop keyboard layout</Description>
                   <CommandLine>cmd /c if exist "%ProgramFiles%\\NVDA\\nvda.exe" if not exist "%APPDATA%\\nvda\\nvda.ini" (mkdir "%APPDATA%\\nvda" 2&gt;nul &amp; (echo [keyboard]&amp; echo keyboardLayout = laptop&amp; echo NVDAModifierKeys = 7)&gt;"%APPDATA%\\nvda\\nvda.ini")</CommandLine>
                 </SynchronousCommand>
         """
@@ -299,7 +299,7 @@ nonisolated struct WindowsSetupAnswers: Codable, Equatable, Sendable {
 
     /// Why this display name won't do, or nil (2026-10-29, seventh audit):
     /// a control character made the answer file unreadable, which was then
-    /// blamed on AVM, and Windows refuses a very long one on a page a blind
+    /// blamed on Guest House, and Windows refuses a very long one on a page a blind
     /// user can't see.
     static func problem(withDisplayName name: String) -> String? {
         if name.rangeOfCharacter(from: .controlCharacters) != nil {
@@ -342,9 +342,9 @@ extension WindowsSetupAnswers {
             let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: imagePath))
             try handle.write(contentsOf: data)
             try handle.close()
-            AVMLog.write("AVM: removeAnswerFile — scrubbed \(scrubbed) copy(ies) of the answer file's text from the UNATTEND volume.")
+            AVMLog.write("Guest House: removeAnswerFile — scrubbed \(scrubbed) copy(ies) of the answer file's text from the UNATTEND volume.")
         } catch {
-            AVMLog.write("AVM: removeAnswerFile — couldn't scrub the UNATTEND volume: \(error.localizedDescription)")
+            AVMLog.write("Guest House: removeAnswerFile — couldn't scrub the UNATTEND volume: \(error.localizedDescription)")
         }
     }
 }

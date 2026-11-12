@@ -1,5 +1,5 @@
 // RemoteDesktopAddress.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // The part of Remote Desktop (RemoteDesktop.swift) with no machine in it:
 // which port a machine gets, its name on the network, what to type in the
@@ -127,7 +127,7 @@ nonisolated enum RemoteDesktop {
 
     // MARK: The password, in the keychain
 
-    private static let service = "com.fullcircleat.AVM.remote-desktop"
+    private static let service = "com.fullcircleat.GuestHouse.remote-desktop"
 
     /// False when the keychain refused (2026-10-29, seventh audit): the
     /// caller then says so instead of promising a set-up that can't happen.
@@ -139,10 +139,10 @@ nonisolated enum RemoteDesktop {
         SecItemDelete(query as CFDictionary)
         var add = query
         add[kSecValueData as String] = Data(password.utf8)
-        add[kSecAttrLabel as String] = "AVM Remote Desktop password"
+        add[kSecAttrLabel as String] = "Guest House Remote Desktop password"
         let status = SecItemAdd(add as CFDictionary, nil)
         if status != errSecSuccess {
-            AVMLog.write("AVM: Remote Desktop — the password couldn't be kept in the keychain (\(status))")
+            AVMLog.write("Guest House: Remote Desktop — the password couldn't be kept in the keychain (\(status))")
         }
         return status == errSecSuccess
     }
@@ -154,7 +154,17 @@ nonisolated enum RemoteDesktop {
                                     kSecReturnData as String: true,
                                     kSecMatchLimit as String: kSecMatchLimitOne]
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else {
+            // fork-only
+            // The password kept when this was AVM (2026-11-12, FromAVM.swift).
+            if let old = KeychainFromAVM.item(service: service, account: id.uuidString) {
+                let password = String(decoding: old, as: UTF8.self)
+                savePassword(password, for: id)
+                return password
+            }
+            // /fork-only
+            return nil
+        }
         return String(decoding: data, as: UTF8.self)
     }
 
@@ -173,3 +183,26 @@ nonisolated enum RemoteDesktop {
     }
 }
 
+// fork-only
+/// Here, not in FromAVM.swift, so the unit tests' target has it.
+enum KeychainFromAVM {
+    private nonisolated static let oldIdentifier = "com.fullcircleat.AVM"
+
+    /// The same item under AVM's service name, for one Guest House doesn't
+    /// have yet. macOS asks the user before letting Guest House read it.
+    /// `service` is Guest House's; nil when there is none, or in Allison's
+    /// build, where the two names are one.
+    nonisolated static func item(service: String, account: String) -> Data? {
+        guard let id = Bundle.main.bundleIdentifier, id != oldIdentifier, service.hasPrefix(id) else { return nil }
+        let old = oldIdentifier + service.dropFirst(id.count)
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrService as String: old,
+                                    kSecAttrAccount as String: account,
+                                    kSecReturnData as String: true,
+                                    kSecMatchLimit as String: kSecMatchLimitOne]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else { return nil }
+        return item as? Data
+    }
+}
+// /fork-only

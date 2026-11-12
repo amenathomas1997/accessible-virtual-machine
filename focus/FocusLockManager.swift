@@ -17,7 +17,7 @@ import Carbon.HIToolbox
 ///   Entering Windows is always a deliberate, guarded act (Enter Windows /
 ///   Start Virtual Machine), never a side effect of the panic chord.
 ///   Note the hotkey is registered in lock() and unregistered in unlock(),
-///   so AVM claims the chord ONLY while locked — on the dashboard the chord
+///   so Guest House claims the chord ONLY while locked — on the dashboard the chord
 ///   is untouched and available to the rest of the system.
 ///
 /// CAPS LOCK REMAP LIFECYCLE (added 2026-07-26 — Stage 2):
@@ -42,20 +42,20 @@ import Carbon.HIToolbox
 ///   The lock now defends keyboard focus, not just system shortcuts.
 ///   Diagnosis (focus trace, 2026-07-18): with VoiceOver's "synchronize
 ///   keyboard focus and VO cursor" enabled, VO-navigating to any focusable
-///   AVM control while locked silently moved the window's first responder
+///   Guest House control while locked silently moved the window's first responder
 ///   from SPICEKeyCaptureView to SwiftUI's hosting view — a single discrete
 ///   theft, not a fight. From that moment keystrokes stopped reaching the
-///   guest, and Return/Space would activate whatever AVM button held focus
+///   guest, and Return/Space would activate whatever Guest House button held focus
 ///   (the mechanism behind the 2026-07-12 "crash": Return landed on Force
 ///   Stop and killed the VM mid-sentence).
 ///   Enforcement: while locked, a KVO observation on the window's
 ///   firstResponder reclaims focus for the registered capture view whenever
 ///   anything else takes it. Consequences, by design:
-///     - The VO cursor roams and announces AVM's overlay freely; only
+///     - The VO cursor roams and announces Guest House's overlay freely; only
 ///       KEYBOARD focus is reclaimed. VO-Space still activates overlay
 ///       buttons via the accessibility press action, which bypasses the
 ///       responder chain — the deliberate escape routes survive.
-///     - Plain Return/Space can no longer accidentally activate an AVM
+///     - Plain Return/Space can no longer accidentally activate a Guest House
 ///       button from inside the lock. That accident is now impossible.
 ///     - Control-Command-Escape always wins: the Carbon hotkey fires outside
 ///       the responder chain entirely, and unlock() tears the observer down
@@ -183,25 +183,25 @@ class FocusLockManager: ObservableObject {
     // MARK: - Init
     init() {
         FocusLockManager.shared = self
-        // AVM STOPPED BEING THE ACTIVE APP (2026-10-25, code audit): the
+        // Guest House STOPPED BEING THE ACTIVE APP (2026-10-25, code audit): the
         // Caps Lock remap applies to the whole Mac, so a lock left on while
         // another app is in front made Caps Lock F19 everywhere, VoiceOver
         // included when Caps Lock is its key. Process switching is blocked
         // while locked, but routes remain (VoiceOver's app chooser, a system
-        // dialog). Leaving AVM now unlocks, which restores Caps Lock and
+        // dialog). Leaving Guest House now unlocks, which restores Caps Lock and
         // says "Mac keyboard on".
         resignObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.isLocked else { return }
-                AVMLog.write("AVM: FocusLock — AVM is no longer the active app while locked; unlocking.")
+                AVMLog.write("Guest House: FocusLock — Guest House is no longer the active app while locked; unlocking.")
                 self.resignedWhileLocked = (Date(), self.guestName)
                 self.unlock()
             }
         }
         // The screen locking, the Mac sleeping, or another user taking the
-        // Mac also ends the lock (2026-10-28, fourth audit): AVM stays the
+        // Mac also ends the lock (2026-10-28, fourth audit): Guest House stays the
         // active app through them, so Caps Lock stayed F19 at the login
         // window and for the other user.
         let workspace = NSWorkspace.shared.notificationCenter
@@ -209,7 +209,7 @@ class FocusLockManager: ObservableObject {
             systemObservers.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                 MainActor.assumeIsolated {
                     guard let self, self.isLocked else { return }
-                    AVMLog.write("AVM: FocusLock — \(note.name.rawValue) while locked; unlocking.")
+                    AVMLog.write("Guest House: FocusLock — \(note.name.rawValue) while locked; unlocking.")
                     self.droppedBySystem = self.guestName
                     Announcer.keepHeldLines = true
                     self.unlock(bringListForward: false)
@@ -221,7 +221,7 @@ class FocusLockManager: ObservableObject {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 guard self.isLocked else {
-                    // Unlocked moments ago because AVM lost the front, as a
+                    // Unlocked moments ago because Guest House lost the front, as a
                     // screen saver does before the lock (sixth audit): the
                     // return is owed the same note as a sleep.
                     if let resigned = self.resignedWhileLocked, Date().timeIntervalSince(resigned.at) < 10 {
@@ -229,7 +229,7 @@ class FocusLockManager: ObservableObject {
                     }
                     return
                 }
-                AVMLog.write("AVM: FocusLock — the screen locked while locked; unlocking.")
+                AVMLog.write("Guest House: FocusLock — the screen locked while locked; unlocking.")
                 self.droppedBySystem = self.guestName
                 Announcer.keepHeldLines = true
                 self.unlock(bringListForward: false)
@@ -256,7 +256,7 @@ class FocusLockManager: ObservableObject {
     /// or switched users (fifth audit).
     private var droppedBySystem: String?
     private var toldHowToLeave = false
-    /// When AVM last stopped being the active app while locked, and in
+    /// When Guest House last stopped being the active app while locked, and in
     /// which machine (sixth audit): a screen saver that starts first, then
     /// locks the screen, unlocked through that path.
     private var resignedWhileLocked: (at: Date, guest: String)?
@@ -273,7 +273,7 @@ class FocusLockManager: ObservableObject {
         guard MachineSessions.shared.sessions.values.contains(where: {
             $0.configuration.name == guest && ($0.vmState == .running || $0.vmState == .paused)
         }) else {
-            AVMLog.write("AVM: FocusLock — \(guest) isn't running any more; nothing to say about returning to it.")
+            AVMLog.write("Guest House: FocusLock — \(guest) isn't running any more; nothing to say about returning to it.")
             return
         }
         Announcer.shared.announce("Your keyboard is on the Mac. Press Command Shift E to return to \(guest).", tone: .info)
@@ -287,7 +287,7 @@ class FocusLockManager: ObservableObject {
         return (session["CGSSessionScreenIsLocked"] as? Int ?? 0) != 0
     }
 
-    /// Back in AVM after copying something in another app: offer the
+    /// Back in Guest House after copying something in another app: offer the
     /// Mac's clipboard to the guest (AVMPasteboard, 2026-10-25).
     private lazy var activeObserver: NSObjectProtocol = NotificationCenter.default.addObserver(
         forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
@@ -318,7 +318,7 @@ class FocusLockManager: ObservableObject {
         // machines). Entering that machine unlocks first, then registers.
         if isLocked, let existing = captureView, existing !== view,
            let window = existing.window, window.isVisible, window !== view.window {
-            AVMLog.write("AVM: FocusLock — another machine's screen appeared while locked; keeping the keyboard where it is.")
+            AVMLog.write("Guest House: FocusLock — another machine's screen appeared while locked; keeping the keyboard where it is.")
             return
         }
         // The same view again (its window became key) keeps the "keyboard
@@ -327,7 +327,7 @@ class FocusLockManager: ObservableObject {
         // took the keyboard and gave it back.
         let sameView = captureView === view
         captureView = view
-        AVMLog.write("AVM: FocusLock — capture view registered (window=\(view.window != nil ? "present" : "nil")).")
+        AVMLog.write("Guest House: FocusLock — capture view registered (window=\(view.window != nil ? "present" : "nil")).")
         if isLocked, !sameView {
             startEnforcement()
         }
@@ -343,9 +343,9 @@ class FocusLockManager: ObservableObject {
     // MARK: - Lock (Enter Windows Full Screen)
     /// `machine`: the machine being entered; the current one if nil.
     func lock(machine: UUID? = nil) {
-        AVMLog.write("AVM: FocusLock.lock() called — isLocked was \(isLocked)")
+        AVMLog.write("Guest House: FocusLock.lock() called — isLocked was \(isLocked)")
         guard !isLocked else {
-            AVMLog.write("AVM: FocusLock.lock() — already locked, no-op.")
+            AVMLog.write("Guest House: FocusLock.lock() — already locked, no-op.")
             return
         }
         // Not while another app is in front (2026-10-25, code audit): the
@@ -361,15 +361,15 @@ class FocusLockManager: ObservableObject {
             // Paused may be entered too (its review): enter() says so.
             let state = MachineSessions.shared.session(for: machine)?.manager.state
             guard state == .running || state == .paused else {
-                AVMLog.write("AVM: FocusLock.lock() — the machine to enter isn't running; not locking.")
+                AVMLog.write("Guest House: FocusLock.lock() — the machine to enter isn't running; not locking.")
                 return
             }
         }
         let enteringName = entering.flatMap { MachineSessions.shared.session(for: $0)?.configuration.name } ?? VMManager.currentGuestName
         guard NSApp.isActive else {
             let guest = enteringName
-            AVMLog.write("AVM: FocusLock.lock() — AVM is not the active app; not locking.")
-            Announcer.shared.announce("\(guest) is running. To use it, switch to AVM and press Command Shift E.", tone: .info)
+            AVMLog.write("Guest House: FocusLock.lock() — Guest House is not the active app; not locking.")
+            Announcer.shared.announce("\(guest) is running. To use it, switch to Guest House and press Command Shift E.", tone: .info)
             return
         }
         NSApp.presentationOptions = [
@@ -377,7 +377,7 @@ class FocusLockManager: ObservableObject {
             .hideMenuBar,
             .disableProcessSwitching,
             // Force Quit stays available (2026-11-09, fifth audit #2): the
-            // escape chord needs AVM's main thread, so a hang here (0.4.39's)
+            // escape chord needs Guest House's main thread, so a hang here (0.4.39's)
             // left a blind user nothing but the power button.
             .disableSessionTermination
         ]
@@ -409,19 +409,19 @@ class FocusLockManager: ObservableObject {
         let wayOut = toldHowToLeave ? "" : ". Control-Command-Escape returns to your Mac."
         toldHowToLeave = true
         Announcer.shared.announce("Entering \(guestName)\(wayOut)", tone: .enterGuest)
-        AVMLog.write("AVM: FocusLock.lock() — NOW LOCKED (isLocked=true).")
+        AVMLog.write("Guest House: FocusLock.lock() — NOW LOCKED (isLocked=true).")
     }
 
     // MARK: - Unlock (Return to Mac)
     /// `bringListForward` false: the caller is putting another window in
     /// front (2026-10-28), so the list stays where it is.
-    /// The keyboard came back to the Mac; AVM's update window may wait for it.
+    /// The keyboard came back to the Mac; Guest House's update window may wait for it.
     static let didUnlock = Notification.Name("AVMFocusLockDidUnlock")
 
     func unlock(bringListForward: Bool = true) {
-        AVMLog.write("AVM: FocusLock.unlock() called — isLocked was \(isLocked)")
+        AVMLog.write("Guest House: FocusLock.unlock() called — isLocked was \(isLocked)")
         guard isLocked else {
-            AVMLog.write("AVM: FocusLock.unlock() — already unlocked, no-op.")
+            AVMLog.write("Guest House: FocusLock.unlock() — already unlocked, no-op.")
             return
         }
         // Enforcement DOWN FIRST: nothing may reclaim focus for the guest
@@ -442,7 +442,7 @@ class FocusLockManager: ObservableObject {
         // announcement, for the same queue-flush reason as lock().
         CapsLockRemapper.shared.restoreForUnlock()
         Announcer.shared.announce("Entering Mac", tone: .leaveGuest)
-        AVMLog.write("AVM: FocusLock.unlock() — NOW UNLOCKED (isLocked=false).")
+        AVMLog.write("Guest House: FocusLock.unlock() — NOW UNLOCKED (isLocked=false).")
         NotificationCenter.default.post(name: Self.didUnlock, object: nil)
         // From a machine's own window (2026-10-27), back to the list.
         if bringListForward { MachineSessions.shared.returnedToMac() }
@@ -451,14 +451,14 @@ class FocusLockManager: ObservableObject {
     // MARK: - First-responder enforcement
     private func startEnforcement() {
         guard let view = captureView, let window = view.window else {
-            AVMLog.write("AVM: FocusLock — enforcement not started (no capture view/window yet; will start on registration).")
+            AVMLog.write("Guest House: FocusLock — enforcement not started (no capture view/window yet; will start on registration).")
             return
         }
         // Seize focus immediately — the lock begins with the keyboard where
         // it belongs, regardless of what held it a moment ago.
         if window.firstResponder !== view {
             let ok = window.makeFirstResponder(view)
-            AVMLog.write("AVM: FocusLock — initial seize makeFirstResponder -> \(ok).")
+            AVMLog.write("Guest House: FocusLock — initial seize makeFirstResponder -> \(ok).")
         }
         // Re-arm cleanly if already observing (window may have changed).
         responderObservation?.invalidate()
@@ -471,7 +471,7 @@ class FocusLockManager: ObservableObject {
                 self?.enforceResponder()
             }
         }
-        AVMLog.write("AVM: FocusLock — enforcement STARTED (observing window firstResponder).")
+        AVMLog.write("Guest House: FocusLock — enforcement STARTED (observing window firstResponder).")
         startKeyWatch(window: window)
     }
 
@@ -479,7 +479,7 @@ class FocusLockManager: ObservableObject {
         responderObservation?.invalidate()
         responderObservation = nil
         stopKeyWatch()
-        AVMLog.write("AVM: FocusLock — enforcement STOPPED.")
+        AVMLog.write("Guest House: FocusLock — enforcement STOPPED.")
     }
 
     private func enforceResponder() {
@@ -493,7 +493,7 @@ class FocusLockManager: ObservableObject {
             // STAGE C tier 2: NSLog permanently — with VO-cursor sync on,
             // every arrow press triggers a reclaim; per-keystroke frequency
             // belongs in the unified log, not the capped file log.
-            NSLog("AVM: FocusLock — RECLAIMED first responder from \(current.map { String(describing: type(of: $0)) } ?? "nil") -> \(ok).")
+            NSLog("Guest House: FocusLock — RECLAIMED first responder from \(current.map { String(describing: type(of: $0)) } ?? "nil") -> \(ok).")
         }
     }
 
@@ -524,11 +524,11 @@ class FocusLockManager: ObservableObject {
                 self?.handleKeyRegain()
             }
         })
-        AVMLog.write("AVM: FocusLock — key watch STARTED.")
+        AVMLog.write("Guest House: FocusLock — key watch STARTED.")
         // A thief may already hold key at enforcement start; same debounced
         // path as a live resign.
         if !window.isKeyWindow {
-            AVMLog.write("AVM: FocusLock — key watch: window NOT key at start; scheduling debounced check.")
+            AVMLog.write("Guest House: FocusLock — key watch: window NOT key at start; scheduling debounced check.")
             scheduleLossAnnouncement()
         }
     }
@@ -543,7 +543,7 @@ class FocusLockManager: ObservableObject {
                 center.removeObserver(token)
             }
             keyWatchTokens = []
-            AVMLog.write("AVM: FocusLock — key watch STOPPED.")
+            AVMLog.write("Guest House: FocusLock — key watch STOPPED.")
         }
     }
 
@@ -552,7 +552,7 @@ class FocusLockManager: ObservableObject {
         // STAGE C tier 2: NSLog permanently — with VoiceOver on, VO's
         // panels take key constantly; this is the mechanism's heartbeat.
         // The verdict lines (loss/regain outcomes) go to the file log.
-        NSLog("AVM: FocusLock — key watch: window RESIGNED key; debounce started.")
+        NSLog("Guest House: FocusLock — key watch: window RESIGNED key; debounce started.")
         scheduleLossAnnouncement()
     }
 
@@ -563,15 +563,15 @@ class FocusLockManager: ObservableObject {
         if keyLossAnnounced {
             keyLossAnnounced = false
             if voiceOverIsRunning {
-                AVMLog.write("AVM: FocusLock — key watch: window REGAINED key; announcement suppressed (VoiceOver running).")
+                AVMLog.write("Guest House: FocusLock — key watch: window REGAINED key; announcement suppressed (VoiceOver running).")
             } else {
                 Announcer.shared.announce("Entering \(guestName)", tone: .enterGuest)
-                AVMLog.write("AVM: FocusLock — key watch: window REGAINED key; ANNOUNCED return.")
+                AVMLog.write("Guest House: FocusLock — key watch: window REGAINED key; ANNOUNCED return.")
             }
         } else {
             // STAGE C tier 2: NSLog — regain inside the debounce window is
             // routine churn (VO panels), not a verdict.
-            NSLog("AVM: FocusLock — key watch: window regained key within debounce; silent.")
+            NSLog("Guest House: FocusLock — key watch: window regained key within debounce; silent.")
         }
     }
 
@@ -588,22 +588,22 @@ class FocusLockManager: ObservableObject {
                   !window.isKeyWindow else {
                 // STAGE C tier 2: NSLog — a debounce that dissolves is
                 // routine churn, not a verdict.
-                NSLog("AVM: FocusLock — key watch: debounce fired but conditions cleared; silent.")
+                NSLog("Guest House: FocusLock — key watch: debounce fired but conditions cleared; silent.")
                 return
             }
             if self.voiceOverIsRunning {
-                AVMLog.write("AVM: FocusLock — key watch: key LOST >1s; announcement suppressed (VoiceOver running).")
+                AVMLog.write("Guest House: FocusLock — key watch: key LOST >1s; announcement suppressed (VoiceOver running).")
                 return
             }
-            // AVM's own question has the keyboard (seventh audit): "another
+            // Guest House's own question has the keyboard (seventh audit): "another
             // window took the keyboard" came in the middle of the quit question.
             if NSApp.modalWindow != nil {
-                AVMLog.write("AVM: FocusLock — key watch: key LOST to AVM's own dialog; silent.")
+                AVMLog.write("Guest House: FocusLock — key watch: key LOST to Guest House's own dialog; silent.")
                 return
             }
             self.keyLossAnnounced = true
             Announcer.shared.announce("Another window took the keyboard. Turn VoiceOver on to check.", tone: .info)
-            AVMLog.write("AVM: FocusLock — key watch: key LOST >1s; ANNOUNCED loss.")
+            AVMLog.write("Guest House: FocusLock — key watch: key LOST >1s; ANNOUNCED loss.")
         }
     }
 
@@ -656,10 +656,10 @@ class FocusLockManager: ObservableObject {
         // chord is taken, the in-window Control-Command-Escape (the capture
         // view's own check) is the way back, and the user hears so.
         if installed == noErr && registered == noErr {
-            AVMLog.write("AVM: FocusLock — Carbon hotkey registered (Control-Command-Escape).")
+            AVMLog.write("Guest House: FocusLock — Carbon hotkey registered (Control-Command-Escape).")
         } else {
-            AVMLog.write("AVM: FocusLock — Carbon hotkey NOT registered (handler \(installed), hotkey \(registered)).")
-            Announcer.shared.announce("AVM couldn't reserve Control-Command-Escape; it still returns to your Mac while the machine's window is in front.", tone: .failure)
+            AVMLog.write("Guest House: FocusLock — Carbon hotkey NOT registered (handler \(installed), hotkey \(registered)).")
+            Announcer.shared.announce("Guest House couldn't reserve Control-Command-Escape; it still returns to your Mac while the machine's window is in front.", tone: .failure)
         }
     }
 
@@ -672,12 +672,12 @@ class FocusLockManager: ObservableObject {
             RemoveEventHandler(handler)
             eventHandlerRef = nil
         }
-        AVMLog.write("AVM: FocusLock — Carbon hotkey unregistered.")
+        AVMLog.write("Guest House: FocusLock — Carbon hotkey unregistered.")
     }
 
     // MARK: - Cleanup
     /// NOTE (2026-07-26): this method currently has NO CALLERS anywhere in the
-    /// project — verified by grep. AVM has no
+    /// project — verified by grep. Guest House has no
     /// NSApplicationDelegate and no applicationWillTerminate hook, so nothing
     /// runs at quit. It is left in place because it is correct and cheap, but
     /// it must NOT be treated as a safety net: the Caps Lock remap deliberately

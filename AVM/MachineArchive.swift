@@ -1,5 +1,5 @@
 // MachineArchive.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Export and import of a whole virtual machine (2026-10-26), so a user can
 // back a machine up to an external drive and bring it back, on this Mac or
@@ -53,7 +53,7 @@ nonisolated struct MachineArchiveError: LocalizedError, Sendable {
 enum MachineArchive {
     nonisolated static let packageExtension = "avmvm"
     nonisolated static let manifestName = "avm-machine.json"
-    /// Bumped only for a change an older AVM couldn't read correctly.
+    /// Bumped only for a change an older Guest House couldn't read correctly.
     static let formatVersion = 1
 
     struct Manifest: Codable {
@@ -118,7 +118,7 @@ enum MachineArchive {
             return configuration.storageMissingMessage
         }
         guard fm.fileExists(atPath: dir.path) else {
-            return "AVM can't find \(configuration.name)'s files, so there is nothing to export."
+            return "Guest House can't find \(configuration.name)'s files, so there is nothing to export."
         }
         if configuration.guestOS == .macOS {
             let files = MacGuestFiles(folder: dir)
@@ -246,7 +246,7 @@ enum MachineArchive {
         let parent = packageURL.deletingLastPathComponent()
         let partialPrefix = ".\(packageURL.lastPathComponent)-partial-"
         let replacingPrefix = ".\(packageURL.lastPathComponent)-replacing-"
-        // An earlier export of this name that AVM's quitting cut short, and
+        // An earlier export of this name that Guest House's quitting cut short, and
         // an old package set aside whose removal was cut short (seventh audit).
         for leftover in (try? fm.contentsOfDirectory(atPath: parent.path)) ?? []
         where leftover.hasPrefix(partialPrefix) || leftover.hasPrefix(replacingPrefix) {
@@ -265,7 +265,7 @@ enum MachineArchive {
             if fm.fileExists(atPath: answerImage.path) {
                 WindowsSetupAnswers.scrubAnswerFileBytes(imagePath: answerImage.path)
                 if let image = fm.contents(atPath: answerImage.path), image.range(of: Data("</unattend>".utf8)) != nil {
-                    throw MachineArchiveError("AVM couldn't clear the setup answers, with the account password, from the install volume, so it didn't export this machine. Next: start it once, shut it down, then try again.")
+                    throw MachineArchiveError("Guest House couldn't clear the setup answers, with the account password, from the install volume, so it didn't export this machine. Next: start it once, shut it down, then try again.")
                 }
             }
             // The setup answers, without the password's encoding.
@@ -319,14 +319,14 @@ enum MachineArchive {
         let shown = url.lastPathComponent
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
-            throw MachineArchiveError("AVM can't find \(shown). Next: if it's on an external drive, connect the drive, then try again.")
+            throw MachineArchiveError("Guest House can't find \(shown). Next: if it's on an external drive, connect the drive, then try again.")
         }
         guard isDirectory.boolValue else {
-            throw MachineArchiveError("\(shown) is a file, not a virtual machine AVM exported. An exported machine is a folder whose name ends in .\(packageExtension).")
+            throw MachineArchiveError("\(shown) is a file, not a virtual machine Guest House exported. An exported machine is a folder whose name ends in .\(packageExtension).")
         }
         let manifestURL = url.appendingPathComponent(manifestName)
         guard fm.fileExists(atPath: manifestURL.path) else {
-            throw MachineArchiveError("\(shown) isn't a virtual machine AVM exported: it has no \(manifestName) inside. If an export was cut short, export the machine again.")
+            throw MachineArchiveError("\(shown) isn't a virtual machine Guest House exported: it has no \(manifestName) inside. If an export was cut short, export the machine again.")
         }
         let manifest: Manifest
         do {
@@ -334,10 +334,10 @@ enum MachineArchive {
             decoder.dateDecodingStrategy = .iso8601
             manifest = try decoder.decode(Manifest.self, from: Data(contentsOf: manifestURL))
         } catch {
-            throw MachineArchiveError("\(shown) has a \(manifestName) AVM can't read, so it can't be imported. It may be damaged. Next: export the machine again.")
+            throw MachineArchiveError("\(shown) has a \(manifestName) Guest House can't read, so it can't be imported. It may be damaged. Next: export the machine again.")
         }
         guard manifest.format <= formatVersion else {
-            throw MachineArchiveError("\(shown) was exported by a newer AVM. Next: update AVM with Check for Updates, then import it again.")
+            throw MachineArchiveError("\(shown) was exported by a newer Guest House. Next: update Guest House with Check for Updates, then import it again.")
         }
         let config = manifest.configuration
         let missing = missingFiles(for: config, in: url)
@@ -384,7 +384,7 @@ enum MachineArchive {
     /// Why the package's QEMU disk can't be imported, or nil when it can
     /// (2026-10-29, sixth audit). A qcow2 disk can name another file in its
     /// header, a backing file or an external data file, and QEMU opens it
-    /// with AVM's rights: a package from someone else could then read, or
+    /// with Guest House's rights: a package from someone else could then read, or
     /// write, any file on this Mac from inside its machine. qemu-img info
     /// with -U opens neither (QEMU's own advice for an untrusted image).
     static func diskProblem(package: URL, config: VMConfiguration) async -> String? {
@@ -394,11 +394,11 @@ enum MachineArchive {
         for disk in [package.appendingPathComponent(diskFileName(for: config)), RestorePoints.secondDrive(package)].compactMap({ $0 }) {
         guard let output = try? await RestorePoints.qemuImg(["info", "--output=json", "-U", "-f", "qcow2", disk.path]),
               let json = try? JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] else {
-            return "\(shown)'s disk isn't one AVM can read, so nothing was imported. It may be damaged. Next: export the machine again."
+            return "\(shown)'s disk isn't one Guest House can read, so nothing was imported. It may be damaged. Next: export the machine again."
         }
         let data = (json["format-specific"] as? [String: Any])?["data"] as? [String: Any]
         if json["backing-filename"] != nil || json["full-backing-filename"] != nil || data?["data-file"] != nil {
-            return "\(shown)'s disk depends on a file outside the package, which a machine AVM exported never does, so nothing was imported. If someone sent you this package, don't use it."
+            return "\(shown)'s disk depends on a file outside the package, which a machine Guest House exported never does, so nothing was imported. If someone sent you this package, don't use it."
         }
         }
         return nil
@@ -417,9 +417,9 @@ enum MachineArchive {
             // With the "carried on" word (seventh audit): without it the first
             // Start said the session "couldn't be carried on last time".
             try? QEMUSavedState.carriedOnWord.write(to: folder.appendingPathComponent(QEMUSavedState.loadedMarker), atomically: true, encoding: .utf8)
-            AVMLog.write("AVM: Import — the package's saved state couldn't be deleted; marked so it's never loaded.")
+            AVMLog.write("Guest House: Import — the package's saved state couldn't be deleted; marked so it's never loaded.")
         } else {
-            AVMLog.write("AVM: Import — deleted a saved state that came in the package.")
+            AVMLog.write("Guest House: Import — deleted a saved state that came in the package.")
         }
     }
 
@@ -439,7 +439,7 @@ enum MachineArchive {
         guard !fm.fileExists(atPath: final.path) else {
             throw MachineArchiveError("A folder for the new machine is already there. Nothing was imported. Next: try again.")
         }
-        // An earlier import that AVM's quitting cut short (one runs at a
+        // An earlier import that Guest House's quitting cut short (one runs at a
         // time, so any other working folder is a leftover).
         for leftover in (try? fm.contentsOfDirectory(atPath: container.path)) ?? [] where leftover.hasPrefix(".importing-") {
             try? fm.removeItem(at: container.appendingPathComponent(leftover))
@@ -469,7 +469,7 @@ enum MachineArchive {
         // machine made on a 16 GB Mac kept 8 GB, all of an 8 GB Mac's.
         let info = ProcessInfo.processInfo
         // A floor too (2026-10-29, sixth audit): a package's numbers are
-        // anyone's, and a negative memory size crashed AVM at a macOS
+        // anyone's, and a negative memory size crashed Guest House at a macOS
         // machine's Start, without a word.
         config.ramSizeGB = min(max(config.ramSizeGB, 1), max(4, Int(info.physicalMemory >> 30) / 2))
         config.cpuCount = min(max(config.cpuCount, 1), max(2, info.processorCount / 2))
@@ -508,7 +508,7 @@ enum MachineArchive {
         return config
     }
 
-    /// A package's name as AVM says it (2026-10-29, seventh audit): no
+    /// A package's name as Guest House says it (2026-10-29, seventh audit): no
     /// control characters, at most 100 characters, never empty.
     static func cleanName(_ name: String) -> String {
         let clean = String(name.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
@@ -634,7 +634,7 @@ nonisolated enum MachineFileCopier {
         do {
             names = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
         } catch {
-            throw MachineArchiveError("AVM couldn't read the folder \(folder.lastPathComponent): \(error.localizedDescription)")
+            throw MachineArchiveError("Guest House couldn't read the folder \(folder.lastPathComponent): \(error.localizedDescription)")
         }
         for name in names {
             let path = relative.isEmpty ? name : "\(relative)/\(name)"
@@ -716,7 +716,7 @@ nonisolated enum MachineFileCopier {
                 var cloned = stat()
                 guard lstat(to.path, &cloned) == 0, (cloned.st_mode & S_IFMT) == S_IFREG else {
                     unlink(to.path)
-                    throw MachineArchiveError("\(from.lastPathComponent) changed while it was being copied, so AVM stopped. Next: try again.")
+                    throw MachineArchiveError("\(from.lastPathComponent) changed while it was being copied, so Guest House stopped. Next: try again.")
                 }
                 // The copy is the user's to write (seventh audit): a read-only
                 // package (a DVD, a share) gave a disk QEMU could only read.
@@ -744,14 +744,14 @@ nonisolated enum MachineFileCopier {
         }
         // O_NOFOLLOW and a regular file only (2026-11-09, fourth audit #22): on
         // a drive someone else controls, a file swapped for a link since the
-        // plan would be read with AVM's rights.
+        // plan would be read with Guest House's rights.
         let input = open(source.path, O_RDONLY | O_NOFOLLOW)
         guard input >= 0 else { throw failure("read") }
         defer { close(input) }
         var info = stat()
         guard fstat(input, &info) == 0 else { throw failure("read") }
         guard (info.st_mode & S_IFMT) == S_IFREG else {
-            throw MachineArchiveError("\(source.lastPathComponent) isn't an ordinary file any more, so AVM stopped copying.")
+            throw MachineArchiveError("\(source.lastPathComponent) isn't an ordinary file any more, so Guest House stopped copying.")
         }
         let output = open(destination.path, O_WRONLY | O_CREAT | O_EXCL, mode_t(0o600))
         guard output >= 0 else { throw failure("write") }

@@ -1,14 +1,14 @@
 // UpdateTestJob.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // An update really installing (2026-11-01, the user's request): nothing
 // tested it, and a broken update is the worst thing to find after a launch,
 // as it can stop people getting the fix. Tools/test-update.sh makes a copy of
 // the app that calls itself very old, and this job runs in that copy:
 //
-//   AVM.app/Contents/MacOS/AVM --test-update [--feed <url>]
+//   Guest House.app/Contents/MacOS/Guest House --test-update [--feed <url>]
 //
-// Sparkle, with AVM's own feed by default, finds the newest release, downloads
+// Sparkle, with Guest House's own feed by default, finds the newest release, downloads
 // it, checks its signature and installs it over the copy. It's Sparkle's own
 // install path, with this driver saying yes in place of the person. It doesn't
 // relaunch: the new copy would start the user's machines.

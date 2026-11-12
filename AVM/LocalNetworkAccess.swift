@@ -1,20 +1,20 @@
 // LocalNetworkAccess.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // macOS's Local Network permission, asked for before the guest starts
 // (2026-10-26). The guest reaches the internet through QEMU's user-mode
 // network, which sends the guest's name lookups to the Mac's own DNS
 // server. On most home networks that is the router, a local network
-// address, so macOS holds those lookups until AVM is allowed Local Network
+// address, so macOS holds those lookups until Guest House is allowed Local Network
 // access. The first time, its prompt used to appear while Windows had the
 // keyboard, in the middle of Windows Setup, and until it was answered the
 // guest had a working network card and no internet.
 //
-// Now, before QEMU starts, AVM sends one DNS query to that server itself.
-// That makes macOS ask then, while the Mac has the keyboard, and AVM says
-// what the prompt is for. If access is off, AVM says where to turn it on;
+// Now, before QEMU starts, Guest House sends one DNS query to that server itself.
+// That makes macOS ask then, while the Mac has the keyboard, and Guest House says
+// what the prompt is for. If access is off, Guest House says where to turn it on;
 // the machine starts either way. A DNS server on the internet (8.8.8.8,
-// say) needs no permission, and AVM asks for nothing.
+// say) needs no permission, and Guest House asks for nothing.
 
 import Foundation
 import Network
@@ -26,8 +26,8 @@ enum LocalNetworkAccess {
 
     /// Settled once allowed, so later starts don't ask again.
     private static var allowed = false
-    /// How long AVM waits for the user to answer macOS's prompt. macOS
-    /// asks only once, so after that a refusal shows at once, and AVM
+    /// How long Guest House waits for the user to answer macOS's prompt. macOS
+    /// asks only once, so after that a refusal shows at once, and Guest House
     /// waits only a moment.
     private static let answerLimit: Duration = .seconds(90)
     private static let laterLimit: Duration = .seconds(3)
@@ -54,7 +54,7 @@ enum LocalNetworkAccess {
                     // macOS's prompt is up, or access was refused before.
                     if !announced, !askedBefore {
                         announced = true
-                        Announcer.shared.announce("macOS is asking whether AVM can find and connect to devices on your local network. Choose Allow: \(guest) needs it to reach the internet.", tone: .info)
+                        Announcer.shared.announce("macOS is asking whether Guest House can find and connect to devices on your local network. Choose Allow: \(guest) needs it to reach the internet.", tone: .info)
                     }
                 case .failed:
                     outcome.finish(.denied)
@@ -70,10 +70,10 @@ enum LocalNetworkAccess {
         switch result {
         case .allowed:
             allowed = true
-            AVMLog.write("AVM: LocalNetwork — allowed (DNS server is on the local network).")
+            AVMLog.write("Guest House: LocalNetwork — allowed (DNS server is on the local network).")
         case .denied:
-            AVMLog.write("AVM: LocalNetwork — not allowed; the guest will have no internet.")
-            Announcer.shared.announce("\(guest) won't reach the internet until AVM is allowed local network access. Next: in System Settings, open Privacy and Security, then Local Network, and turn on AVM.", tone: .failure)
+            AVMLog.write("Guest House: LocalNetwork — not allowed; the guest will have no internet.")
+            Announcer.shared.announce("\(guest) won't reach the internet until Guest House is allowed local network access. Next: in System Settings, open Privacy and Security, then Local Network, and turn on Guest House.", tone: .failure)
         case .notNeeded:
             break
         }
@@ -82,7 +82,7 @@ enum LocalNetworkAccess {
 
     /// The Mac's DNS servers, in order.
     nonisolated static func dnsServers() -> [String] {
-        guard let store = SCDynamicStoreCreate(nil, "AVM" as CFString, nil, nil),
+        guard let store = SCDynamicStoreCreate(nil, "Guest House" as CFString, nil, nil),
               let dns = SCDynamicStoreCopyValue(store, "State:/Network/Global/DNS" as CFString) as? [String: Any],
               let servers = dns["ServerAddresses"] as? [String] else { return [] }
         return servers

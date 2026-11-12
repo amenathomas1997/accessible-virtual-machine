@@ -1,6 +1,6 @@
 #!/bin/bash
 # measure-audio-latency.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
 # Compares sound settings for QEMU machines by key-to-speech latency, with
 # no one at the screen (2026-10-26). On a Debian machine kept by
@@ -13,20 +13,20 @@
 #
 # Settings:
 #   spice            today's default: the guest's sound through SPICE, played
-#                    by AVM's audio pipeline
-#   spice-low        the same with AVM's "Shorter speech delay" pipeline
+#                    by Guest House's audio pipeline
+#   spice-low        the same with Guest House's "Shorter speech delay" pipeline
 #   coreaudio        QEMU plays to the Mac itself, QEMU's default buffers
 #   coreaudio-N-C    QEMU plays to the Mac itself with C buffers of N
 #                    microseconds (for example coreaudio-5000-2)
 #   ...-notimer      any of the above with the sound card's timer off
-#   (AVM itself uses coreaudio-2500-2-notimer since 2026-10-27.)
+#   (Guest House itself uses coreaudio-2500-2-notimer since 2026-10-27.)
 #
 # Each line of the summary is "RESULT <setting>: median …".
 
 set -euo pipefail
 
 VM=""
-APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/AVM.app"
+APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/Guest House.app"
 SETTINGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -46,8 +46,8 @@ if [ ! -x "$TOOL" ] || [ "$HERE/audio-latency/main.swift" -nt "$TOOL" ]; then
     xcrun swiftc -O -target arm64-apple-macos14.2 "$HERE/audio-latency/main.swift" -o "$TOOL"
 fi
 
-# Only for reference: AVM's QEMU converts 48 kHz to whatever the Mac's output
-# runs at (AirPods in hands-free mode run at 24 kHz). QEMU without AVM's
+# Only for reference: Guest House's QEMU converts 48 kHz to whatever the Mac's output
+# runs at (AirPods in hands-free mode run at 24 kHz). QEMU without Guest House's
 # coreaudio patch plays nothing unless the two match.
 echo "The Mac's sound output runs at $("$TOOL" --output-rate) Hz."
 
@@ -125,7 +125,7 @@ for SETTING in "${SETTINGS[@]}"; do
     case "$BASE" in
         spice|spice-low)
             LOW=""; [ "$BASE" = "spice-low" ] && LOW="--low-latency"
-            "$APP/Contents/MacOS/AVM" --play-spice-audio --spice "$VM/spice.sock" $LOW > "$VM/player-$SETTING.log" 2>&1 &
+            "$APP/Contents/MacOS/Guest House" --play-spice-audio --spice "$VM/spice.sock" $LOW > "$VM/player-$SETTING.log" 2>&1 &
             PLAYER_PID=$!
             LISTEN_PID="$PLAYER_PID" ;;
     esac

@@ -1,16 +1,16 @@
 // KeyboardOffer.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // A second keyboard offered for Windows (2026-10-30, a tester's log): his
-// second keyboard was plugged in, AVM kept it on the Mac as it should, and
+// second keyboard was plugged in, Guest House kept it on the Mac as it should, and
 // nothing told him a keyboard for Windows has to be chosen in Settings, so
 // he took it for a fault. Now, when an installed Windows machine starts
-// with no keyboard for Windows and a second keyboard is connected, AVM asks
+// with no keyboard for Windows and a second keyboard is connected, Guest House asks
 // once: use this keyboard for Windows? Yes chooses it, as Settings does, and
 // it goes into Windows at once. Not Now is remembered for that keyboard and
-// machine, so AVM asks again only about a keyboard it hasn't asked about.
+// machine, so Guest House asks again only about a keyboard it hasn't asked about.
 //
-// Asked only while AVM is in front with no other question up, so a
+// Asked only while Guest House is in front with no other question up, so a
 // machine started at login, in the background, never brings a question
 // up over another app; the offer waits for a start the user is at.
 
@@ -50,7 +50,7 @@ enum KeyboardOffer {
                   VMStore.shared?.configurations.first(where: { $0.id == configuration.id })?.windowsKeyboardID == nil else { return }
             guard NSApp.isActive, NSApp.modalWindow == nil,
                   !NSApp.windows.contains(where: { $0.attachedSheet != nil }) else {
-                AVMLog.write("AVM: KeyboardOffer — \(keyboard.name) could go to \(configuration.name), but AVM isn't in front; asking at a later start.")
+                AVMLog.write("Guest House: KeyboardOffer — \(keyboard.name) could go to \(configuration.name), but Guest House isn't in front; asking at a later start.")
                 return
             }
             ask(keyboard, machine: machine, configuration: configuration)
@@ -72,15 +72,15 @@ enum KeyboardOffer {
         // alert, this one, and that isn't the user's Not Now. Asked again at
         // a later start.
         if answer != .alertFirstButtonReturn, answer != .alertSecondButtonReturn {
-            AVMLog.write("AVM: KeyboardOffer — the question was closed without an answer; asking at a later start.")
+            AVMLog.write("Guest House: KeyboardOffer — the question was closed without an answer; asking at a later start.")
             return
         }
         guard answer == .alertSecondButtonReturn else {
             var declined = UserDefaults.standard.stringArray(forKey: declinedKey) ?? []
             declined.append("\(configuration.id.uuidString)|\(keyboard.id)")
             UserDefaults.standard.set(declined, forKey: declinedKey)
-            AVMLog.write("AVM: KeyboardOffer — \(keyboard.name) stays on the Mac for \(configuration.name) (Not Now).")
-            Announcer.shared.announce("\(keyboard.name) stays with your Mac. AVM won't offer it again for \(configuration.name); you can choose it in \(configuration.name)'s Settings, under Devices.", tone: .info)
+            AVMLog.write("Guest House: KeyboardOffer — \(keyboard.name) stays on the Mac for \(configuration.name) (Not Now).")
+            Announcer.shared.announce("\(keyboard.name) stays with your Mac. Guest House won't offer it again for \(configuration.name); you can choose it in \(configuration.name)'s Settings, under Devices.", tone: .info)
             return
         }
         // Saved as Settings saves it, from the list's copy, so nothing else
@@ -89,7 +89,7 @@ enum KeyboardOffer {
         saved.windowsKeyboardID = keyboard.id
         saved.windowsKeyboardName = keyboard.name
         VMStore.shared?.save(saved)
-        AVMLog.write("AVM: KeyboardOffer — \(keyboard.name) is now \(configuration.name)'s keyboard for Windows.")
+        AVMLog.write("Guest House: KeyboardOffer — \(keyboard.name) is now \(configuration.name)'s keyboard for Windows.")
         guard machine.state == .running else { return }
         WindowsKeyboard.shared.start(keyboardID: keyboard.id, name: keyboard.name, target: machine,
                                      appleISO: saved.windowsKeyboardAppleISO == true)

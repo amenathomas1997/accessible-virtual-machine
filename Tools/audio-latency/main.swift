@@ -1,5 +1,5 @@
 // main.swift — audio-latency
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Key-to-speech latency of a QEMU virtual machine, measured with no one at
 // the screen (2026-10-26), so audio settings can be compared by number:
@@ -9,7 +9,7 @@
 //   - A key goes to the guest through QEMU's control socket (QMP
 //     send-key), so nothing on the Mac's screen or keyboard is touched.
 //     The default, Caps Lock+T, is Orca's "say the time" in the laptop
-//     layout AVM sets up: a few words, spoken every time.
+//     layout Guest House sets up: a few words, spoken every time.
 //   - It listens to ONE process's sound with a Core Audio process tap
 //     (QEMU itself when QEMU plays to the Mac directly, or the SPICE client
 //     that plays the guest's sound otherwise), so the Mac's own VoiceOver
@@ -141,7 +141,7 @@ final class Listener {
         var uidAddress = AudioObjectPropertyAddress(mSelector: kAudioTapPropertyUID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         _ = withUnsafeMutablePointer(to: &uid) { AudioObjectGetPropertyData(tapID, &uidAddress, 0, nil, &uidSize, $0) }
         let aggregate: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "AVM latency tap",
+            kAudioAggregateDeviceNameKey: "Guest House latency tap",
             kAudioAggregateDeviceUIDKey: "avm-latency-\(UUID().uuidString)",
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceTapAutoStartKey: true,

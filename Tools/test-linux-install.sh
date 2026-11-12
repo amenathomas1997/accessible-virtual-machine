@@ -1,16 +1,16 @@
 #!/bin/bash
 # test-linux-install.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
 # A complete unattended Ubuntu, Debian, Fedora, Kali, AlmaLinux, Rocky or openSUSE
 # install with no one at the screen
 # (2026-10-26), the Linux counterpart of test-windows-install.sh:
-#   1. builds install media with AVM's own pipeline
-#      (AVM --build-install-media --guest ubuntu|debian|fedora|kali|almalinux|
+#   1. builds install media with Guest House's own pipeline
+#      (Guest House --build-install-media --guest ubuntu|debian|fedora|kali|almalinux|
 #      rocky|opensuse), with a test
 #      account in the form the wizard writes;
 #   2. makes a blank disk and firmware settings, and starts QEMU the way
-#      AVM starts a Linux machine, with no window;
+#      Guest House starts a Linux machine, with no window;
 #   3. waits for the answer file's last step, the install-complete marker
 #      (AVMDONE.TAG on the UNATTEND volume), or the failure marker
 #      (AVMFAIL.TAG, Ubuntu and Fedora), and for the installer to power off;
@@ -26,7 +26,7 @@ set -euo pipefail
 
 ISO=""
 GUEST=debian
-APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/AVM.app"
+APP="$HOME/Library/Caches/AVM-build/DerivedData/Build/Products/Debug/Guest House.app"
 MINUTES=120
 KEEP=0
 DISK=virtio   # the disk new machines get (2026-10-27); nvme as older ones
@@ -62,11 +62,11 @@ case "$GUEST" in ubuntu|debian|fedora|kali|almalinux|rocky|opensuse) ;; *) fail 
 case "$GUEST" in fedora|almalinux|rocky|opensuse) SELINUX_GUEST=1 ;; *) SELINUX_GUEST=0 ;; esac
 [ -n "$ISO" ] && [ -f "$ISO" ] || fail "No installer ISO given." "Pass one with --iso."
 R="$APP/Contents/Resources"
-[ -x "$APP/Contents/MacOS/AVM" ] && [ -x "$R/qemu-system-aarch64" ] || fail "No AVM build at $APP." "Build AVM first, or pass --app."
-# Not cut off while AVM is open (2026-10-30, avm-own-copy.sh): building
-# the install media takes longer than loginwindow allows a second AVM.
+[ -x "$APP/Contents/MacOS/Guest House" ] && [ -x "$R/qemu-system-aarch64" ] || fail "No Guest House build at $APP." "Build Guest House first, or pass --app."
+# Not cut off while Guest House is open (2026-10-30, avm-own-copy.sh): building
+# the install media takes longer than loginwindow allows a second Guest House.
 . "$(dirname "$0")/avm-own-copy.sh"
-avm_own_copy "$APP" test || fail "Couldn't make a copy of AVM for the test." "Check that $APP is a complete AVM build."
+avm_own_copy "$APP" test || fail "Couldn't make a copy of Guest House for the test." "Check that $APP is a complete Guest House build."
 APP="$AVM_COPY"
 
 WORK="$HOME/Library/Caches/AVM-build/$GUEST-test-$(date +%Y%m%d-%H%M%S)"
@@ -116,21 +116,21 @@ PY
 }
 trap cleanup EXIT
 
-step "Building install media with AVM's pipeline ($GUEST)"
+step "Building install media with Guest House's pipeline ($GUEST)"
 info "ISO: $ISO"
 # The test account, as the wizard saves it: password "Hello world!", in
 # the SHA-512 crypt form (the specification's own test vector).
 cat > "$WORK/ubuntu-account.json" <<'JSON'
-{"realName":"AVM Test","userName":"avmtest","passwordHash":"$6$saltstring$svn8UoSVapNtMuq1ukKS4tPQd8iKwSMHWjl/O817G3uBnIFNjnQJuesI68u4OTLiBFdcbYEdFCoEOfaS35inz1","signInAutomatically":true,"keyboardLayout":"LAYOUT_HERE"VARIANT_HERE}
+{"realName":"Guest House Test","userName":"avmtest","passwordHash":"$6$saltstring$svn8UoSVapNtMuq1ukKS4tPQd8iKwSMHWjl/O817G3uBnIFNjnQJuesI68u4OTLiBFdcbYEdFCoEOfaS35inz1","signInAutomatically":true,"keyboardLayout":"LAYOUT_HERE"VARIANT_HERE}
 JSON
 # --keyboard LAYOUT[:VARIANT] (2026-10-26): the account's keyboard, as the
 # wizard writes it, so a layout and Mac variant reaching the installed
 # system can be checked (the desktop check prints /etc/default/keyboard).
 sed -i '' -e "s/LAYOUT_HERE/$LAYOUT/" -e "s/VARIANT_HERE/${VARIANT:+,\"keyboardVariant\":\"$VARIANT\"}/" "$WORK/ubuntu-account.json"
 chmod 600 "$WORK/ubuntu-account.json"
-"$APP/Contents/MacOS/AVM" --build-install-media --guest "$GUEST" --disk "$DISK" --iso "$ISO" --out "$WORK" \
-    || fail "AVM couldn't build the install media." "See the line above, and AVM's diagnostic log."
-[ -f "$WORK/install-avm.iso" ] && [ -f "$WORK/autounattend.img" ] || fail "AVM said it built the media, but the files aren't there."
+"$APP/Contents/MacOS/Guest House" --build-install-media --guest "$GUEST" --disk "$DISK" --iso "$ISO" --out "$WORK" \
+    || fail "Guest House couldn't build the install media." "See the line above, and Guest House's diagnostic log."
+[ -f "$WORK/install-avm.iso" ] && [ -f "$WORK/autounattend.img" ] || fail "Guest House said it built the media, but the files aren't there."
 
 step "Making the test machine"
 "$R/qemu-img" create -q -f qcow2 "$WORK/disk.qcow2" 40G
@@ -198,11 +198,11 @@ done
 for _ in $(seq 1 30); do kill -0 "$QEMU_PID" 2>/dev/null || break; sleep 10; done
 if kill -0 "$QEMU_PID" 2>/dev/null; then
     screenshot
-    # AVM waits for this power-off to finish an install (2026-11-01 audit:
+    # Guest House waits for this power-off to finish an install (2026-11-01 audit:
     # it was a note, and the test still passed).
     fail "The marker is written, but the installer hasn't powered off after 5 minutes." "See $WORK/screen.png."
 else
-    info "The installer powered off, as AVM expects."
+    info "The installer powered off, as Guest House expects."
 fi
 
 kill "$QEMU_PID" 2>/dev/null || true

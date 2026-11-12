@@ -1,5 +1,5 @@
 // SettingsView.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 
 import SwiftUI
 import AppKit
@@ -22,7 +22,7 @@ import AppKit
 ///     the configuration. "USB changes apply right away" holds only because
 ///     the hot-plug watcher reads the SAVED configuration at each plug-in,
 ///     never a copy taken when the VM started. Keep it that way.
-///   - Shared folder: REMOVED. Nothing in AVM ever read it, so choosing a
+///   - Shared folder: REMOVED. Nothing in Guest House ever read it, so choosing a
 ///     folder "saved" and Windows never saw it. A path already saved stays in
 ///     the configuration, untouched, for when the feature exists.
 struct SettingsView: View {
@@ -105,13 +105,13 @@ struct SettingsView: View {
     private var diskGrowthFollowUp: String {
         configuration.guestOS.isLinux
             ? "After it grows, make \(configuration.guestOS.displayName)'s main partition larger to use the new space."
-            : "After it grows, AVM gives drive C the new space the next time Windows starts."
+            : "After it grows, Guest House gives drive C the new space the next time Windows starts."
     }
 
     private func savedDiskMessage(_ growTo: Int) -> String {
         configuration.guestOS.isLinux
             ? "Settings saved. The disk is now \(growTo) GB. The next time you start \(configuration.guestOS.displayName), make its main partition larger to use the new space."
-            : "Settings saved. The disk is now \(growTo) GB. AVM gives drive C the new space the next time you start Windows."
+            : "Settings saved. The disk is now \(growTo) GB. Guest House gives drive C the new space the next time you start Windows."
     }
 
     /// When CPU and memory changes land, worded for this VM's state.
@@ -547,7 +547,7 @@ struct SettingsView: View {
             Toggle("Let \(guest) use your Mac's camera", isOn: $shareCamera)
                 .disabled(isRunning)
                 .accessibilityHint(isRunning ? timingSentence : "When on, \(guest) has a camera that shows what your Mac's camera sees, while an app in it uses it")
-            Text("For video calls and apps that read with the camera in \(guest), where it's called Mac Camera. Your Mac's camera is only on while an app in \(guest) uses it, and AVM says when it turns on and off. macOS asks once for permission. Takes effect at the next Start.")
+            Text("For video calls and apps that read with the camera in \(guest), where it's called Mac Camera. Your Mac's camera is only on while an app in \(guest) uses it, and Guest House says when it turns on and off. macOS asks once for permission. Takes effect at the next Start.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -567,7 +567,7 @@ struct SettingsView: View {
                     .disabled(isRunning)
                     .accessibilityHint(isRunning ? timingSentence : "When on, \(guest)'s desktop and 3D apps use your Mac's GPU")
                 if configuration.guestOS == .windows {
-                    Text("Experimental. Lets Windows apps that use Direct3D 11 draw with your Mac's graphics chip. The driver is still unstable, so don't turn this on for a machine you rely on. AVM takes a restore point first, then installs the driver the next time \(guest) starts, and asks you to restart it. While it's on, \(guest) can't be saved with its apps open.")
+                    Text("Experimental. Lets Windows apps that use Direct3D 11 draw with your Mac's graphics chip. The driver is still unstable, so don't turn this on for a machine you rely on. Guest House takes a restore point first, then installs the driver the next time \(guest) starts, and asks you to restart it. While it's on, \(guest) can't be saved with its apps open.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -591,7 +591,7 @@ struct SettingsView: View {
                 .accessibilityAddTraits(.isHeader)
             Toggle("Share the clipboard with \(guest)", isOn: $shareClipboard)
                 .accessibilityHint("When on, text and images you copy on the Mac can be pasted in \(guest), and the other way round")
-            Text("Copy on the Mac, enter \(guest), and paste. What you copy in \(guest) is ready to paste on the Mac straight away. AVM never records what's copied.")
+            Text("Copy on the Mac, enter \(guest), and paste. What you copy in \(guest) is ready to paste on the Mac straight away. Guest House never records what's copied.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -623,7 +623,7 @@ struct SettingsView: View {
                      : "Turning on: the next Start of \(guest) gets it ready, which takes a minute once \(guest) is up. The Start after that turns it on.")
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("Off for this machine, which was made before AVM could save open apps. Turning it on moves its disk to a faster connection that QEMU can save. AVM does it over the next two Starts, and switches back by itself if \(guest) doesn't start.")
+                Text("Off for this machine, which was made before Guest House could save open apps. Turning it on moves its disk to a faster connection that QEMU can save. Guest House does it over the next two Starts, and switches back by itself if \(guest) doesn't start.")
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Turn On Save with Open Apps") {
                     var updated = saved
@@ -644,12 +644,12 @@ struct SettingsView: View {
     /// Automatic backups (2026-11-01, MachineBackups.swift).
     /// qemu-img check on a stopped machine's disks (2026-11-05, second audit):
     /// after a drive was pulled while the machine ran, the disk could be
-    /// unopenable with nothing in AVM to do about it.
+    /// unopenable with nothing in Guest House to do about it.
     @State private var checkingDisk = false
     private var diskCheckSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Disk Check").font(.headline).accessibilityAddTraits(.isHeader)
-            Text("If \(guest) won't start after a drive was disconnected or your Mac lost power, AVM can check its disk and repair what it can.")
+            Text("If \(guest) won't start after a drive was disconnected or your Mac lost power, Guest House can check its disk and repair what it can.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button(checkingDisk ? "Checking…" : "Check the Disk…") { checkDisk() }
                 .disabled(isRunning || checkingDisk || storageWatch.isMissing(saved))
@@ -690,7 +690,7 @@ struct SettingsView: View {
                 alert.addButton(withTitle: "Repair")
                 guard alert.runModal() == .alertSecondButtonReturn, !startedMeanwhile else { continue }
                 let (fixed, words) = await RestorePoints.qemuImgStatus(["check", "-r", status == 3 ? "leaks" : "all", disk.path])
-                AVMLog.write("AVM: Disk check — repaired \(name) of '\(saved.name)': exit \(fixed)")
+                AVMLog.write("Guest House: Disk check — repaired \(name) of '\(saved.name)': exit \(fixed)")
                 Announcer.shared.announce(fixed == 0 ? "\(saved.name)'s \(name) is repaired. Start it to see that it's well." : "The repair didn't finish. \(words.suffix(200)) Next: restore a backup or restore point.", tone: fixed == 0 ? .success : .failure)
             }
         }
@@ -713,14 +713,14 @@ struct SettingsView: View {
                 panel.canChooseDirectories = true
                 panel.canCreateDirectories = true
                 panel.prompt = "Choose"
-                panel.message = "Choose where AVM keeps backups, such as an external drive. All machines use this folder."
+                panel.message = "Choose where Guest House keeps backups, such as an external drive. All machines use this folder."
                 if panel.runModal() == .OK, let url = panel.url {
                     backupFolder = url.path
                     UserDefaults.standard.set(url.path, forKey: BackupSchedule.folderKey)
                     Announcer.shared.announce("Backups go to \(url.lastPathComponent).", tone: .info)
                 }
             }
-            Text(backupFolder.isEmpty ? "No folder chosen yet. AVM keeps the newest \(BackupSchedule.keep) of each machine, and removes older ones after a new one is whole." : "Backups go to \(backupFolder). AVM keeps the newest \(BackupSchedule.keep) of each machine, and removes older ones after a new one is whole.")
+            Text(backupFolder.isEmpty ? "No folder chosen yet. Guest House keeps the newest \(BackupSchedule.keep) of each machine, and removes older ones after a new one is whole." : "Backups go to \(backupFolder). Guest House keeps the newest \(BackupSchedule.keep) of each machine, and removes older ones after a new one is whole.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -868,7 +868,7 @@ struct SettingsView: View {
             Text("Monitor")
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
-            Text("Choose the monitor the \(guest) window always opens on, filling it, every time it starts. If that monitor isn't connected, the window opens on another one and moves back as soon as you connect it. While AVM is in the background, a window on a monitor without the menu bar stays there for someone to watch.")
+            Text("Choose the monitor the \(guest) window always opens on, filling it, every time it starts. If that monitor isn't connected, the window opens on another one and moves back as soon as you connect it. While Guest House is in the background, a window on a monitor without the menu bar stays there for someone to watch.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -949,7 +949,7 @@ struct SettingsView: View {
                 .accessibilityAddTraits(.isHeader)
             Toggle("Windows apps in Command-Tab", isOn: Binding(get: { windowsAppsInCommandTab }, set: { windowsAppsInCommandTab = $0; windowsAppsInCommandTabChosen = true }))
                 .accessibilityHint("Each app open in \(guest) is in your Mac's Command-Tab list. Switch to one, then press Command-Shift-E to type in it.")
-            Text("Each app open in \(guest) is an app in Command-Tab, and in the Dock, while it's open. Switch to one and press Command-Shift-E: it comes forward and your keyboard goes into \(guest). AVM puts a small helper in \(guest) for this.")
+            Text("Each app open in \(guest) is an app in Command-Tab, and in the Dock, while it's open. Switch to one and press Command-Shift-E: it comes forward and your keyboard goes into \(guest). Guest House puts a small helper in \(guest) for this.")
                 .font(.caption)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1020,10 +1020,10 @@ struct SettingsView: View {
                 : nil
         case .failure(.notEnabled) where !registering:
             connectedKeyboards = []
-            keyboardsMessage = "Keyboards are listed by AVM's helper, which isn't set up yet. Choose Look Again to set it up; macOS may ask you to allow it in Login Items."
+            keyboardsMessage = "Keyboards are listed by Guest House's helper, which isn't set up yet. Choose Look Again to set it up; macOS may ask you to allow it in Login Items."
         case .failure:
             connectedKeyboards = []
-            keyboardsMessage = "AVM's helper didn't answer, so keyboards can't be listed. Allow it in System Settings, General, Login Items, then choose Look Again."
+            keyboardsMessage = "Guest House's helper didn't answer, so keyboards can't be listed. Allow it in System Settings, General, Login Items, then choose Look Again."
         }
     }
 
@@ -1124,9 +1124,9 @@ struct SettingsView: View {
         }
         let alert = NSAlert()
         alert.messageText = "Put \(saved.name) back to \(point.label)?"
-        alert.informativeText = "Everything since \(restorePointDate(point.date)) is lost: files, settings and installed updates. AVM keeps the restore point, so you can use it again."
+        alert.informativeText = "Everything since \(restorePointDate(point.date)) is lost: files, settings and installed updates. Guest House keeps the restore point, so you can use it again."
         if session != nil {
-            alert.informativeText = "\(saved.name) is running, so AVM turns it off, puts it back and starts it again. " + alert.informativeText
+            alert.informativeText = "\(saved.name) is running, so Guest House turns it off, puts it back and starts it again. " + alert.informativeText
         }
         let wasSaved = session == nil && QEMUSavedState.looksSaved(saved)
         if wasSaved {
@@ -1163,7 +1163,7 @@ struct SettingsView: View {
         }
         let keep = canKeepNow && keepNow.state == .on
         // A save begun while the question was up (2026-11-05, second audit):
-        // the dashboard's Save, or the point AVM takes before updates. Waited
+        // the dashboard's Save, or the point Guest House takes before updates. Waited
         // out, up to two minutes, rather than force-stopped half way.
         restorePointsBusy = true
         RestorePoints.restoringNames[saved.id] = saved.name
@@ -1174,7 +1174,7 @@ struct SettingsView: View {
             var undo = ""
             var keptLabel: String?
             if let session, session.manager.isSaving {
-                Announcer.shared.announce("\(saved.name) is being saved; AVM waits for that to finish first.", tone: .info)
+                Announcer.shared.announce("\(saved.name) is being saved; Guest House waits for that to finish first.", tone: .info)
                 for _ in 0..<240 where session.manager.isSaving { try? await Task.sleep(for: .milliseconds(500)) }
                 if session.manager.isSaving || MachineSessions.shared.session(for: saved.id) !== session {
                     Announcer.shared.announce("\(saved.name) is still being saved, or stopped meanwhile, so it wasn't restored. Choose Restore again.", tone: .failure)
@@ -1280,7 +1280,7 @@ struct SettingsView: View {
         if let dir = try? vmStore.vmDirectoryURL(for: saved) {
             let folder = dir.appendingPathComponent(RestorePoints.folderName).appendingPathComponent(point.tag)
             if ["automatic", "before-updates", RestorePoints.beforeRestoreMarker].contains(where: { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }) {
-                alert.informativeText = "AVM made this one itself. Once renamed, it's yours: AVM no longer replaces or tidies it away, so it keeps its disk space until you delete it."
+                alert.informativeText = "Guest House made this one itself. Once renamed, it's yours: Guest House no longer replaces or tidies it away, so it keeps its disk space until you delete it."
             }
         }
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
@@ -1378,7 +1378,7 @@ struct SettingsView: View {
                     TextField("User name", text: $remoteDesktopUser)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityLabel("User name for Remote Desktop")
-                        .accessibilityHint("The account the Windows App signs in with. AVM makes it in \(guest), or sets this password on it if it's there already.")
+                        .accessibilityHint("The account the Windows App signs in with. Guest House makes it in \(guest), or sets this password on it if it's there already.")
                     if remoteDesktopShowPassword {
                         TextField("Password", text: $remoteDesktopPassword)
                             .textFieldStyle(.roundedBorder)
@@ -1402,8 +1402,8 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text(configuration.guestOS == .windows
-                     ? "AVM keeps the password in your Mac's keychain and makes the account in \(guest). If you give the name of an account \(guest) already has, its password becomes this one, once; a password you change later inside \(guest) is left alone unless you type a new one here."
-                     : "AVM keeps the password in your Mac's keychain and makes the account in \(guest), with xrdp. The session has sound where the distribution has xrdp's sound module (Debian 13, Ubuntu 24.04 and newer). Use a different account from the one signed in at \(guest)'s own screen.")
+                     ? "Guest House keeps the password in your Mac's keychain and makes the account in \(guest). If you give the name of an account \(guest) already has, its password becomes this one, once; a password you change later inside \(guest) is left alone unless you type a new one here."
+                     : "Guest House keeps the password in your Mac's keychain and makes the account in \(guest), with xrdp. The session has sound where the distribution has xrdp's sound module (Debian 13, Ubuntu 24.04 and newer). Use a different account from the one signed in at \(guest)'s own screen.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1491,8 +1491,8 @@ struct SettingsView: View {
                 Toggle("\(guest) can only read it, not change it", isOn: $sharedFolderReadOnly)
             }
             Text(configuration.guestOS == .windows
-                 ? "\(guest) shows the folder in File Explorer as a network drive. Changes take effect the next time \(guest) starts. Windows installed by this version of AVM is ready for it; for an older Windows, install spice-webdavd from spice-space.org in Windows first."
-                 : "\(guest) shows the folder in Files as Mac shared folder, in the sidebar. Changes take effect the next time \(guest) starts. \(guest) installed by this version of AVM is ready for it.")
+                 ? "\(guest) shows the folder in File Explorer as a network drive. Changes take effect the next time \(guest) starts. Windows installed by this version of Guest House is ready for it; for an older Windows, install spice-webdavd from spice-space.org in Windows first."
+                 : "\(guest) shows the folder in Files as Mac shared folder, in the sidebar. Changes take effect the next time \(guest) starts. \(guest) installed by this version of Guest House is ready for it.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1542,12 +1542,12 @@ struct SettingsView: View {
         let alert = NSAlert()
         if on {
             alert.messageText = "Turn on Secure Boot for \(saved.name)?"
-            alert.informativeText = "AVM resets this virtual machine's firmware settings, keeping a copy, so Secure Boot can start with Microsoft's keys. Windows normally starts again on its own. If BitLocker or device encryption is on in Windows, it may ask for your recovery key, so have it ready. Turning Secure Boot off again puts the old settings back."
+            alert.informativeText = "Guest House resets this virtual machine's firmware settings, keeping a copy, so Secure Boot can start with Microsoft's keys. Windows normally starts again on its own. If BitLocker or device encryption is on in Windows, it may ask for your recovery key, so have it ready. Turning Secure Boot off again puts the old settings back."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Turn On Secure Boot")
         } else {
             alert.messageText = "Turn off Secure Boot for \(saved.name)?"
-            alert.informativeText = "AVM puts back the firmware settings from before Secure Boot, keeping a copy of the Secure Boot ones. Windows Update stops offering Insider preview builds. If BitLocker or device encryption is on, Windows may ask for your recovery key."
+            alert.informativeText = "Guest House puts back the firmware settings from before Secure Boot, keeping a copy of the Secure Boot ones. Windows Update stops offering Insider preview builds. If BitLocker or device encryption is on, Windows may ask for your recovery key."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Turn Off Secure Boot")
         }
@@ -1606,10 +1606,10 @@ struct SettingsView: View {
                         Text("\(device.name): \(decisionText(for: device))")
                         Button("Forget") {
                             rememberedDevices.removeAll { $0.id == device.id }
-                            Announcer.shared.announce("\(device.name) forgotten. AVM asks about it again at its next plug-in, once you save.", tone: .info)
+                            Announcer.shared.announce("\(device.name) forgotten. Guest House asks about it again at its next plug-in, once you save.", tone: .info)
                         }
                         .accessibilityLabel("Forget \(device.name)")
-                        .accessibilityHint("AVM will follow the setting above for this device again. Takes effect when you save.")
+                        .accessibilityHint("Guest House will follow the setting above for this device again. Takes effect when you save.")
                     }
                 }
             }
@@ -1618,12 +1618,12 @@ struct SettingsView: View {
     }
 
     /// Plain words for a remembered decision. An unknown word from a newer
-    /// AVM is said plainly, and callers treat it as not remembered.
+    /// Guest House is said plainly, and callers treat it as not remembered.
     private func decisionText(for device: RememberedUSBDevice) -> String {
         switch device.usesWindows {
         case .some(true): return "use in \(guest)"
         case .some(false): return "keep on the Mac"
-        case .none: return "unknown choice, AVM will ask"
+        case .none: return "unknown choice, Guest House will ask"
         }
     }
 
@@ -2053,7 +2053,7 @@ struct SettingsView: View {
 /// A machine's settings in five categories, the user's request: one page
 /// of 22 sections was long to move through with VoiceOver.
 /// A category a SettingsCategoryBar shows: a machine's Settings
-/// (SettingsCategory) or AVM's own (PreferencesCategory, 2026-10-30).
+/// (SettingsCategory) or Guest House's own (PreferencesCategory, 2026-10-30).
 protocol SettingsCategoryItem: Hashable {
     var title: String { get }
     var symbol: String { get }

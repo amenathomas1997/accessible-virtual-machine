@@ -1,5 +1,5 @@
 // MacGuestFiles.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // A macOS machine's files and restore points (2026-10-26), apart from
 // MacGuest.swift so the tests can reach them without Virtualization.

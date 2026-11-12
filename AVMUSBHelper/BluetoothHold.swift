@@ -1,5 +1,5 @@
 // BluetoothHold.swift
-// AVMUSBHelper — AVM's privileged helper
+// AVMUSBHelper — Guest House's privileged helper
 //
 // Bluetooth devices for a virtual machine (2026-10-27). A Bluetooth
 // braille display, game controller or other HID device can't be passed
@@ -16,9 +16,9 @@
 //
 // The rules, the same as for a keyboard for Windows:
 //   - Only for the user at the Mac's screen, and only to a socket in that
-//     user's private AVM folder (streamSocketProblem).
+//     user's private Guest House folder (streamSocketProblem).
 //   - Never the Mac's only keyboard or only pointing device.
-//   - Let go when AVM asks, when its connection ends, when the device
+//   - Let go when Guest House asks, when its connection ends, when the device
 //     disconnects, or when QEMU closes the socket.
 // The helper never logs a report's contents.
 
@@ -97,9 +97,9 @@ final class BluetoothHold {
     private var held: [String: Held] = [:]
     /// Connecting and seizing, one at a time (2026-11-09, fourth audit #30):
     /// a seize can block for 15 s, and on `queue` every held device's reports
-    /// and every list() waited past AVM's 12 s limit. Releases pass through
+    /// and every list() waited past Guest House's 12 s limit. Releases pass through
     /// here too, so that one can't overtake the hold it follows and leave a
-    /// device held for an AVM that has gone.
+    /// device held for a Guest House that has gone.
     private let opening = DispatchQueue(label: "bluetooth-hold-opening")
     /// While anything is held: the device is only for the person at the
     /// screen, as a keyboard for Windows is (2026-10-28, code review: a
@@ -163,7 +163,7 @@ final class BluetoothHold {
         return String(format: "bt:%04x:%04x:%@:%x:%x", vendor, product, serial, page, usage)
     }
 
-    /// What kind of device it is, for AVM to name: a braille display by any
+    /// What kind of device it is, for Guest House to name: a braille display by any
     /// of its usages, as KeyboardHold.isBraille tells one (2026-10-29: an
     /// APH Mantis Q40's primary usage is on page 0x93, its braille display
     /// another collection, and it was named only "Bluetooth device"), and
@@ -286,7 +286,7 @@ final class BluetoothHold {
         }
     }
 
-    /// Everything one AVM held, when its connection ends.
+    /// Everything one Guest House held, when its connection ends.
     func releaseAll(owner connection: NSXPCConnection?) {
         opening.async {
             self.queue.async {

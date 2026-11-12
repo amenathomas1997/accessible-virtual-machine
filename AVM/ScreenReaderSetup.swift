@@ -1,11 +1,11 @@
 // ScreenReaderSetup.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // A person's screen reader setup, carried between machines (2026-11-01, the
 // user's request): every new machine started from NVDA's or Orca's defaults,
 // to be set up again by ear. Virtual Machine > Save Screen Reader Setup keeps a
 // copy on the Mac of NVDA's settings folder, add-ons included, or Orca's;
-// Apply puts it in another machine, keeping what was there beside it. AVM can
+// Apply puts it in another machine, keeping what was there beside it. Guest House can
 // also put it in each machine it installs (Settings, Watching Machines).
 //
 // The copy is a guest's archive: it's only ever unpacked in a guest, never on
@@ -45,7 +45,7 @@ extension VMManager {
                     throw AVMError.refused("The machine stopped answering partway through the copy.")
                 }
                 data.append(chunk)
-                guard data.count <= limit else { throw AVMError.refused("It's larger than AVM keeps.") }
+                guard data.count <= limit else { throw AVMError.refused("It's larger than Guest House keeps.") }
                 if reply["eof"] as? Bool == true { break }
             }
         } catch {
@@ -69,7 +69,7 @@ extension VMManager {
     /// a junction there made SYSTEM copy, delete or write somewhere else.
     /// So a link anywhere on the way to the settings stops the script; the
     /// copy skips links inside (robocopy /XJ); the setup is unpacked in
-    /// AVM's own folder, which users can't write, and moved in whole; and
+    /// Guest House's own folder, which users can't write, and moved in whole; and
     /// old copies go with rmdir /s, which removes a link without following
     /// it; the user's rights are given before the move. A user who swaps a folder for a link in the moment between the
     /// check and the move is not ruled out, in a guest with other accounts.
@@ -120,7 +120,7 @@ extension VMManager {
         // Which step a failure came in (2026-11-10): an occasional "no
         // answer" in Windows, seen in the test job since 2026-11-09, said
         // nothing of where.
-        var step = "locking AVM's folder"
+        var step = "locking Guest House's folder"
         do {
             let inGuest = windows ? #"C:\ProgramData\AVM\sr-setup.zip"# : Self.linuxSetupFile
             // As Apply does, before SYSTEM works there (2026-11-09, fifth
@@ -170,7 +170,7 @@ extension VMManager {
                 return
             }
             guard out.contains("AVM-OK") else {
-                AVMLog.write("AVM: Screen reader setup — the copy in the guest failed: \(out.prefix(300))")
+                AVMLog.write("Guest House: Screen reader setup — the copy in the guest failed: \(out.prefix(300))")
                 throw AVMError.refused("The copy inside the machine didn't finish.")
             }
             step = "bringing the copy to the Mac"
@@ -182,14 +182,14 @@ extension VMManager {
                 ? try? await agentRun("powershell.exe", ["-NoProfile", "-Command", "Remove-Item -Force '\(inGuest)' -ErrorAction SilentlyContinue"], limit: .seconds(30))
                 : try? await agentRun("/bin/rm", ["-f", inGuest], limit: .seconds(30))
             if let copyError { throw copyError }
-            AVMLog.write("AVM: Screen reader setup — \(name)'s saved from \(machine)")
+            AVMLog.write("Guest House: Screen reader setup — \(name)'s saved from \(machine)")
             // Without add-ons or Orca's Python (2026-11-10, fourth audit of
             // 2026-11-09 #20): they're programs, and a saved setup goes into
             // every machine it's applied to, new installs too. Said, so
             // they're added by hand.
             Announcer.shared.announce("\(name)'s setup is saved from \(machine).\(windows ? " Its add-ons aren't included; add them in each machine from NVDA's Add-on Store." : " Its scripts and customizations aren't included.") Next: in another machine, choose Virtual Machine, Apply Saved Screen Reader Setup.", tone: .success)
         } catch {
-            AVMLog.write("AVM: Screen reader setup — not saved, while \(step): \(error.localizedDescription)")
+            AVMLog.write("Guest House: Screen reader setup — not saved, while \(step): \(error.localizedDescription)")
             Announcer.shared.announce("\(name)'s setup couldn't be saved from \(machine). Reason: \(error.localizedDescription) Next: make sure \(machine) has finished starting, then try again.", tone: .failure)
         }
     }
@@ -205,7 +205,7 @@ extension VMManager {
     /// or orca-before-avm. The running reader stops just before the swap, once
     /// the setup is known to be good, and Apply starts it again and checks
     /// (2026-11-09, audit of 0.4.41 #2): stopped first, a bad setup left the
-    /// guest silent, and "AVM is starting" it was a promise only GuestWatch
+    /// guest silent, and "Guest House is starting" it was a promise only GuestWatch
     /// could keep, and not with its setting off or for Orca outside GNOME.
     /// Unpacked and checked beside the settings, then swapped (2026-11-09,
     /// fifth audit #5): a failed unpack used to leave defaults or half a
@@ -265,7 +265,7 @@ extension VMManager {
                       $sid = (New-Object Security.Principal.NTAccount($u)).Translate([Security.Principal.SecurityIdentifier]).Value
                       # Only SYSTEM, administrators and that user (audit of
                       # 2026-11-10 #22): made here, the folder took Users'
-                      # right to read from AVM's folder and kept it when moved.
+                      # right to read from Guest House's folder and kept it when moved.
                       icacls $n /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*$($sid):(OI)(CI)F" /q | Out-Null
                       if ($LASTEXITCODE -ne 0) { throw "icacls stopped with $LASTEXITCODE" }
                       if (Get-Process nvda -ErrorAction SilentlyContinue) { Stop-Process -Name nvda -Force -ErrorAction SilentlyContinue; 'AVM-STOPPED'; Start-Sleep 2 }
@@ -310,12 +310,12 @@ extension VMManager {
             stopped = out.contains("AVM-STOPPED")
             guard !out.contains("AVM-NOUSER") else { throw AVMError.refused("No one is signed in at its own screen.") }
             guard out.contains("AVM-OK") else { throw AVMError.qmpCommandFailed("it didn't unpack") }
-            AVMLog.write("AVM: Screen reader setup — \(name)'s applied in \(machine)")
-            Announcer.shared.announce("Your \(name) setup is in \(machine) now.\(stopped ? " AVM is starting \(name) again." : "")", tone: .success)
+            AVMLog.write("Guest House: Screen reader setup — \(name)'s applied in \(machine)")
+            Announcer.shared.announce("Your \(name) setup is in \(machine) now.\(stopped ? " Guest House is starting \(name) again." : "")", tone: .success)
             if stopped { await startReaderAfterApply(name, windows: windows) }
             return true
         } catch {
-            AVMLog.write("AVM: Screen reader setup — not applied: \(error.localizedDescription)")
+            AVMLog.write("Guest House: Screen reader setup — not applied: \(error.localizedDescription)")
             Announcer.shared.announce("Your \(name) setup couldn't be put in \(machine). Reason: \(error.localizedDescription) Next: make sure someone is signed in to \(machine), then try again.", tone: .failure)
             if stopped { await startReaderAfterApply(name, windows: windows) }
             return false

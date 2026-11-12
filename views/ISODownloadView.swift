@@ -1,11 +1,11 @@
 // ISODownloadView.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // The setup wizard's "Download Windows 11 for ARM…" sheet (2026-10-25,
 // roadmap item 9). The download happens on Microsoft's page in the user's
 // browser; WindowsISODownloader watches for it, speaks its progress, and
 // checks the result. This sheet is the controls for that. Same rules as
-// the rest of AVM: honestly labelled controls, a heading to land on,
+// the rest of Guest House: honestly labelled controls, a heading to land on,
 // Escape and Command-Return for the two main buttons.
 
 import SwiftUI
@@ -37,13 +37,13 @@ struct ISODownloadView: View {
 
     // MARK: Automatic (2026-10-30)
 
-    /// No web page: AVM gets Windows from Microsoft's servers itself.
+    /// No web page: Guest House gets Windows from Microsoft's servers itself.
     private var automaticBody: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Download Windows 11 for ARM")
                 .font(.title)
                 .accessibilityAddTraits(.isHeader)
-            Text("AVM gets Windows 11 for ARM straight from Microsoft's servers, the way Microsoft's own Media Creation Tool does, in your Mac's language: there's no web page to use. It says how far along it is every 10 percent, checks the download against Microsoft's checksum, makes it into an installer and chooses it for you. It's about 4.5 gigabytes, and needs about 20 gigabytes free while it works.")
+            Text("Guest House gets Windows 11 for ARM straight from Microsoft's servers, the way Microsoft's own Media Creation Tool does, in your Mac's language: there's no web page to use. It says how far along it is every 10 percent, checks the download against Microsoft's checksum, makes it into an installer and chooses it for you. It's about 4.5 gigabytes, and needs about 20 gigabytes free while it works.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -95,7 +95,7 @@ struct ISODownloadView: View {
         switch automatic.phase {
         case .idle, .failed:
             Button("Use Microsoft's Page Instead") { usingBrowser = true }
-                .accessibilityHint("Downloads in your browser from Microsoft's web page, with AVM watching")
+                .accessibilityHint("Downloads in your browser from Microsoft's web page, with Guest House watching")
             Button("Cancel") { dismiss() }
                 .keyboardShortcut(.escape, modifiers: [])
             Button("Download Windows 11") { automatic.start() }
@@ -105,7 +105,7 @@ struct ISODownloadView: View {
             Button("Cancel Download") { automatic.cancel() }
                 .accessibilityHint("Stops. Nothing is kept.")
             Button("Keep Going in Background") {
-                Announcer.shared.announce("AVM keeps going, says how far along it is every 10 percent, and chooses Windows as the installer when it's ready.", tone: .info)
+                Announcer.shared.announce("Guest House keeps going, says how far along it is every 10 percent, and chooses Windows as the installer when it's ready.", tone: .info)
                 dismiss()
             }
             .keyboardShortcut(.escape, modifiers: [])
@@ -123,14 +123,14 @@ struct ISODownloadView: View {
             Text("Download Windows 11 for ARM")
                 .font(.title)
                 .accessibilityAddTraits(.isHeader)
-            Text("The download happens on Microsoft's own page, in your browser. AVM opens the page, tells you how the download is going every gigabyte, checks the file when it's done, and picks it for you. It's about 8 gigabytes, and usually takes 30 to 90 minutes.")
+            Text("The download happens on Microsoft's own page, in your browser. Guest House opens the page, tells you how the download is going every gigabyte, checks the file when it's done, and picks it for you. It's about 8 gigabytes, and usually takes 30 to 90 minutes.")
                 .foregroundStyle(.secondary)
 
             HStack {
                 Text("Watching: \(assistant.folder.lastPathComponent)")
-                    .accessibilityLabel("AVM watches the folder \(assistant.folder.lastPathComponent) for the download")
+                    .accessibilityLabel("Guest House watches the folder \(assistant.folder.lastPathComponent) for the download")
                 Button("Change…") { chooseFolder() }
-                    .accessibilityLabel("Change which folder AVM watches")
+                    .accessibilityLabel("Change which folder Guest House watches")
                     .accessibilityHint("Choose the folder your browser saves downloads in")
             }
 
@@ -196,17 +196,17 @@ struct ISODownloadView: View {
             // it did.
             Button("Stop Watching") {
                 assistant.stop()
-                Announcer.shared.announce("AVM stopped watching the download. Your browser keeps downloading; when it's done, choose the file with Choose Installer Image.", tone: .info)
+                Announcer.shared.announce("Guest House stopped watching the download. Your browser keeps downloading; when it's done, choose the file with Choose Installer Image.", tone: .info)
                 dismiss()
             }
-            .accessibilityHint("AVM stops telling you about the download. The browser keeps downloading.")
+            .accessibilityHint("Guest House stops telling you about the download. The browser keeps downloading.")
             Button("Keep Watching in Background") {
                 assistant.inBackground = true
-                Announcer.shared.announce("AVM keeps watching the download and tells you every gigabyte. When it's done, AVM checks it and chooses it as the installer.", tone: .info)
+                Announcer.shared.announce("Guest House keeps watching the download and tells you every gigabyte. When it's done, Guest House checks it and chooses it as the installer.", tone: .info)
                 dismiss()
             }
             .keyboardShortcut(.escape, modifiers: [])
-            .accessibilityHint("Closes this window. AVM goes on telling you how the download is going, and chooses the file when it's ready. Escape.")
+            .accessibilityHint("Closes this window. Guest House goes on telling you how the download is going, and chooses the file when it's ready. Escape.")
         case .finished(let url):
             Button("Close") { dismiss() }
                 .keyboardShortcut(.escape, modifiers: [])
@@ -228,7 +228,7 @@ struct ISODownloadView: View {
         panel.directoryURL = assistant.folder
         if panel.runModal() == .OK, let url = panel.url {
             assistant.setFolder(url)
-            Announcer.shared.announce("AVM will watch \(url.lastPathComponent) for the download.", tone: .info)
+            Announcer.shared.announce("Guest House will watch \(url.lastPathComponent) for the download.", tone: .info)
         }
     }
 }

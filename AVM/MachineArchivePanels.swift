@@ -1,5 +1,5 @@
 // MachineArchivePanels.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Export Virtual Machine… and Import Virtual Machine… (2026-10-26): the
 // panels, the checks a user hears before anything is written, and the
@@ -56,7 +56,7 @@ final class MachineArchiveController: ObservableObject {
     /// Mac app).
     func busyMessage(for config: VMConfiguration) -> String? {
         guard busyMachineID == config.id, let activity else { return nil }
-        return "AVM is \(activity). Wait until it's done, then try again."
+        return "Guest House is \(activity). Wait until it's done, then try again."
     }
 
     // MARK: - Export
@@ -64,7 +64,7 @@ final class MachineArchiveController: ObservableObject {
     func export(_ config: VMConfiguration, isRunning: Bool) {
         let name = config.name
         if let activity {
-            refuse("AVM is already \(activity). Next: try again when it's done.", log: "another copy is running")
+            refuse("Guest House is already \(activity). Next: try again when it's done.", log: "another copy is running")
             return
         }
         if isRunning {
@@ -75,7 +75,7 @@ final class MachineArchiveController: ObservableObject {
         do {
             dir = try config.directoryURL()
         } catch {
-            refuse("AVM can't find \(name)'s folder. Reason: \(error.localizedDescription)", log: "no folder for '\(name)'")
+            refuse("Guest House can't find \(name)'s folder. Reason: \(error.localizedDescription)", log: "no folder for '\(name)'")
             return
         }
         if let problem = MachineArchive.exportProblemNow(for: config, vmDirectory: dir) {
@@ -99,7 +99,7 @@ final class MachineArchiveController: ObservableObject {
             case .alertFirstButtonReturn: includeRestorePoints = true
             case .alertSecondButtonReturn: includeRestorePoints = false
             default:
-                AVMLog.write("AVM: Export — cancelled at the restore points question for '\(name)'.")
+                AVMLog.write("Guest House: Export — cancelled at the restore points question for '\(name)'.")
                 return
             }
         }
@@ -107,14 +107,14 @@ final class MachineArchiveController: ObservableObject {
         let packageName = MachineArchive.packageName(for: config)
         let panel = NSSavePanel()
         panel.title = "Export \(name)"
-        panel.message = "Choose where to save \(name), such as an external drive. AVM saves it as a folder named \(packageName), which Import Virtual Machine brings back."
+        panel.message = "Choose where to save \(name), such as an external drive. Guest House saves it as a folder named \(packageName), which Import Virtual Machine brings back."
         panel.prompt = "Export"
         panel.nameFieldLabel = "Save As:"
         panel.nameFieldStringValue = packageName
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         guard panel.runModal() == .OK, var package = panel.url else {
-            AVMLog.write("AVM: Export — save panel cancelled for '\(name)'.")
+            AVMLog.write("Guest House: Export — save panel cancelled for '\(name)'.")
             return
         }
         // Started under the panel (2026-10-29, sixth audit): avmctl can start
@@ -145,7 +145,7 @@ final class MachineArchiveController: ObservableObject {
             plan = try MachineArchive.exportPlan(vmDirectory: dir, isMac: isMac, includeRestorePoints: includeRestorePoints)
             manifest = try MachineArchive.manifestData(for: config, appVersion: Self.appVersion)
         } catch {
-            refuse("AVM couldn't read \(name)'s files, so nothing was exported. Reason: \(error.localizedDescription)", log: "plan failed for '\(name)'")
+            refuse("Guest House couldn't read \(name)'s files, so nothing was exported. Reason: \(error.localizedDescription)", log: "plan failed for '\(name)'")
             return
         }
         let needed = MachineFileCopier.bytesNeeded(plan, from: dir, to: parent)
@@ -155,8 +155,8 @@ final class MachineArchiveController: ObservableObject {
         }
 
         begin("exporting \(name)", id: config.id)
-        AVMLog.write("AVM: Export — '\(name)' to \(place), \(plan.entries.count) items, \(needed) bytes needed, restore points \(includeRestorePoints ? "included" : "left out").")
-        Announcer.shared.announce("Exporting \(name) to \(place): \(MachineArchive.spokenSize(plan.allocatedBytes)). \(plan.allocatedBytes >= Self.speakProgressFrom ? "AVM will say how it's going. " : "")Don't start \(name)\(place == "your Mac" ? "" : " or disconnect the drive") until it's done.", tone: .info)
+        AVMLog.write("Guest House: Export — '\(name)' to \(place), \(plan.entries.count) items, \(needed) bytes needed, restore points \(includeRestorePoints ? "included" : "left out").")
+        Announcer.shared.announce("Exporting \(name) to \(place): \(MachineArchive.spokenSize(plan.allocatedBytes)). \(plan.allocatedBytes >= Self.speakProgressFrom ? "Guest House will say how it's going. " : "")Don't start \(name)\(place == "your Mac" ? "" : " or disconnect the drive") until it's done.", tone: .info)
 
         let ticker = ProgressTicker(verb: "Exporting", name: name, speaks: plan.allocatedBytes >= Self.speakProgressFrom)
         Task { @MainActor in
@@ -168,10 +168,10 @@ final class MachineArchiveController: ObservableObject {
             self.end()
             switch result {
             case .success:
-                AVMLog.write("AVM: Export — '\(name)' exported to \(place).")
+                AVMLog.write("Guest House: Export — '\(name)' exported to \(place).")
                 Announcer.shared.announce("\(name) is exported to \(place), in the folder \(package.lastPathComponent). To bring it back, on this Mac or another, choose Import Virtual Machine in the Virtual Machine menu.", tone: .success)
             case .failure(let error):
-                AVMLog.write("AVM: Export — FAILED for '\(name)': \(error.localizedDescription)")
+                AVMLog.write("Guest House: Export — FAILED for '\(name)': \(error.localizedDescription)")
                 Announcer.shared.announce("Exporting \(name) failed, and nothing half-written was left on \(place). \(name) itself is untouched. Reason: \(error.localizedDescription) Next: check the drive is connected and has room, then export again.", tone: .failure)
             }
         }
@@ -202,7 +202,7 @@ final class MachineArchiveController: ObservableObject {
                 return false
             }
             begin("backing up \(name)", id: config.id)
-            AVMLog.write("AVM: Backup — '\(name)' to \(place), \(needed) bytes needed")
+            AVMLog.write("Guest House: Backup — '\(name)' to \(place), \(needed) bytes needed")
             let ticker = ProgressTicker(verb: "Backing up", name: name, speaks: false)
             let result = await Task.detached(priority: .utility) { () throws -> Void in
                 try MachineArchive.writePackage(plan: plan, from: dir, to: package, manifest: manifest) { done, total in
@@ -217,22 +217,22 @@ final class MachineArchiveController: ObservableObject {
             // audit): "Win:11" and "Win-11" have the same file names.
             let mine = names.filter { MachineArchive.packageMachineID(folder.appendingPathComponent($0)) == config.id }
             for old in BackupSchedule.oldOnes(in: mine, base: base, ext: ext) {
-                AVMLog.write("AVM: Backup — moving the older \(old) to the Trash")
+                AVMLog.write("Guest House: Backup — moving the older \(old) to the Trash")
                 do {
                     try FileManager.default.trashItem(at: folder.appendingPathComponent(old), resultingItemURL: nil)
                 } catch {
                     // No Trash on a share (2026-11-05, second audit): left, they
                     // piled up one a day until "there isn't room". A newer backup
                     // is whole, so this one goes outright.
-                    AVMLog.write("AVM: Backup — \(old) couldn't go to the Trash (\(error.localizedDescription)); removing it")
+                    AVMLog.write("Guest House: Backup — \(old) couldn't go to the Trash (\(error.localizedDescription)); removing it")
                     try? FileManager.default.removeItem(at: folder.appendingPathComponent(old))
                 }
             }
-            AVMLog.write("AVM: Backup — '\(name)' done")
+            AVMLog.write("Guest House: Backup — '\(name)' done")
             Announcer.shared.announce("\(name) is backed up to \(place).", tone: .info, routine: true)
             return true
         } catch {
-            AVMLog.write("AVM: Backup — FAILED for '\(name)': \(error.localizedDescription)")
+            AVMLog.write("Guest House: Backup — FAILED for '\(name)': \(error.localizedDescription)")
             Announcer.shared.announce("\(name) wasn't backed up. Reason: \(error.localizedDescription) Its older backups are still there.", tone: .failure)
             return false
         }
@@ -249,7 +249,7 @@ final class MachineArchiveController: ObservableObject {
     func duplicate(_ config: VMConfiguration, isRunning: Bool, into store: VMStore, name proposed: String? = nil) {
         let name = config.name
         if let activity {
-            refuse("AVM is already \(activity). Next: try again when it's done.", log: "another copy is running")
+            refuse("Guest House is already \(activity). Next: try again when it's done.", log: "another copy is running")
             return
         }
         if isRunning {
@@ -260,7 +260,7 @@ final class MachineArchiveController: ObservableObject {
         do {
             dir = try config.directoryURL()
         } catch {
-            refuse("AVM can't find \(name)'s folder. Reason: \(error.localizedDescription)", log: "no folder for '\(name)'")
+            refuse("Guest House can't find \(name)'s folder. Reason: \(error.localizedDescription)", log: "no folder for '\(name)'")
             return
         }
         if let problem = MachineArchive.exportProblemNow(for: config, vmDirectory: dir) {
@@ -288,7 +288,7 @@ final class MachineArchiveController: ObservableObject {
             alert.addButton(withTitle: "Cancel")
             alert.window.initialFirstResponder = field
             guard alert.runModal() == .alertFirstButtonReturn else {
-                AVMLog.write("AVM: Duplicate — cancelled for '\(name)'.")
+                AVMLog.write("Guest House: Duplicate — cancelled for '\(name)'.")
                 return
             }
             let typed = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -313,7 +313,7 @@ final class MachineArchiveController: ObservableObject {
             }
             container = try VMConfiguration.defaultVMsContainer()
         } catch {
-            refuse("AVM couldn't read \(name)'s files, so nothing was duplicated. Reason: \(error.localizedDescription)", log: "plan failed for '\(name)'")
+            refuse("Guest House couldn't read \(name)'s files, so nothing was duplicated. Reason: \(error.localizedDescription)", log: "plan failed for '\(name)'")
             return
         }
         let needed = MachineFileCopier.bytesNeeded(plan, from: dir, to: container)
@@ -324,7 +324,7 @@ final class MachineArchiveController: ObservableObject {
 
         let id = UUID()
         begin("duplicating \(name)", id: config.id)
-        AVMLog.write("AVM: Duplicate — '\(name)' as '\(newName)', \(plan.entries.count) items, \(needed) bytes needed.")
+        AVMLog.write("Guest House: Duplicate — '\(name)' as '\(newName)', \(plan.entries.count) items, \(needed) bytes needed.")
         Announcer.shared.announce("Duplicating \(name) as \(newName).", tone: .info)
         let ticker = ProgressTicker(verb: "Duplicating", name: name, speaks: needed >= Self.speakProgressFrom)
         Task { @MainActor in
@@ -348,13 +348,13 @@ final class MachineArchiveController: ObservableObject {
                     try? FileManager.default.removeItem(at: files.macAddress)
                 }
                 store.save(copy)
-                AVMLog.write("AVM: Duplicate — '\(newName)' added to the list.")
+                AVMLog.write("Guest House: Duplicate — '\(newName)' added to the list.")
                 // Remote Desktop isn't copied (2026-10-28, fifth audit: the
                 // copy has no keychain password and would claim the port).
                 let remote = config.remoteDesktopUser != nil ? " Remote Desktop is off in the copy; turn it on in its settings if you want it." : ""
                 Announcer.shared.announce("\(newName) is ready, a copy of \(name). It's in your list of virtual machines.\(remote)", tone: .success)
             case .failure(let error):
-                AVMLog.write("AVM: Duplicate — FAILED for '\(name)': \(error.localizedDescription)")
+                AVMLog.write("Guest House: Duplicate — FAILED for '\(name)': \(error.localizedDescription)")
                 Announcer.shared.announce("Duplicating \(name) failed. Nothing was added, and \(name) is untouched. Reason: \(error.localizedDescription)", tone: .failure)
             }
         }
@@ -364,18 +364,18 @@ final class MachineArchiveController: ObservableObject {
 
     func importMachine(into store: VMStore) {
         if let activity {
-            refuse("AVM is already \(activity). Next: try again when it's done.", log: "another copy is running")
+            refuse("Guest House is already \(activity). Next: try again when it's done.", log: "another copy is running")
             return
         }
         let panel = NSOpenPanel()
         panel.title = "Import Virtual Machine"
-        panel.message = "Choose a virtual machine AVM exported: a folder whose name ends in .\(MachineArchive.packageExtension)."
+        panel.message = "Choose a virtual machine Guest House exported: a folder whose name ends in .\(MachineArchive.packageExtension)."
         panel.prompt = "Import"
         panel.canChooseDirectories = true
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let package = panel.url else {
-            AVMLog.write("AVM: Import — open panel cancelled.")
+            AVMLog.write("Guest House: Import — open panel cancelled.")
             return
         }
         let place = MachineArchive.placeName(of: package)
@@ -410,8 +410,8 @@ final class MachineArchiveController: ObservableObject {
                 self.refuse(problem, log: "package disk refused")
                 return
             }
-            AVMLog.write("AVM: Import — '\(name)' (\(original.guestOS.displayName)) from \(place), \(plan.entries.count) items, \(needed) bytes needed.")
-            Announcer.shared.announce("Importing \(name) from \(place): \(MachineArchive.spokenSize(plan.allocatedBytes)). \(plan.allocatedBytes >= Self.speakProgressFrom ? "AVM will say how it's going. " : "")\(place == "your Mac" ? "" : "Don't disconnect the drive until it's done.")", tone: .info)
+            AVMLog.write("Guest House: Import — '\(name)' (\(original.guestOS.displayName)) from \(place), \(plan.entries.count) items, \(needed) bytes needed.")
+            Announcer.shared.announce("Importing \(name) from \(place): \(MachineArchive.spokenSize(plan.allocatedBytes)). \(plan.allocatedBytes >= Self.speakProgressFrom ? "Guest House will say how it's going. " : "")\(place == "your Mac" ? "" : "Don't disconnect the drive until it's done.")", tone: .info)
             let ticker = ProgressTicker(verb: "Importing", name: name, speaks: plan.allocatedBytes >= Self.speakProgressFrom)
             let result = await Task.detached(priority: .userInitiated) { () throws -> URL in
                 try MachineArchive.copyIn(plan: plan, from: package, container: container, id: id) { done, total in
@@ -422,8 +422,8 @@ final class MachineArchiveController: ObservableObject {
             case .success(let folder):
                 // Again on the copy (2026-11-05 audit): a package on a drive
                 // someone else controls could swap its disk between the check
-                // above and the copy, and QEMU would open a Mac file with AVM's
-                // rights. The copy is AVM's own, so it can't change now.
+                // above and the copy, and QEMU would open a Mac file with Guest House's
+                // rights. The copy is Guest House's own, so it can't change now.
                 if let problem = await MachineArchive.diskProblem(package: folder, config: original) {
                     try? FileManager.default.removeItem(at: folder)
                     self.end()
@@ -435,7 +435,7 @@ final class MachineArchiveController: ObservableObject {
                 self.finishImport(original, id: id, folder: folder, into: store)
             case .failure(let error):
                 self.end()
-                AVMLog.write("AVM: Import — FAILED for '\(name)': \(error.localizedDescription)")
+                AVMLog.write("Guest House: Import — FAILED for '\(name)': \(error.localizedDescription)")
                 Announcer.shared.announce("Importing \(name) failed. Nothing was added, and nothing was left behind on your Mac. Reason: \(error.localizedDescription) Next: check the drive is connected, then import again.", tone: .failure)
             }
         }
@@ -445,13 +445,13 @@ final class MachineArchiveController: ObservableObject {
         let config = MachineArchive.importedConfiguration(original, id: id, folder: folder,
                                                           existingNames: store.configurations.map(\.name))
         store.save(config)
-        AVMLog.write("AVM: Import — '\(config.name)' added to the list.")
+        AVMLog.write("Guest House: Import — '\(config.name)' added to the list.")
         var words = "\(config.name) is ready. It's in your list of virtual machines."
         let cleaned = MachineArchive.cleanName(original.name)
         if config.name != cleaned {
-            words += " AVM named it \(config.name), because \(cleaned) is already in your list."
+            words += " Guest House named it \(config.name), because \(cleaned) is already in your list."
         } else if cleaned != original.name {
-            words += " AVM shortened its name."
+            words += " Guest House shortened its name."
         }
         // Lowered to this Mac's limits (2026-10-28, fifth audit): silently,
         // a saved machine's memory then couldn't load.
@@ -470,7 +470,7 @@ final class MachineArchiveController: ObservableObject {
         if !(original.usbRememberedDevices ?? []).isEmpty { turnedOff.append("the remembered USB devices") }
         if original.displayID != nil { turnedOff.append("the chosen monitor") }
         if !turnedOff.isEmpty {
-            words += " AVM turned off \(MachineArchive.spokenList(turnedOff)), which came from the other Mac; turn on what you want in Settings."
+            words += " Guest House turned off \(MachineArchive.spokenList(turnedOff)), which came from the other Mac; turn on what you want in Settings."
         }
         // The same Mac to macOS (2026-10-26): its MachineIdentifier is kept,
         // so copies must not run together.
@@ -504,7 +504,7 @@ final class MachineArchiveController: ObservableObject {
     }
 
     private func refuse(_ words: String, log: String) {
-        AVMLog.write("AVM: Export/Import refused — \(log).")
+        AVMLog.write("Guest House: Export/Import refused — \(log).")
         Announcer.shared.announce(words, tone: .failure)
     }
 
@@ -543,7 +543,7 @@ nonisolated private final class ProgressTicker: @unchecked Sendable {
 }
 
 extension MachineArchive {
-    /// With what the logic alone can't see: one running from before AVM
+    /// With what the logic alone can't see: one running from before Guest House
     /// closed has a disk that's changing (2026-11-01 audit).
     @MainActor static func exportProblemNow(for configuration: VMConfiguration, vmDirectory dir: URL) -> String? {
         // Nor one being put back or reinstalled (2026-11-10, audit of that
@@ -556,7 +556,7 @@ extension MachineArchive {
             return "\(configuration.name) is being made ready to reinstall. Next: try again when that's done."
         }
         if VMManager.hasOrphanedQEMU(configuration.id) {
-            return "\(configuration.name) is still running from before AVM last closed. Next: start it, then shut it down."
+            return "\(configuration.name) is still running from before Guest House last closed. Next: start it, then shut it down."
         }
         return exportProblem(for: configuration, vmDirectory: dir)
     }

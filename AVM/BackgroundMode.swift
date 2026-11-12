@@ -1,21 +1,21 @@
 // BackgroundMode.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
-// AVM in the background, and AVM at login (2026-10-28, tester idea). With
-// a second keyboard that belongs to Windows (WindowsKeyboard.swift), AVM's
+// Guest House in the background, and Guest House at login (2026-10-28, tester idea). With
+// a second keyboard that belongs to Windows (WindowsKeyboard.swift), Guest House's
 // own windows have nothing left to do for a keyboard user: Windows types
 // whichever app is in front. So, when the user chooses it:
 //
 //   - Run in the background: while a machine with a Keyboard for Windows
-//     runs, switching away from AVM takes it out of Command-Tab and the
-//     Dock, and hides it. AVM's menu bar item, or opening AVM again, brings
-//     it back. Off unless chosen; with no such machine running, AVM is an
+//     runs, switching away from Guest House takes it out of Command-Tab and the
+//     Dock, and hides it. Guest House's menu bar item, or opening Guest House again, brings
+//     it back. Off unless chosen; with no such machine running, Guest House is an
 //     ordinary app.
 //   - The second display: with two displays, machine windows open on the
 //     one without the menu bar, and in the background they stay there,
 //     for a sighted person beside a blind one, instead of hiding.
-//   - Open at login, and one machine that starts when AVM opens (its row on
-//     the dashboard). Together with the two above, the Mac logs in, AVM
+//   - Open at login, and one machine that starts when Guest House opens (its row on
+//     the dashboard). Together with the two above, the Mac logs in, Guest House
 //     opens out of the way, and Windows starts, ready for its keyboard.
 
 import AppKit
@@ -44,17 +44,17 @@ final class BackgroundMode: ObservableObject {
     @Published var useSecondDisplay: Bool {
         didSet { UserDefaults.standard.set(useSecondDisplay, forKey: Self.secondDisplayKey) }
     }
-    /// The machine that starts when AVM opens, if any. One at most.
+    /// The machine that starts when Guest House opens, if any. One at most.
     @Published var autoStartID: UUID? {
         didSet { UserDefaults.standard.set(autoStartID?.uuidString, forKey: Self.autoStartKey) }
     }
-    /// True while AVM is out of Command-Tab and the Dock.
+    /// True while Guest House is out of Command-Tab and the Dock.
     @Published private(set) var inBackground = false
     /// Opened at login to start a machine, and not opened by the user yet
     /// (2026-10-30, the user's request: at startup only the machine, not
-    /// AVM's window or AVM in Command-Tab, until the user opens AVM from
+    /// Guest House's window or Guest House in Command-Tab, until the user opens Guest House from
     /// Applications or the Dock). The machine still comes forward and takes
-    /// the keyboard; AVM itself stays out of sight. See startQuietly().
+    /// the keyboard; Guest House itself stays out of sight. See startQuietly().
     @Published private(set) var quietUntilOpened = false
     /// Open at login, as macOS has it (it can be turned off in System
     /// Settings, so it is read from there, not stored here).
@@ -75,9 +75,9 @@ final class BackgroundMode: ObservableObject {
 
     /// At launch (AVMAppDelegate).
     func start() {
-        AVMLog.write("AVM: Background and Startup — open at login: \(Self.loginStatusName(SMAppService.mainApp.status)); run in the background: \(runInBackground ? "on" : "off"); second monitor: \(useSecondDisplay ? "on" : "off"); starts when AVM opens: \(autoStartID?.uuidString ?? "none")")
-        // The machine that starts when AVM opens, from launch (2026-10-28,
-        // a user's log): AVM can open with no main window (macOS restores
+        AVMLog.write("Guest House: Background and Startup — open at login: \(Self.loginStatusName(SMAppService.mainApp.status)); run in the background: \(runInBackground ? "on" : "off"); second monitor: \(useSecondDisplay ? "on" : "off"); starts when Guest House opens: \(autoStartID?.uuidString ?? "none")")
+        // The machine that starts when Guest House opens, from launch (2026-10-28,
+        // a user's log): Guest House can open with no main window (macOS restores
         // the windows it had, and that can be none), and the dashboard's
         // own call (ContentView.onAppear) then never came; his machine
         // started two and a half minutes later, when he opened the window.
@@ -97,7 +97,7 @@ final class BackgroundMode: ObservableObject {
     // MARK: The background
 
     /// A running machine has a Keyboard for Windows, so Windows still
-    /// types with AVM out of the way.
+    /// types with Guest House out of the way.
     var aMachineHasItsKeyboard: Bool {
         // Or one taken during the run (audit of 2026-11-10 #37): the
         // session keeps the settings it started with.
@@ -130,21 +130,21 @@ final class BackgroundMode: ObservableObject {
             }
             for window in watched { window.orderFrontRegardless() }
         }
-        AVMLog.write("AVM: in the background (\(watched.count) machine window(s) left up on another display)")
+        AVMLog.write("Guest House: in the background (\(watched.count) machine window(s) left up on another display)")
         if !explained {
             explained = true
             // "Still types into it" only when it does (2026-10-30, a
             // tester's log: said while Input Monitoring kept it on the Mac).
             let keyboard = WindowsKeyboard.shared.isHeld ? " Your keyboard for Windows still types into it." : ""
-            Announcer.shared.announce("AVM is in the background.\(keyboard) To bring AVM back, use AVM's item in the menu bar, or open AVM again.", tone: .info)
+            Announcer.shared.announce("Guest House is in the background.\(keyboard) To bring Guest House back, use Guest House's item in the menu bar, or open Guest House again.", tone: .info)
         }
     }
 
     /// Back in Command-Tab and the Dock, in front: from the menu bar item,
-    /// opening AVM again, or turning the setting off.
+    /// opening Guest House again, or turning the setting off.
     func comeForward(announce: Bool = true, openingDashboard: Bool = true) {
         // Quiet since login: in front for the machine, but still out of
-        // Command-Tab and with no list, until the user opens AVM
+        // Command-Tab and with no list, until the user opens Guest House
         // (openedByUser).
         if quietUntilOpened {
             NSApp.activate(ignoringOtherApps: true)
@@ -165,11 +165,11 @@ final class BackgroundMode: ObservableObject {
             open()
         } else {
             // No main window to bring (2026-10-28, code review: launched
-            // with none, Show AVM showed nothing): opening AVM again makes
+            // with none, Show Guest House showed nothing): opening Guest House again makes
             // one, as the Dock does.
             NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
         }
-        if wasBackground { AVMLog.write("AVM: out of the background") }
+        if wasBackground { AVMLog.write("Guest House: out of the background") }
     }
 
     // MARK: Quiet at login
@@ -181,15 +181,15 @@ final class BackgroundMode: ObservableObject {
         guard autoStartID != nil else { return }
         quietUntilOpened = true
         NSApp.setActivationPolicy(.accessory)
-        AVMLog.write("AVM: opened at login (\(reason)) to start a machine; AVM stays out of sight until it's opened")
+        AVMLog.write("Guest House: opened at login (\(reason)) to start a machine; Guest House stays out of sight until it's opened")
     }
 
-    /// The user opened AVM (Applications, the Dock, Spotlight, its menu
-    /// bar item): AVM as usual from here on, with its list.
+    /// The user opened Guest House (Applications, the Dock, Spotlight, its menu
+    /// bar item): Guest House as usual from here on, with its list.
     func openedByUser() {
         if quietUntilOpened {
             quietUntilOpened = false
-            AVMLog.write("AVM: opened by the user; in Command-Tab with its list from now on")
+            AVMLog.write("Guest House: opened by the user; in Command-Tab with its list from now on")
             comeForward()
             // Held back while quiet since login (Permissions.swift).
             PermissionsCenter.shared.showIfSomethingIsMissing()
@@ -200,19 +200,19 @@ final class BackgroundMode: ObservableObject {
 
     /// Whether comeForward can show a dashboard (2026-10-28, fifth audit):
     /// one exists, SwiftUI's opener is known, or no window is visible, so
-    /// opening AVM again makes one.
+    /// opening Guest House again makes one.
     var canOpenDashboard: Bool {
         MainWindowCloseGuard.hasMainWindow || MainWindowCloseGuard.openMainWindow != nil
             || !NSApp.windows.contains { $0.isVisible && !($0 is NSPanel) }
     }
 
-    /// A machine stopped: with no machine left to type into, AVM is an
+    /// A machine stopped: with no machine left to type into, Guest House is an
     /// ordinary app again, in Command-Tab, though still hidden.
     func machineStopped() {
         guard inBackground, !aMachineHasItsKeyboard else { return }
         inBackground = false
         NSApp.setActivationPolicy(.regular)
-        AVMLog.write("AVM: no machine with a keyboard for Windows; back in Command-Tab")
+        AVMLog.write("Guest House: no machine with a keyboard for Windows; back in Command-Tab")
     }
 
     // MARK: The second display
@@ -245,43 +245,43 @@ final class BackgroundMode: ObservableObject {
         do {
             if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
         } catch {
-            AVMLog.write("AVM: open at login \(on ? "on" : "off") failed: \(error.localizedDescription)")
-            Announcer.shared.announce("AVM couldn't change Open at Login. Reason: \(error.localizedDescription)", tone: .failure)
+            AVMLog.write("Guest House: open at login \(on ? "on" : "off") failed: \(error.localizedDescription)")
+            Announcer.shared.announce("Guest House couldn't change Open at Login. Reason: \(error.localizedDescription)", tone: .failure)
         }
         refreshLoginStatus()
-        AVMLog.write("AVM: open at login \(on ? "on" : "off") asked; macOS says \(Self.loginStatusName(SMAppService.mainApp.status))")
+        AVMLog.write("Guest House: open at login \(on ? "on" : "off") asked; macOS says \(Self.loginStatusName(SMAppService.mainApp.status))")
         // Only the approval is spoken: VoiceOver says the checkbox, and an
         // announcement over it hid the state (2026-10-28, see setAutoStart).
         if on && loginNeedsApproval {
-            Announcer.shared.announce("macOS needs your OK. In Login Items in System Settings, turn on AVM.", tone: .info)
+            Announcer.shared.announce("macOS needs your OK. In Login Items in System Settings, turn on Guest House.", tone: .info)
             SMAppService.openSystemSettingsLoginItems()
         }
     }
 
-    // MARK: The machine that starts when AVM opens
+    // MARK: The machine that starts when Guest House opens
 
-    /// Nothing spoken (2026-10-28, two users' logs): AVM's announcement
+    /// Nothing spoken (2026-10-28, two users' logs): Guest House's announcement
     /// talked over VoiceOver's own "checked", and both users, not hearing
     /// it, pressed again and turned it off. VoiceOver says the checkbox.
     func setAutoStart(_ config: VMConfiguration, _ on: Bool) {
         if on {
             autoStartID = config.id
-            AVMLog.write("AVM: \(config.name) will start when AVM opens")
+            AVMLog.write("Guest House: \(config.name) will start when Guest House opens")
         } else if autoStartID == config.id {
             autoStartID = nil
-            AVMLog.write("AVM: \(config.name) won't start when AVM opens")
+            AVMLog.write("Guest House: \(config.name) won't start when Guest House opens")
         }
     }
 
     /// From launch, with no dashboard needed (see start()).
     func autoStartFromLaunch() {
         guard !autoStarted, let store = VMStore.shared else { return }
-        AVMLog.write("AVM: the dashboard hasn't appeared; starting the chosen machine from launch")
+        AVMLog.write("Guest House: the dashboard hasn't appeared; starting the chosen machine from launch")
         // The list too, under the machine's window (2026-10-30, a tester at
-        // login): with only the machine's window, Command-Tab to AVM showed
+        // login): with only the machine's window, Command-Tab to Guest House showed
         // Stop and Pause and nothing else. Not while quiet since login
         // (later the same day, the user's request): the list waits until
-        // the user opens AVM. autoStartIfChosen below runs first, so the
+        // the user opens Guest House. autoStartIfChosen below runs first, so the
         // list's own onAppear doesn't start the machine twice.
         if autoStartID != nil, !quietUntilOpened, !MainWindowCloseGuard.hasMainWindow {
             if let open = MainWindowCloseGuard.openMainWindow {
@@ -291,7 +291,7 @@ final class BackgroundMode: ObservableObject {
                 configuration.activates = false
                 NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, _ in }
             }
-            AVMLog.write("AVM: opening the list of machines behind the machine")
+            AVMLog.write("Guest House: opening the list of machines behind the machine")
         }
         autoStartIfChosen(in: store.configurations) { config, takesKeyboard in
             if MachineArchiveController.shared.refusesWhileBusy(config) { return }
@@ -314,18 +314,18 @@ final class BackgroundMode: ObservableObject {
         guard !autoStarted else { return }
         autoStarted = true
         guard let id = autoStartID else {
-            AVMLog.write("AVM: no machine is chosen to start when AVM opens")
+            AVMLog.write("Guest House: no machine is chosen to start when Guest House opens")
             return
         }
-        // Not for the accessibility audit or a test job, which open AVM
+        // Not for the accessibility audit or a test job, which open Guest House
         // with options and sample machines of their own.
         if CommandLine.arguments.dropFirst().contains(where: { $0.hasPrefix("--") }) { return }
         guard let config = configurations.first(where: { $0.id == id }) else {
-            AVMLog.write("AVM: the machine chosen to start when AVM opens isn't in the list")
+            AVMLog.write("Guest House: the machine chosen to start when Guest House opens isn't in the list")
             return
         }
         guard !config.isATemplate, MachineSessions.shared.session(for: id) == nil else { return }
-        AVMLog.write("AVM: starting \(config.name), chosen to start when AVM opens (keyboard for Windows: \(config.windowsKeyboardName ?? "none"); AVM active: \(NSApp.isActive), hidden: \(NSApp.isHidden), \(NSApp.activationPolicy() == .regular ? "in Command-Tab" : "not in Command-Tab"))")
+        AVMLog.write("Guest House: starting \(config.name), chosen to start when Guest House opens (keyboard for Windows: \(config.windowsKeyboardName ?? "none"); Guest House active: \(NSApp.isActive), hidden: \(NSApp.isHidden), \(NSApp.activationPolicy() == .regular ? "in Command-Tab" : "not in Command-Tab"))")
         Announcer.shared.announce("Starting \(config.name).", tone: .info)
         // In front when it takes the Mac's keyboard: MachineSessions.start
         // does that now for every start (2026-10-30). A machine with a
@@ -340,16 +340,16 @@ final class BackgroundMode: ObservableObject {
                 guard let session = MachineSessions.shared.session(for: id) else { return }
                 if session.vmState == .running {
                     try? await Task.sleep(for: .seconds(2))
-                    // Unless the user is using AVM now.
+                    // Unless the user is using Guest House now.
                     if !NSApp.isActive || NSApp.keyWindow == nil || MachineSessions.shared.windowsForDisplay.contains(where: \.isKeyWindow) {
                         self.goToBackgroundIfChosen()
                         // Not under a dialog (2026-10-28, fifth audit): the
                         // only time this ran was with one up, since
-                        // goToBackgroundIfChosen stands down for it, and AVM
+                        // goToBackgroundIfChosen stands down for it, and Guest House
                         // deactivated itself under the question being answered.
                         if !self.inBackground, self.applies, NSApp.modalWindow == nil,
                            !NSApp.windows.contains(where: { $0.attachedSheet != nil }) {
-                            // AVM was in front: it goes once the user leaves.
+                            // Guest House was in front: it goes once the user leaves.
                             NSApp.deactivate()
                         }
                     }
@@ -362,14 +362,14 @@ final class BackgroundMode: ObservableObject {
 
 // MARK: - The menu bar item
 
-/// AVM's item in the menu bar while Run in the Background is on: the way
-/// back to AVM when it isn't in Command-Tab or the Dock.
+/// Guest House's item in the menu bar while Run in the Background is on: the way
+/// back to Guest House when it isn't in Command-Tab or the Dock.
 struct BackgroundMenu: View {
     @ObservedObject private var background = BackgroundMode.shared
     @ObservedObject private var machines = MachineSessions.shared
 
     var body: some View {
-        Button("Show AVM") { background.openedByUser() }
+        Button("Show Guest House") { background.openedByUser() }
         let running = machines.sessions.values
             .filter { $0.vmState == .running || $0.vmState == .paused }
             .sorted { $0.configuration.name.localizedStandardCompare($1.configuration.name) == .orderedAscending }
@@ -383,7 +383,7 @@ struct BackgroundMenu: View {
             }
         }
         Divider()
-        Button("Quit AVM") {
+        Button("Quit Guest House") {
             background.comeForward(announce: false)
             NSApp.terminate(nil)
         }
@@ -392,8 +392,8 @@ struct BackgroundMenu: View {
 
 // MARK: - Background and Startup settings
 
-/// Startup and Background in AVM's Settings (AppPreferencesView). It was a
-/// sheet on the list, Background and Startup, until AVM's own Settings
+/// Startup and Background in Guest House's Settings (AppPreferencesView). It was a
+/// sheet on the list, Background and Startup, until Guest House's own Settings
 /// (2026-10-30).
 struct BackgroundSettingsControls: View {
     @ObservedObject private var background = BackgroundMode.shared
@@ -405,30 +405,30 @@ struct BackgroundSettingsControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Toggle("Open AVM when you log in", isOn: Binding(
+            Toggle("Open Guest House when you log in", isOn: Binding(
                 get: { background.opensAtLogin },
                 set: { background.setOpensAtLogin($0) }))
             if background.loginNeedsApproval {
-                Text("Waiting for your OK: in System Settings, General, Login Items, turn on AVM.")
+                Text("Waiting for your OK: in System Settings, General, Login Items, turn on Guest House.")
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Toggle("Run in the background with a keyboard for Windows", isOn: $background.runInBackground)
-                .accessibilityHint("While a machine with a keyboard for Windows runs, AVM leaves Command Tab and the Dock when you switch away")
-            Text("While a machine with a keyboard for Windows is running, switching away from AVM takes it out of Command-Tab and the Dock. Your keyboard for Windows still types into Windows, and your Mac's keyboard stays with your Mac. To bring AVM back, use its item in the menu bar, or open AVM again. Choose the keyboard in the machine's Settings.")
+                .accessibilityHint("While a machine with a keyboard for Windows runs, Guest House leaves Command Tab and the Dock when you switch away")
+            Text("While a machine with a keyboard for Windows is running, switching away from Guest House takes it out of Command-Tab and the Dock. Your keyboard for Windows still types into Windows, and your Mac's keyboard stays with your Mac. To bring Guest House back, use its item in the menu bar, or open Guest House again. Choose the keyboard in the machine's Settings.")
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
 
             Toggle("Show machines on the second monitor", isOn: $background.useSecondDisplay)
                 .accessibilityHint("With two monitors, a machine's window opens on the one without the menu bar and stays there in the background, unless the machine has its own monitor chosen")
             Text(BackgroundMode.secondDisplay == nil
-                 ? "Only one monitor is connected now. With a second one, a machine's window opens there, and stays there while AVM is in the background, for someone to watch. To choose a monitor for one machine, use Monitor in its Settings."
-                 : "A machine's window opens on the second monitor, and stays there while AVM is in the background, for someone to watch. To choose a monitor for one machine, use Monitor in its Settings.")
+                 ? "Only one monitor is connected now. With a second one, a machine's window opens there, and stays there while Guest House is in the background, for someone to watch. To choose a monitor for one machine, use Monitor in its Settings."
+                 : "A machine's window opens on the second monitor, and stays there while Guest House is in the background, for someone to watch. To choose a monitor for one machine, use Monitor in its Settings.")
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text(autoStartName.map { "\($0) starts when AVM opens. To change it, use Start When AVM Opens in a machine's row." }
-                 ?? "No machine starts when AVM opens. To choose one, use Start When AVM Opens in its row, while it's shut down.")
+            Text(autoStartName.map { "\($0) starts when Guest House opens. To change it, use Start When Guest House Opens in a machine's row." }
+                 ?? "No machine starts when Guest House opens. To choose one, use Start When Guest House Opens in its row, while it's shut down.")
                 .fixedSize(horizontal: false, vertical: true)
         }
         .onAppear { background.refreshLoginStatus() }

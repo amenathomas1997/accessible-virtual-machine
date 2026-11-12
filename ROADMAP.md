@@ -1,6 +1,6 @@
-# AVM Roadmap
+# Guest House Roadmap
 
-This is the working roadmap for AVM (Accessible Virtual Machine).
+This is the working roadmap for Guest House.
 This is a living document: order and content will change as tester
 feedback comes in.
 
@@ -44,7 +44,7 @@ keeps a machine on an external drive; the dashboard says which drive
 each machine is on, and Start and Delete refuse, out loud, while that
 drive isn't connected. Export and Import move a machine between Macs.
 
-### 4. Automatic updates for AVM (0.1.2)
+### 4. Automatic updates for Guest House (0.1.2)
 
 Sparkle, with this fork's own update feed and signing key (README,
 Publishing an update). Every stage is a normal dialog that reads with
@@ -55,7 +55,7 @@ VoiceOver.
 The feature blind musicians were waiting for. Devices go to Windows
 automatically or after asking, as the machine's USB Devices setting
 says; braille displays always ask; Bluetooth HID devices go through
-AVM's helper with no USB port; and a second keyboard can belong to
+Guest House's helper with no USB port; and a second keyboard can belong to
 Windows alone. USB storage is the exception: macOS 27 blocks it, and
 the maintainer is working with Apple on it (README, USB devices).
 
@@ -73,8 +73,8 @@ builds remains each tester's own choice.
 ### 5. Audio latency
 
 Testers report that audio latency in the guest is acceptable but
-could be better. Parallels sets the benchmark here, and AVM should
-meet or beat it. Latency matters more in AVM than in a typical VM
+could be better. Parallels sets the benchmark here, and Guest House should
+meet or beat it. Latency matters more in Guest House than in a typical VM
 product because a screen reader's responsiveness *is* the interface:
 every extra millisecond between a keystroke and JAWS, NVDA, or
 Narrator speaking is felt on every single interaction.
@@ -93,7 +93,7 @@ Windows fall back to its software renderer, which crashes some titles
 and makes others stutter. Linux machines got OpenGL acceleration in
 0.3.0, through virtio-gpu-gl with ANGLE and virglrenderer from UTM's
 build. Windows is the open part: its virtio-gpu drivers give it no 3D,
-so this needs work in the guest driver, not only in AVM. No version or
+so this needs work in the guest driver, not only in Guest House. No version or
 date is promised.
 
 ### 9. ISO download assistant

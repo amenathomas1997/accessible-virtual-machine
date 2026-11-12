@@ -1,17 +1,17 @@
 // swift-tools-version: 6.2
 // Package.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // The logic test suite (2026-10-26). The app itself builds from
 // AVM.xcodeproj, which needs the UTM sysroot. This package compiles only
-// AVM's self-contained logic files, with the app target's own language
+// Guest House's self-contained logic files, with the app target's own language
 // settings, and tests them, so the tests run anywhere: `swift test` on a
 // Mac with Xcode, and on every push in GitHub Actions
 // (.github/workflows/ci.yml). It builds nothing that ships.
 
 import PackageDescription
 
-/// The same settings as the AVM app target: Swift 5 mode, MainActor by
+/// The same settings as the Guest House app target: Swift 5 mode, MainActor by
 /// default, approachable concurrency.
 let appSettings: [SwiftSetting] = [
     .defaultIsolation(MainActor.self),

@@ -1,5 +1,5 @@
 // VMStore.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 
 import Foundation
 import AppKit
@@ -39,7 +39,7 @@ final class VMStore: ObservableObject {
 
     private let fileManager = FileManager.default
 
-    /// The AVM root under Application Support. Every piece of on-disk
+    /// The Guest House root under Application Support. Every piece of on-disk
     /// storage layout knowledge in the app lives in this file: the
     /// configurations store, and (2026-08-15) the per-VM directories.
     private var avmDirectory: URL {
@@ -141,7 +141,7 @@ final class VMStore: ObservableObject {
     /// record): a directory whose name parses as a UUID and matches no
     /// entry in configurations. Non-UUID names (Finder droppings, manual
     /// creations) are INVISIBLE to this feature — we only claim to clean
-    /// up what AVM itself creates, and AVM only creates UUID-named
+    /// up what Guest House itself creates, and Guest House only creates UUID-named
     /// directories.
     ///
     /// The scan is fresh on every call — never cached, never run at
@@ -199,9 +199,9 @@ final class VMStore: ObservableObject {
         let registered = Set(configurations.map { $0.id.uuidString.uppercased() } + unreadableIDs)
         if let uuid = UUID(uuidString: orphan.uuidString),
            registered.contains(uuid.uuidString.uppercased()) {
-            AVMLog.write("AVM: VMStore — Reclaim REFUSED for \(orphan.uuidString): it is now a registered VM.")
+            AVMLog.write("Guest House: VMStore — Reclaim REFUSED for \(orphan.uuidString): it is now a registered VM.")
             throw NSError(
-                domain: "AVM.Reclaim",
+                domain: "GuestHouse.Reclaim",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "This folder now belongs to a virtual machine in your list and was not moved."]
             )
@@ -209,10 +209,10 @@ final class VMStore: ObservableObject {
 
         let url = try vmsContainerURL.appendingPathComponent(orphan.uuidString)
         try fileManager.trashItem(at: url, resultingItemURL: nil)
-        AVMLog.write("AVM: VMStore — Reclaim moved orphan \(orphan.uuidString) to Trash (\(orphan.sizeBytes) bytes).")
+        AVMLog.write("Guest House: VMStore — Reclaim moved orphan \(orphan.uuidString) to Trash (\(orphan.sizeBytes) bytes).")
     }
 
-    /// Puts back the newest configurations-unreadable-*.json copy AVM kept
+    /// Puts back the newest configurations-unreadable-*.json copy Guest House kept
     /// (2026-11-05, second audit), after asking, and reads it again. Only the
     /// list is replaced; machines' files aren't touched.
     func restoreListFromCopy() {
@@ -221,7 +221,7 @@ final class VMStore: ObservableObject {
         let copies = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
             .filter { $0.hasPrefix("configurations-unreadable-") && $0.hasSuffix(".json") }.sorted()
         guard let newest = copies.last else {
-            Announcer.shared.announce("AVM has no kept copy of your machine list to restore.", tone: .info)
+            Announcer.shared.announce("Guest House has no kept copy of your machine list to restore.", tone: .info)
             return
         }
         let copy = folder.appendingPathComponent(newest)
@@ -230,8 +230,8 @@ final class VMStore: ObservableObject {
         let alert = NSAlert()
         alert.messageText = "Restore the machine list from \(newest)?"
         alert.informativeText = count > 0
-            ? "AVM can read \(count == 1 ? "one machine" : "\(count) machines") in that copy. Your current list, with \(configurations.count == 1 ? "one machine" : "\(configurations.count) machines"), is set aside first. Machines' files aren't touched."
-            : "AVM can't read any machine in that copy, so restoring it would give an empty list. The copy is kept for a report."
+            ? "Guest House can read \(count == 1 ? "one machine" : "\(count) machines") in that copy. Your current list, with \(configurations.count == 1 ? "one machine" : "\(configurations.count) machines"), is set aside first. Machines' files aren't touched."
+            : "Guest House can't read any machine in that copy, so restoring it would give an empty list. The copy is kept for a report."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Cancel")
         if count > 0 { alert.addButton(withTitle: "Restore the List") }
@@ -247,7 +247,7 @@ final class VMStore: ObservableObject {
         loadFailed = false
         unreadableEntries = readable?.kept ?? []
         configurations = loadAll()
-        AVMLog.write("AVM: VMStore — the machine list was restored from \(newest); \(configurations.count) machine(s).")
+        AVMLog.write("Guest House: VMStore — the machine list was restored from \(newest); \(configurations.count) machine(s).")
         Announcer.shared.announce("The machine list is restored: \(configurations.count == 1 ? "one machine" : "\(configurations.count) machines"). The list you had is kept as configurations-before-restore-\(stamp).json.", tone: .success)
     }
 
@@ -266,7 +266,7 @@ final class VMStore: ObservableObject {
     // to the file log. These are the persistence layer failing: a tester
     // whose VM list comes up empty, or whose new VM vanishes after a
     // relaunch, is diagnosed by exactly these lines, and until this change
-    // they were invisible in every log AVM has.
+    // they were invisible in every log Guest House has.
     //
     // SAVE FAILURE IS SPOKEN (2026-10-25, closes the banked question): a
     // save failure is silent data loss — the in-memory list looks right and
@@ -292,7 +292,7 @@ final class VMStore: ObservableObject {
             data = try Data(contentsOf: url)
             return try JSONDecoder().decode([VMConfiguration].self, from: data)
         } catch {
-            AVMLog.write("AVM: VMStore — FAILED to load configurations: \(error.localizedDescription)")
+            AVMLog.write("Guest House: VMStore — FAILED to load configurations: \(error.localizedDescription)")
             loadFailed = true
             var kept = "it couldn't be copied aside"
             if let url = try? storeURL, fileManager.fileExists(atPath: url.path) {
@@ -300,20 +300,20 @@ final class VMStore: ObservableObject {
                 let aside = url.deletingLastPathComponent().appendingPathComponent("configurations-unreadable-\(stamp).json")
                 if (try? fileManager.copyItem(at: url, to: aside)) != nil {
                     asideKept = true
-                    kept = "a copy is kept as \(aside.lastPathComponent), in AVM's folder in Application Support"
-                    AVMLog.write("AVM: VMStore — the unreadable list is kept as \(aside.lastPathComponent).")
+                    kept = "a copy is kept as \(aside.lastPathComponent), in Guest House's folder in Application Support"
+                    AVMLog.write("Guest House: VMStore — the unreadable list is kept as \(aside.lastPathComponent).")
                 }
             }
             // One machine at a time (2026-10-28, fourth audit): one entry
-            // AVM couldn't read used to hide every machine. The others load;
+            // Guest House couldn't read used to hide every machine. The others load;
             // only the unreadable ones wait in the copy.
             let readable = Self.readableEntries(in: (try? storeURL).flatMap { try? Data(contentsOf: $0) })
             unreadableEntries = readable?.kept ?? []
             let message: String
             if let readable, !readable.machines.isEmpty {
-                message = "AVM couldn't read \(readable.unreadable == 1 ? "one machine" : "\(readable.unreadable) machines") in your list, so \(readable.unreadable == 1 ? "it isn't" : "they aren't") shown; \(kept). Your machines' files are untouched. Next: report the problem from the Help menu."
+                message = "Guest House couldn't read \(readable.unreadable == 1 ? "one machine" : "\(readable.unreadable) machines") in your list, so \(readable.unreadable == 1 ? "it isn't" : "they aren't") shown; \(kept). Your machines' files are untouched. Next: report the problem from the Help menu."
             } else {
-                message = "AVM couldn't read your list of virtual machines, so it shows none; \(kept). Your machines' files are untouched. Next: report the problem from the Help menu, before making new machines."
+                message = "Guest House couldn't read your list of virtual machines, so it shows none; \(kept). Your machines' files are untouched. Next: report the problem from the Help menu, before making new machines."
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                 MainActor.assumeIsolated { Announcer.shared.announce(message, tone: .failure) }
@@ -332,7 +332,7 @@ final class VMStore: ObservableObject {
             // Only an object is handed to JSONSerialization (2026-10-29,
             // sixth audit): a number, string or null in the list made
             // data(withJSONObject:) raise an exception that try? can't
-            // catch, and AVM crashed at every launch. Kept as it was.
+            // catch, and Guest House crashed at every launch. Kept as it was.
             if entry is [String: Any],
                let one = try? JSONSerialization.data(withJSONObject: entry),
                let machine = try? JSONDecoder().decode(VMConfiguration.self, from: one) {
@@ -344,7 +344,7 @@ final class VMStore: ObservableObject {
         return (machines, kept.count, kept)
     }
 
-    /// The entries of the list AVM couldn't decode, kept as they were and
+    /// The entries of the list Guest House couldn't decode, kept as they were and
     /// written back with every save (2026-10-28, fifth audit): written
     /// without them, the next launch read the list whole, said nothing, and
     /// Reclaim Disk Space offered the hidden machines' folders as leftovers.
@@ -366,15 +366,15 @@ final class VMStore: ObservableObject {
     // MARK: - Save All
 
     private func saveAll() {
-        // A list AVM couldn't read, and couldn't copy aside, is never
+        // A list Guest House couldn't read, and couldn't copy aside, is never
         // written over (2026-10-28, fourth audit): the next new machine or
         // setting used to replace it, and the machines in it were gone.
         if loadFailed, !asideKept {
-            AVMLog.write("AVM: VMStore — not saving: the unreadable list couldn't be copied aside")
+            AVMLog.write("Guest House: VMStore — not saving: the unreadable list couldn't be copied aside")
             if !refusalSaid {
                 refusalSaid = true
                 Task { @MainActor in
-                    Announcer.shared.announce("AVM won't save changes to your list of virtual machines, because it couldn't read the list or keep a copy of it, and saving would replace it. Next: report the problem from the Help menu.", tone: .failure)
+                    Announcer.shared.announce("Guest House won't save changes to your list of virtual machines, because it couldn't read the list or keep a copy of it, and saving would replace it. Next: report the problem from the Help menu.", tone: .failure)
                 }
             }
             return
@@ -382,18 +382,18 @@ final class VMStore: ObservableObject {
         do {
             let url = try storeURL
             var data = try JSONEncoder().encode(configurations)
-            // The entries AVM couldn't read go back as they were (fifth audit).
+            // The entries Guest House couldn't read go back as they were (fifth audit).
             if !unreadableEntries.isEmpty, var list = try JSONSerialization.jsonObject(with: data) as? [Any] {
                 list.append(contentsOf: unreadableEntries)
                 data = try JSONSerialization.data(withJSONObject: list, options: [.sortedKeys])
             }
             try data.write(to: url, options: .atomic)
         } catch {
-            AVMLog.write("AVM: VMStore — FAILED to save configurations: \(error.localizedDescription)")
+            AVMLog.write("Guest House: VMStore — FAILED to save configurations: \(error.localizedDescription)")
             let reason = error.localizedDescription
             Task { @MainActor in
                 Announcer.shared.announce(
-                    "AVM could not save your virtual machine list. Your last change will be lost when AVM quits. Reason: \(reason) Next: make sure your Mac has free disk space, then make the change again.",
+                    "Guest House could not save your virtual machine list. Your last change will be lost when Guest House quits. Reason: \(reason) Next: make sure your Mac has free disk space, then make the change again.",
                     tone: .failure
                 )
             }
@@ -430,7 +430,7 @@ final class VMStore: ObservableObject {
     /// nothing changed if the first move fails.
     func switchSecureBoot(_ configuration: VMConfiguration, on: Bool) throws {
         if configuration.storageIsMissing {
-            throw NSError(domain: "AVM.SecureBoot", code: 1,
+            throw NSError(domain: "GuestHouse.SecureBoot", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: configuration.storageMissingMessage])
         }
         let dir = try vmDirectoryURL(for: configuration)
@@ -451,7 +451,7 @@ final class VMStore: ObservableObject {
         if fileManager.fileExists(atPath: comingBack.path) {
             try fileManager.moveItem(at: comingBack, to: current)
         }
-        AVMLog.write("AVM: VMStore — Secure Boot \(on ? "on" : "off") for '\(configuration.name)'; firmware settings switched.")
+        AVMLog.write("Guest House: VMStore — Secure Boot \(on ? "on" : "off") for '\(configuration.name)'; firmware settings switched.")
     }
 
     // MARK: - Delete
@@ -459,7 +459,7 @@ final class VMStore: ObservableObject {
     /// The install pipelines' scratch folder for this VM, removed with it
     /// (2026-10-25, code audit). A build cut short by a quit or crash left
     /// up to 15 GB there, and for Ubuntu a copy of the password hash, and
-    /// nothing else ever cleared it. AVM's own working files, so removed
+    /// nothing else ever cleared it. Guest House's own working files, so removed
     /// outright rather than trashed.
     private func removeScratch(for configuration: VMConfiguration) {
         guard let scratch = try? avmDirectory
@@ -467,7 +467,7 @@ final class VMStore: ObservableObject {
             .appendingPathComponent(configuration.id.uuidString) else { return }
         if fileManager.fileExists(atPath: scratch.path) {
             try? fileManager.removeItem(at: scratch)
-            AVMLog.write("AVM: VMStore — removed install scratch for '\(configuration.name)'.")
+            AVMLog.write("Guest House: VMStore — removed install scratch for '\(configuration.name)'.")
         }
     }
 
@@ -497,18 +497,18 @@ final class VMStore: ObservableObject {
     /// A VM whose drive isn't connected is refused (2026-10-25): its folder
     /// is missing only because the drive is, and "no directory on disk"
     /// would otherwise remove the entry and strand the files on the drive,
-    /// invisible to AVM, which is issue #5 again.
+    /// invisible to Guest House, which is issue #5 again.
     /// The Trash refused (2026-11-05, second audit): a share or some exFAT
-    /// mounts have none, and the machine couldn't be deleted from AVM at all.
+    /// mounts have none, and the machine couldn't be deleted from Guest House at all.
     /// The caller asks again, then calls with `permanently`.
     struct NoTrashError: LocalizedError { let errorDescription: String? }
 
     @discardableResult
     func deleteMovingFilesToTrash(_ configuration: VMConfiguration, permanently: Bool = false) throws -> UInt64 {
         if configuration.storageIsMissing {
-            AVMLog.write("AVM: VMStore — delete of '\(configuration.name)' refused: its storage folder is missing (drive not connected?). Entry kept.")
+            AVMLog.write("Guest House: VMStore — delete of '\(configuration.name)' refused: its storage folder is missing (drive not connected?). Entry kept.")
             throw NSError(
-                domain: "AVM.Delete",
+                domain: "GuestHouse.Delete",
                 code: 2,
                 userInfo: [NSLocalizedDescriptionKey: configuration.storageMissingMessage]
             )
@@ -516,7 +516,7 @@ final class VMStore: ObservableObject {
         let url = try vmDirectoryURL(for: configuration)
 
         guard fileManager.fileExists(atPath: url.path) else {
-            AVMLog.write("AVM: VMStore — delete of '\(configuration.name)': no VM directory on disk (orphaned entry); removing entry only.")
+            AVMLog.write("Guest House: VMStore — delete of '\(configuration.name)': no VM directory on disk (orphaned entry); removing entry only.")
             removeScratch(for: configuration)
             RemoteDesktop.forgetPassword(for: configuration.id)
             delete(configuration)
@@ -532,17 +532,17 @@ final class VMStore: ObservableObject {
                 try fileManager.trashItem(at: url, resultingItemURL: nil)
             }
         } catch {
-            AVMLog.write("AVM: VMStore — FAILED to \(permanently ? "delete" : "move to Trash") VM directory for '\(configuration.name)': \(error.localizedDescription). Entry kept.")
+            AVMLog.write("Guest House: VMStore — FAILED to \(permanently ? "delete" : "move to Trash") VM directory for '\(configuration.name)': \(error.localizedDescription). Entry kept.")
             if !permanently, fileManager.fileExists(atPath: url.path) {
                 throw NoTrashError(errorDescription: "The drive holding \(configuration.name) has no Trash, so its files can't be set aside. \(error.localizedDescription)")
             }
             throw error
         }
 
-        AVMLog.write("AVM: VMStore — moved VM directory to Trash for '\(configuration.name)' (\(bytes) bytes).")
+        AVMLog.write("Guest House: VMStore — moved VM directory to Trash for '\(configuration.name)' (\(bytes) bytes).")
         removeScratch(for: configuration)
         // Its Remote Desktop password too (2026-10-28, fifth audit): it
-        // stayed in the keychain for good, unreachable from AVM.
+        // stayed in the keychain for good, unreachable from Guest House.
         RemoteDesktop.forgetPassword(for: configuration.id)
         delete(configuration)
         return bytes
@@ -607,7 +607,7 @@ nonisolated enum RestorePoints {
         // machine, and the before-updates check never saw its last point.
         let output = try await qemuImg(["info", "--output=json", "-U", disk(dir).path])
         guard let json = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] else {
-            throw RestorePointError.tool("AVM couldn't read the disk's restore points.")
+            throw RestorePointError.tool("Guest House couldn't read the disk's restore points.")
         }
         let snapshots = json["snapshots"] as? [[String: Any]] ?? []
         removeAbandonedFolders(vmDirectory: dir, snapshots: Set(snapshots.compactMap { $0["name"] as? String }))
@@ -622,7 +622,7 @@ nonisolated enum RestorePoints {
             let bus = (try? String(contentsOf: folder.appendingPathComponent("disk-bus"), encoding: .utf8))?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             // Still marked pending, with a snapshot on the disk (2026-11-09,
-            // fourth audit #17): AVM stopped between the two. Listed as
+            // fourth audit #17): Guest House stopped between the two. Listed as
             // incomplete so it can be deleted; left out, it was invisible and
             // undeletable while the disk kept growing around it.
             let pending = FileManager.default.fileExists(atPath: folder.appendingPathComponent(pendingMarker).path)
@@ -649,7 +649,7 @@ nonisolated enum RestorePoints {
             guard let made = (try? fm.attributesOfItem(atPath: marker.path))?[.modificationDate] as? Date,
                   Date().timeIntervalSince(made) > 3600 else { continue }
             removeFolder(vmDirectory: dir, tag: tag)
-            AVMLog.write("AVM: RestorePoints — removed \(tag), a point whose snapshot was never taken.")
+            AVMLog.write("Guest House: RestorePoints — removed \(tag), a point whose snapshot was never taken.")
         }
     }
 
@@ -673,13 +673,13 @@ nonisolated enum RestorePoints {
             removeFolder(vmDirectory: dir, tag: tag)
             throw error
         }
-        AVMLog.write("AVM: RestorePoints — created \(tag).")
+        AVMLog.write("Guest House: RestorePoints — created \(tag).")
         return RestorePoint(tag: tag, label: label, date: Date(), secureBoot: secureBoot, diskBus: diskBus)
     }
 
     static func newTag() -> String { "avm-\(Int(Date().timeIntervalSince1970 * 1000))" }
 
-    /// A tag AVM made: "avm-" and the milliseconds (2026-10-29, sixth
+    /// A tag Guest House made: "avm-" and the milliseconds (2026-10-29, sixth
     /// audit). A snapshot's name is any bytes, and one with "/" or ".." in a
     /// disk someone else made named a folder outside restore-points, which
     /// Delete then removed for good.
@@ -693,7 +693,7 @@ nonisolated enum RestorePoints {
     /// TPM, its label, and whether Secure Boot was on. A folder that
     /// couldn't be finished is removed, and that's thrown.
     static func writeFolder(vmDirectory dir: URL, tag: String, label: String, secureBoot: Bool, diskBus: String? = nil) throws {
-        guard isOwnTag(tag) else { throw RestorePointError.tool("The restore point's name isn't one AVM made.") }
+        guard isOwnTag(tag) else { throw RestorePointError.tool("The restore point's name isn't one Guest House made.") }
         let fm = FileManager.default
         let folder = dir.appendingPathComponent(folderName).appendingPathComponent(tag)
         do {
@@ -799,7 +799,7 @@ nonisolated enum RestorePoints {
                     _ = try await qemuImg(["snapshot", "-a", undoTag, undoOn.path])
                     _ = try? await qemuImg(["snapshot", "-d", undoTag, undoOn.path])
                 } catch {
-                    AVMLog.write("AVM: RestorePoints — the second drive couldn't be put back after the first disk failed: \(error.localizedDescription)")
+                    AVMLog.write("Guest House: RestorePoints — the second drive couldn't be put back after the first disk failed: \(error.localizedDescription)")
                     throw RestorePointError.tool("The first disk couldn't be restored, and the second drive couldn't be put back as it was, so it's at the restore point while the first disk isn't. Next: try the restore again.")
                 }
             }
@@ -825,12 +825,12 @@ nonisolated enum RestorePoints {
         let resume = dir.appendingPathComponent(QEMUSavedState.resumeFile)
         if point.withMemory, secondDriveWasThere {
             do { try point.tag.write(to: resume, atomically: true, encoding: .utf8) } catch {
-                AVMLog.write("AVM: RestorePoints — the note to carry on couldn't be written: \(error.localizedDescription)")
+                AVMLog.write("Guest House: RestorePoints — the note to carry on couldn't be written: \(error.localizedDescription)")
             }
         } else {
             try? fm.removeItem(at: resume)
         }
-        AVMLog.write("AVM: RestorePoints — restored \(point.tag).")
+        AVMLog.write("Guest House: RestorePoints — restored \(point.tag).")
     }
 
     /// The disk's size in gigabytes (GiB, as qemu-img's "G" makes them).
@@ -850,7 +850,7 @@ nonisolated enum RestorePoints {
     /// something (check: 0 fine, 1 couldn't, 2 corrupt, 3 leaks).
     static func qemuImgStatus(_ arguments: [String]) async -> (Int32, String) {
         guard let tool = Bundle.main.resourceURL?.appendingPathComponent("qemu-img"),
-              FileManager.default.isExecutableFile(atPath: tool.path) else { return (1, "qemu-img is missing from AVM.") }
+              FileManager.default.isExecutableFile(atPath: tool.path) else { return (1, "qemu-img is missing from Guest House.") }
         return await Task.detached(priority: .userInitiated) { () -> (Int32, String) in
             let process = Process()
             process.executableURL = tool
@@ -866,11 +866,11 @@ nonisolated enum RestorePoints {
     }
 
     static func delete(_ point: RestorePoint, vmDirectory dir: URL) async throws {
-        guard isOwnTag(point.tag) else { throw RestorePointError.tool("The restore point's name isn't one AVM made, so it wasn't deleted.") }
+        guard isOwnTag(point.tag) else { throw RestorePointError.tool("The restore point's name isn't one Guest House made, so it wasn't deleted.") }
         _ = try await qemuImg(["snapshot", "-d", point.tag, disk(dir).path])
         await deleteFromSecondDrive(point.tag, vmDirectory: dir)
         try? FileManager.default.removeItem(at: dir.appendingPathComponent(folderName).appendingPathComponent(point.tag))
-        AVMLog.write("AVM: RestorePoints — deleted \(point.tag).")
+        AVMLog.write("Guest House: RestorePoints — deleted \(point.tag).")
     }
 
     /// The machine's second drive, if it has one.
@@ -889,7 +889,7 @@ nonisolated enum RestorePoints {
     /// A new name for a restore point (2026-11-05). Only its label file
     /// changes, so it works while the machine runs too.
     static func rename(_ point: RestorePoint, to label: String, vmDirectory dir: URL) throws {
-        guard isOwnTag(point.tag) else { throw RestorePointError.tool("The restore point's name isn't one AVM made.") }
+        guard isOwnTag(point.tag) else { throw RestorePointError.tool("The restore point's name isn't one Guest House made.") }
         guard !point.incomplete else { throw RestorePointError.tool("An incomplete restore point can't be renamed, only deleted.") }
         let folder = dir.appendingPathComponent(folderName).appendingPathComponent(point.tag)
         do {
@@ -898,14 +898,14 @@ nonisolated enum RestorePoints {
         } catch {
             throw RestorePointError.tool("The new name could not be saved: \(error.localizedDescription)")
         }
-        // Named by the user, it's theirs (2026-11-05 audit): AVM's tidy-up marks
+        // Named by the user, it's theirs (2026-11-05 audit): Guest House's tidy-up marks
         // go, or the point was still deleted two restores later.
         for mark in [beforeRestoreMarker, "automatic", "before-updates"] {
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(mark))
         }
     }
 
-    /// Marks the points AVM takes just before going back to another
+    /// Marks the points Guest House takes just before going back to another
     /// (2026-11-05), so only those are tidied away.
     static let beforeRestoreMarker = "before-restore"
 
@@ -948,7 +948,7 @@ nonisolated enum RestorePoints {
     static func qemuImg(_ arguments: [String]) async throws -> String {
         guard let tool = Bundle.main.resourceURL?.appendingPathComponent("qemu-img"),
               FileManager.default.isExecutableFile(atPath: tool.path) else {
-            throw RestorePointError.tool("qemu-img is missing from AVM, so restore points can't be used.")
+            throw RestorePointError.tool("qemu-img is missing from Guest House, so restore points can't be used.")
         }
         return try await Task.detached(priority: .userInitiated) { () throws -> String in
             let process = Process()

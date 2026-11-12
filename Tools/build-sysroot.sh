@@ -1,8 +1,8 @@
 #!/bin/bash
 # build-sysroot.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
-# Builds, from source, the sysroot AVM's build phase stages QEMU, SPICE,
+# Builds, from source, the sysroot Guest House's build phase stages QEMU, SPICE,
 # GStreamer and the install tools from (the AVM_SYSROOT build setting).
 #
 #   Tools/build-sysroot.sh            build into the default AVM_SYSROOT
@@ -19,14 +19,14 @@
 #          Vulkan (venus) or Direct3D (neptune), for Linux machines' 3D
 #          acceleration (virtio-gpu-gl-pci, VMConfiguration.gpu3D). The
 #          Vulkan loader, Mesa, MoltenVK, LLVM and the D3D drivers are left
-#          out: AVM offers neither Vulkan nor Windows 3D, and they cost
+#          out: Guest House offers neither Vulkan nor Windows 3D, and they cost
 #          hours.
-#        - AVM's patches in Tools/sysroot-patches are applied after UTM's
+#        - Guest House's patches in Tools/sysroot-patches are applied after UTM's
 #          own patch for the same package: the GStreamer osxaudio
 #          deadlock fix, a QEMU build fix so UTM's Metal display code
 #          is compiled only when OpenGL is, QEMU's coreaudio playback and
 #          microphone, usb-camera (the Mac's camera as a USB webcam),
-#          usb-hid-bridge (Bluetooth HID devices, relayed by AVM's helper),
+#          usb-hid-bridge (Bluetooth HID devices, relayed by Guest House's helper),
 #          usbredirhost sending interrupt OUT transfers longer than one
 #          packet (a USB braille display's output, for NVDA and JAWS),
 #          and HVF keeping the UEFI variable flash read-only when dirty
@@ -43,7 +43,7 @@
 #   3. The licence text of every package (2026-10-29, seventh audit), from
 #      the source tarballs and clones, into share/licenses; the build
 #      phase stages it as Resources/Licenses. See collect_licenses below.
-#   4. A check of the result against what AVM actually uses: every
+#   4. A check of the result against what Guest House actually uses: every
 #      framework and library the Xcode project links, every file the build
 #      phase stages, the deadlock fix, and no Homebrew paths anywhere.
 #
@@ -83,7 +83,7 @@ WIMLIB_SHA256="84221a3abd5b91228f15f8e6065c335a336237b5738197b75bf419eea561a194"
 MTOOLS_URL="https://ftp.gnu.org/gnu/mtools/mtools-4.0.49.tar.gz"
 MTOOLS_SHA256="10cd1111da87bf2400a380c1639a6cba8bfb937a24f9c51f5f88d393ae5f6f76"
 # Only for swtpm's configure, which insists on it (swtpm_cert uses it;
-# AVM runs only swtpm). Built static into a private prefix.
+# Guest House runs only swtpm). Built static into a private prefix.
 LIBTASN1_URL="https://ftp.gnu.org/gnu/libtasn1/libtasn1-4.20.0.tar.gz"
 LIBTASN1_SHA256="92e0e3bd4c02d4aeee76036b2ddd83f0c732ba4cda5cb71d583272b23587a76c"
 
@@ -112,7 +112,7 @@ Options:
   --jobs N        Parallel compile jobs (default: every core).
   --no-windows-3d Leave out what Windows' DirectX needs: virglrenderer's
                   Neptune, DXMT and LLVM 15, which take hours longer to build.
-                  AVM then offers no 3D graphics for Windows (2026-11-01).
+                  Guest House then offers no 3D graphics for Windows (2026-11-01).
   --tools-only    Skip the UTM build; rebuild the install tools and
                   re-check an existing sysroot.
   --mark-built    Record that the sysroot at --out was built from this
@@ -162,14 +162,14 @@ fail() {
     echo "FAILED during: $CURRENT_STEP"
     echo "Reason: $1"
     if [ $# -ge 2 ]; then echo "Next: $2"; fi
-    speak "AVM sysroot build failed during $CURRENT_STEP."
+    speak "Guest House sysroot build failed during $CURRENT_STEP."
     trap - EXIT
     exit 1
 }
 
 # 64 is a usage error, already explained by usage(); every other failure
 # is named and spoken.
-trap 'rc=$?; if [ $rc -ne 0 ] && [ $rc -ne 64 ]; then echo; echo "FAILED during: $CURRENT_STEP (exit $rc). The output above shows why."; speak "AVM sysroot build failed during $CURRENT_STEP."; fi' EXIT
+trap 'rc=$?; if [ $rc -ne 0 ] && [ $rc -ne 64 ]; then echo; echo "FAILED during: $CURRENT_STEP (exit $rc). The output above shows why."; speak "Guest House sysroot build failed during $CURRENT_STEP."; fi' EXIT
 
 # MARK: - 1. Checks
 
@@ -246,13 +246,13 @@ fi
 # audit): the app ships GPL, LGPL, BSD and OpenSSL binaries, so it has to
 # ship their licences. The build phase stages share/licenses as
 # Resources/Licenses, and Resources/THIRD-PARTY-NOTICES.txt says what each
-# package is in AVM. Only the licence members are extracted from each
+# package is in Guest House. Only the licence members are extracted from each
 # tarball, into a scratch folder, after its checksum is checked again;
 # nothing in a tarball is run. A tarball with no licence file stops the
 # build, so a new package's licence is found, not skipped. Also collected:
 # the licences of the git clones (ANGLE, libepoxy, virglrenderer,
 # libucontext), of the subprojects compiled into GLib and QEMU (PCRE2,
-# libfdt, Berkeley SoftFloat), and UTM's own QEMU patch, which with AVM's
+# libfdt, Berkeley SoftFloat), and UTM's own QEMU patch, which with Guest House's
 # patches is the difference between the tarball and the QEMU that ships.
 collect_licenses() {
     local build="$PARENT/build-macOS-arm64" tools="$PARENT/build-avm-tools" utm="$PARENT/UTM"
@@ -270,7 +270,7 @@ collect_licenses() {
         echo "(Tools/sysroot-sources.sha256 and the URLs in that script), the git clones"
         echo "UTM's build makes, and the subprojects compiled into GLib and QEMU. One"
         echo "folder per package; the files are the package's own, unchanged. The app's"
-        echo "THIRD-PARTY-NOTICES.txt says what each one is in AVM and how to get the source."
+        echo "THIRD-PARTY-NOTICES.txt says what each one is in Guest House and how to get the source."
         echo
         printf '%-22s %-20s %s\n' "Package" "Version" "Files"
     } > "$dest/INDEX.txt"
@@ -401,7 +401,7 @@ collect_licenses() {
     {
         echo
         echo "qemu/$qemu_name.patch is UTM's patch to QEMU, from UTM commit $UTM_COMMIT."
-        echo "AVM's own patches follow it; they are Tools/sysroot-patches in AVM's repository."
+        echo "Guest House's own patches follow it; they are Tools/sysroot-patches in Guest House's repository."
     } >> "$dest/INDEX.txt"
 
     rm -rf "$scratch"
@@ -474,7 +474,7 @@ if [ "$SKIP_UTM" = "0" ]; then
     git -C "$UTM_DIR" clean -q -fdx
     info "UTM at $(git -C "$UTM_DIR" log -1 --format='%h, %cd' --date=short)"
 
-    step "Adapting UTM's build for AVM"
+    step "Adapting UTM's build for Guest House"
 
     # Exact text replacements: if UTM's script ever stops matching, this
     # stops with the line that is missing instead of building something
@@ -516,7 +516,7 @@ for line in [
     "clone $D3DMETAL_REPO $D3DMETAL_COMMIT\n",
 ]:
     # Windows' DirectX (--windows-3d, 2026-11-01) keeps LLVM 15 and DXMT;
-    # D3DMetal stays out: Apple's terms don't let AVM ship it, and on arm64
+    # D3DMetal stays out: Apple's terms don't let Guest House ship it, and on arm64
     # UTM's script only makes an empty placeholder for it.
     if os.environ.get("AVM_WINDOWS_3D") == "1" and ("LLVM15" in line or "DXMT" in line):
         continue
@@ -533,8 +533,8 @@ block = s[start:end]
 for needed in ("    build_angle\n", "meson_build $EPOXY_REPO", "meson_darwin_build $VIRGLRENDERER_REPO"):
     if needed not in block:
         sys.exit(f"UTM's GPU support block no longer has: {needed.strip()}")
-s = s[:start] + """    # GPU support: OpenGL only (AVM)
-    # AVM's patches for git clones, which UTM's build doesn't patch:
+s = s[:start] + """    # GPU support: OpenGL only (Guest House)
+    # Guest House's patches for git clones, which UTM's build doesn't patch:
     # ANGLE and libepoxy open ANGLE's libraries beside themselves
     # (Tools/sysroot-patches/clones).
     git -C "$BUILD_DIR/WebKit.git" checkout -q -- Source/ThirdParty/ANGLE/src
@@ -563,11 +563,11 @@ if s.count(anchor) != 1:
     sys.exit("UTM's download() no longer has the step this script checks after.")
 s = s.replace(anchor, anchor + """    AVM_PIN="$(grep "  $FILE\\$" "$AVM_SOURCES_SHA256" | cut -d' ' -f1)"
     if [ -z "$AVM_PIN" ]; then
-        echo "AVM: $FILE has no pinned checksum in sysroot-sources.sha256" >&2
+        echo "Guest House: $FILE has no pinned checksum in sysroot-sources.sha256" >&2
         exit 1
     fi
     if [ "$(shasum -a 256 "$TARGET" | cut -d' ' -f1)" != "$AVM_PIN" ]; then
-        echo "AVM: $FILE does not match its pinned checksum; deleted it" >&2
+        echo "Guest House: $FILE does not match its pinned checksum; deleted it" >&2
         rm -f "$TARGET"
         exit 1
     fi
@@ -575,7 +575,7 @@ s = s.replace(anchor, anchor + """    AVM_PIN="$(grep "  $FILE\\$" "$AVM_SOURCES
 
 script.write_text(s)
 
-# AVM's patches go after UTM's own patch for the same package, so they
+# Guest House's patches go after UTM's own patch for the same package, so they
 # apply to the tree UTM's patch leaves. Each is named
 # <UTM patch name>+<what it does>.patch. A package UTM doesn't patch
 # (usbredir, 2026-10-29) gets the file of its own that UTM's download()
@@ -711,7 +711,7 @@ build_tool mtools "$FETCHED" --disable-floppyd
 
 # MARK: - 4b. swtpm as a program
 
-# AVM runs swtpm as its own process for the TPM. UTM now builds swtpm only
+# Guest House runs swtpm as its own process for the TPM. UTM now builds swtpm only
 # as a library it loads in-process (--enable-shared-lib), so the sysroot
 # has no swtpm program; this builds the ordinary swtpm, from the same
 # source UTM downloaded, against the sysroot's libtpms, OpenSSL and glib.
@@ -795,9 +795,9 @@ fi
 
 collect_licenses
 
-# MARK: - 5. Check against AVM
+# MARK: - 5. Check against Guest House
 
-step "Checking the sysroot against what AVM uses"
+step "Checking the sysroot against what Guest House uses"
 
 problems=0
 problem() { echo "   MISSING OR WRONG: $1"; problems=$((problems + 1)); }
@@ -844,7 +844,7 @@ done <<< "$LINKED"
 XV="$("$OUT/bin/xorriso" -version 2>/dev/null | sed -nE 's/^(GNU )?xorriso ([0-9]+\.[0-9]+\.[0-9]+(\.pl[0-9]+)?).*/\2/p' | sed -n 1p)"
 [ "$XV" = "1.5.8.pl02" ] || problem "xorriso version (got ${XV:-nothing}, expected 1.5.8.pl02)"
 
-# The deadlock fix made it into the osxaudio plugin AVM links: the
+# The deadlock fix made it into the osxaudio plugin Guest House links: the
 # render-notify path is gone and the silence path is there.
 OSX_A="$OUT/lib/gstreamer-1.0/libgstosxaudio.a"
 if [ -f "$OSX_A" ]; then
@@ -888,7 +888,7 @@ for lib in libEGL.dylib libGLESv2.dylib libepoxy.0.dylib libvirglrenderer.1.dyli
 done
 
 [ "$problems" = "0" ] || fail "$problems problems with the sysroot (listed above)."
-info "Every framework and library AVM links is present."
+info "Every framework and library Guest House links is present."
 info "QEMU $("$OUT/bin/qemu-system-aarch64" --version 2>/dev/null | sed -n 1p | sed -E 's/.*version ([^ ]+).*/\1/'), xorriso $XV, osxaudio deadlock fix in place, no Homebrew links."
 
 # MARK: - Done
@@ -898,8 +898,8 @@ echo
 echo "== Done. Sysroot:"
 echo "   $OUT"
 if [ "$OUT" != "$HOME/Developer/sysroot-3d/sysroot-macOS-arm64" ]; then
-    echo "   Build AVM with: Tools/build-installer.sh --sysroot \"$OUT\""
+    echo "   Build Guest House with: Tools/build-installer.sh --sysroot \"$OUT\""
 else
-    echo "   This is AVM's default AVM_SYSROOT, so Xcode and Tools/build-installer.sh find it as is."
+    echo "   This is Guest House's default AVM_SYSROOT, so Xcode and Tools/build-installer.sh find it as is."
 fi
-speak "AVM sysroot is ready."
+speak "Guest House sysroot is ready."

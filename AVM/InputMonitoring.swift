@@ -1,23 +1,23 @@
 // InputMonitoring.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Input Monitoring, for a device with keys (2026-10-29, the user's APH
 // Mantis Q40 sent over Bluetooth: "macOS wouldn't let the helper take the
 // device (error 0xe00002e2)"). macOS lets a process open a HID device that
-// has a keyboard in it only when Input Monitoring allows it, and for AVM's
-// helper it asks that of AVM: tccd attributes the helper to the app around
-// it ("Sub:{com.fullcircleat.AVM}"). A helper running as root can't be
+// has a keyboard in it only when Input Monitoring allows it, and for Guest House's
+// helper it asks that of Guest House: tccd attributes the helper to the app around
+// it ("Sub:{com.fullcircleat.GuestHouse}"). A helper running as root can't be
 // asked, so macOS refused it without a word ("TCC deny IOHIDDeviceOpen",
-// kIOReturnNotPermitted), and nothing ever listed AVM under Input
+// kIOReturnNotPermitted), and nothing ever listed Guest House under Input
 // Monitoring for the user to turn on. A keyboard for Windows needs it the
 // same way, and so does a braille display whose keys are a keyboard too
 // (HIDReportDescriptor.hasKeyboard). A device sent through a USB port
 // doesn't: the helper takes the whole USB device there, not its keyboard.
 //
-// So AVM asks when a device needs it. Its own alert says why and what to
+// So Guest House asks when a device needs it. Its own alert says why and what to
 // do, then macOS's own dialog follows the first time (IOHIDRequestAccess),
-// which lists AVM under Input Monitoring; once AVM is listed, System
-// Settings opens there instead. AVM then waits for it to be turned on, as
+// which lists Guest House under Input Monitoring; once Guest House is listed, System
+// Settings opens there instead. Guest House then waits for it to be turned on, as
 // it waits for the helper's approval in Login Items, and carries on. The
 // helper stays the judge: once the wait is over the send goes ahead, and a
 // refusal is said with what to do. The helper isn't asked while the alert
@@ -31,7 +31,7 @@ enum InputMonitoring {
     /// How an ask ended.
     enum Outcome { case allowed, notNow, gaveUp }
 
-    /// Whether macOS allows AVM now.
+    /// Whether macOS allows Guest House now.
     static var isAllowed: Bool { IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted }
 
     /// The helper's refusal for want of it: its "macOS wouldn't let the
@@ -41,7 +41,7 @@ enum InputMonitoring {
     }
 
     /// Where to turn it on, for a spoken line.
-    static let steps = "In System Settings, under Privacy & Security, then Input Monitoring, turn on AVM."
+    static let steps = "In System Settings, under Privacy & Security, then Input Monitoring, turn on Guest House."
 
     /// Asks under way, with the alert up or waiting after it. One alert at a
     /// time, as the Login Items one: a second ask meanwhile (a keyboard for
@@ -49,7 +49,7 @@ enum InputMonitoring {
     private static var asking = 0
     private static var notNowCount = 0
 
-    /// Asks for it: AVM's alert, titled `title`, says `why` and what to do,
+    /// Asks for it: Guest House's alert, titled `title`, says `why` and what to do,
     /// then `then`; Open Input Monitoring goes on to macOS. Waits, up to
     /// `limit`, for it to be turned on, checking every 2 seconds while
     /// `keepWaiting` is true.
@@ -63,8 +63,8 @@ enum InputMonitoring {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = why + " "
-            + (listed ? steps : "macOS asks next: choose Open System Settings, then turn on AVM.")
-            + " If macOS then offers to quit and reopen AVM, choose Later. " + then
+            + (listed ? steps : "macOS asks next: choose Open System Settings, then turn on Guest House.")
+            + " If macOS then offers to quit and reopen Guest House, choose Later. " + then
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Open Input Monitoring")
         alert.addButton(withTitle: "Not Now")
@@ -80,11 +80,11 @@ enum InputMonitoring {
             AVMLog.write("Input Monitoring: Not Now", category: "InputMonitoring")
             return .notNow
         }
-        AVMLog.write("Input Monitoring: asked (AVM \(listed ? "listed already" : "not listed yet"))", category: "InputMonitoring")
+        AVMLog.write("Input Monitoring: asked (Guest House \(listed ? "listed already" : "not listed yet"))", category: "InputMonitoring")
         if listed {
             openSettings()
         } else {
-            // macOS's dialog, which lists AVM there. Off the main thread, in
+            // macOS's dialog, which lists Guest House there. Off the main thread, in
             // case it waits for the answer.
             DispatchQueue.global(qos: .userInitiated).async { _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent) }
         }

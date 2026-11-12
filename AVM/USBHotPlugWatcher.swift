@@ -1,6 +1,6 @@
 //
 //  USBHotPlugWatcher.swift
-//  AVM
+//  Guest House
 //
 //  USB increment 2b, piece 3: notices USB devices arriving and leaving
 //  while a VM runs, and acts on each arrival's decision (piece 4):
@@ -15,7 +15,7 @@
 //  mode, ordinary devices go over. Everything else stays on the Mac
 //  with no question.
 //
-//  How it works: IOKit tells AVM about every IOUSBHostDevice that
+//  How it works: IOKit tells Guest House about every IOUSBHostDevice that
 //  appears (first-match notification) or goes away (terminated
 //  notification). Both arrive on the main run loop.
 //
@@ -216,10 +216,10 @@ final class USBHotPlugWatcher {
             USBRedirectController.shared.deviceReturned(identity)
             return
         }
-        // Coming home after AVM's own Detach. macOS can drop and re-add
+        // Coming home after Guest House's own Detach. macOS can drop and re-add
         // the device several times on the way (log, 2026-10-12).
         if USBRedirectController.shared.isBeingHandedBack(identity) {
-            log("\(label): \(identity) is being handed back to the Mac by AVM; nothing to decide")
+            log("\(label): \(identity) is being handed back to the Mac by Guest House; nothing to decide")
             return
         }
         let classes = USBDeviceEnumerator.classCodes(for: service)
@@ -234,7 +234,7 @@ final class USBHotPlugWatcher {
         guard let vmID, let decision = decided.decision else { return }
         // USB drives (2026-10-25): macOS 27 blocks sending them (see the
         // USBRedirectController header), so a drive never gets an alert.
-        // At plug-in AVM says why. It stays quiet at start, like other
+        // At plug-in Guest House says why. It stays quiet at start, like other
         // devices that aren't sent then, and when the user chose to keep
         // it on the Mac.
         if USBRedirectController.storageBlocked,
@@ -332,7 +332,7 @@ final class USBHotPlugWatcher {
         }
     }
 
-    /// What AVM would do with this device: the SAVED settings, read fresh
+    /// What Guest House would do with this device: the SAVED settings, read fresh
     /// from VMStore at the moment of arrival, plus the classifier's answer,
     /// run through USBPlugDecider. At start, the start rule is used.
     /// logArrival acts on the answer.

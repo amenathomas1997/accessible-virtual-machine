@@ -1,9 +1,9 @@
 // ProblemReporter.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Help > Report a Problem… (2026-10-26): one step from "something went
-// wrong" to a GitHub issue with what a fix needs. AVM puts a report on the
-// clipboard (AVM, macOS and Mac versions, and the last part of the
+// wrong" to a GitHub issue with what a fix needs. Guest House puts a report on the
+// clipboard (Guest House, macOS and Mac versions, and the last part of the
 // diagnostic log, sanitized as always: no user name, no keystrokes), then
 // opens a new issue in the browser, whose text says to paste it in. The
 // report never goes into the web address, so it stays out of browser
@@ -27,7 +27,7 @@ enum ProblemReporter {
     static func reportAProblem() {
         let alert = NSAlert()
         alert.messageText = "Report a problem on GitHub?"
-        alert.informativeText = "AVM puts a report on the clipboard: your AVM, macOS and Mac versions, and the last part of the diagnostic log, which never has your user name or anything you typed. Then it opens a new GitHub issue in your browser. Describe what happened, paste the report with Command-V, and submit. Nothing is sent until you submit it, and you can read and change everything first. You need to be signed in to GitHub. Or Email the Whole Log puts every log file, zipped, in a new email in your mail app instead."
+        alert.informativeText = "Guest House puts a report on the clipboard: your Guest House, macOS and Mac versions, and the last part of the diagnostic log, which never has your user name or anything you typed. Then it opens a new GitHub issue in your browser. Describe what happened, paste the report with Command-V, and submit. Nothing is sent until you submit it, and you can read and change everything first. You need to be signed in to GitHub. Or Email the Whole Log puts every log file, zipped, in a new email in your mail app instead."
         alert.addButton(withTitle: "Copy Report and Open GitHub")
         // Or the whole log by email (2026-10-30): a tester's problem took
         // Save Diagnostic Log, zipping the folder and attaching it by hand.
@@ -43,7 +43,7 @@ enum ProblemReporter {
         let report = makeReport()
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(report, forType: .string)
-        AVMLog.write("AVM: Report a Problem — report copied (\(report.count) characters); opening a new GitHub issue.")
+        AVMLog.write("Guest House: Report a Problem — report copied (\(report.count) characters); opening a new GitHub issue.")
 
         var components = URLComponents(string: newIssueURL)
         // Added to the template item, not in its place.
@@ -73,9 +73,9 @@ enum ProblemReporter {
         }
         let text = "What happened, and what you expected:\n\n\n\n" + makeReport()
         if let mail = NSSharingService(named: .composeEmail), mail.canPerform(withItems: [text, zip]) {
-            mail.subject = "AVM problem report"
+            mail.subject = "Guest House problem report"
             mail.perform(withItems: [text, zip])
-            AVMLog.write("AVM: Report a Problem — whole log attached to a new email.")
+            AVMLog.write("Guest House: Report a Problem — whole log attached to a new email.")
             Announcer.shared.announce("A new email is open with the whole log attached. Add who it's for and what happened, then send it.", tone: .info)
         } else {
             // No mail app set up: the zip is shown, to attach by hand.
@@ -93,7 +93,7 @@ enum ProblemReporter {
             log = AVMLog.sanitize(tail)
         }
         return """
-        AVM \(version) · macOS \(ProcessInfo.processInfo.operatingSystemVersionString) · \(macModel())
+        Guest House \(version) · macOS \(ProcessInfo.processInfo.operatingSystemVersionString) · \(macModel())
 
         <details><summary>Diagnostic log, last \(logLines) lines</summary>
 

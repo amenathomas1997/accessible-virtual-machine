@@ -1,8 +1,8 @@
 //
 //  USBPlugDecision.swift
-//  AVM
+//  Guest House
 //
-//  What AVM does with a USB device: one plugged in while Windows runs
+//  What Guest House does with a USB device: one plugged in while Windows runs
 //  (decide), and one already plugged in when Windows starts
 //  (decideAtStart). Pure functions, so the rules live in one place.
 //  USBHotPlugWatcher acts on the answers.

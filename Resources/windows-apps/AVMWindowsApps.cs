@@ -1,8 +1,8 @@
 // AVMWindowsApps.cs
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Runs in the signed-in user's Windows session (2026-10-29), started by
-// the scheduled task \AVM\Windows Apps at sign-in. AVM's guest agent runs
+// the scheduled task \AVM\Windows Apps at sign-in. Guest House's guest agent runs
 // as SYSTEM in session 0, where no window or Start menu of the user's can
 // be seen or brought forward, so this does both for it:
 //
@@ -10,7 +10,7 @@
 //     written to running.txt when the list changes: key TAB name. The key
 //     is the app's AppUserModelID when it has one (Store apps, and desktop
 //     apps that set one), else its program's path.
-//   - requests\request-ID.txt, written by AVM (as SYSTEM, through the
+//   - requests\request-ID.txt, written by Guest House (as SYSTEM, through the
 //     agent; only SYSTEM and Administrators can write in that folder), one
 //     file per request (2026-10-30 audit: one shared request.txt let a
 //     second request overwrite the first): id TAB launch TAB key TAB unix
@@ -21,8 +21,8 @@
 //     its sign-in screen, a request waits here for this helper, which
 //     starts at sign-in; one older than ten minutes is dropped, so an app
 //     never opens at some later sign-in nobody asked for. (A focus
-//     request, without the start, went with AVM's enter-app.)
-//   - Replies older than fifteen minutes are deleted; AVM has its answer.
+//     request, without the start, went with Guest House's enter-app.)
+//   - Replies older than fifteen minutes are deleted; Guest House has its answer.
 //
 // It never shows a window, so it takes no focus and no screen reader
 // speaks for it. One copy per session (a named mutex).
@@ -46,10 +46,10 @@ static class AVMWindowsApps
     /// nothing more, so a helper can take a request and no account can make one.
     static readonly string RequestFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), @"AVM\requests");
     static readonly string RunningFile = Path.Combine(Folder, "running.txt");
-    /// The list when running.txt can't be replaced (2026-11-07: AVM had
+    /// The list when running.txt can't be replaced (2026-11-07: Guest House had
     /// left it open through the guest agent, which shares reads only, and
     /// the list stood still for hours while the failure was swallowed
-    /// here). Its first line is "# " and the reason; AVM reads it when
+    /// here). Its first line is "# " and the reason; Guest House reads it when
     /// running.txt stands still, and it goes once running.txt is written.
     static readonly string StuckFile = Path.Combine(Folder, "running-stuck.txt");
 
@@ -66,10 +66,10 @@ static class AVMWindowsApps
             if (!first) return;
             // Not fatal (2026-11-09, fourth audit #33): Users can't make it
             // if someone deleted it, and an exception here ended the helper
-            // and, after three tries, its task. AVM's lockdown makes it again.
+            // and, after three tries, its task. Guest House's lockdown makes it again.
             try { Directory.CreateDirectory(Folder); } catch { }
             // One left by an earlier run would be taken for today's list
-            // (2026-11-08): AVM reads it whenever the list stands still.
+            // (2026-11-08): Guest House reads it whenever the list stands still.
             try { File.Delete(StuckFile); } catch { }
             string last = null, lastStuck = null;
             int ticks = 0;
@@ -113,7 +113,7 @@ static class AVMWindowsApps
                     catch (Exception e)
                     {
                         // Tried again next pass; meanwhile the list and the
-                        // reason go where AVM looks when the list stands still.
+                        // reason go where Guest House looks when the list stands still.
                         string stuck = now == null ? null : "# " + e.Message.Replace('\n', ' ').Replace('\r', ' ') + "\n" + now;
                         if (stuck != null && stuck != lastStuck) { try { Write(StuckFile, stuck); lastStuck = stuck; } catch { } }
                     }
@@ -148,10 +148,10 @@ static class AVMWindowsApps
             if (!File.Exists(file) || DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromSeconds(10)) return;
             throw;
         }
-        // AVM writes the line and its newline at once; without the newline
+        // Guest House writes the line and its newline at once; without the newline
         // it's still being written, unless it's been ten seconds.
         if (!request.EndsWith("\n") && DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromSeconds(10)) return;
-        // Only AVM's own requests, which its agent writes as SYSTEM (2026-11-08,
+        // Only Guest House's own requests, which its agent writes as SYSTEM (2026-11-08,
         // fourth audit #2): every signed-in user has a helper reading this
         // folder, and every user can write to it, so without this one account
         // could have another's session open a program of its choosing.
@@ -163,7 +163,7 @@ static class AVMWindowsApps
         bool fromSystem = sid != null && (sid.IsWellKnown(WellKnownSidType.LocalSystemSid) || sid.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid));
         if (!Claim(file)) return;
         string id = IdOf(file);
-        if (!fromSystem) { Reply(id, "failed\tthe request was not from AVM"); return; }
+        if (!fromSystem) { Reply(id, "failed\tthe request was not from Guest House"); return; }
         string[] parts = request.Trim().Split('\t');
         if (parts.Length < 3 || parts[1] != "launch") { Reply(id, "failed\tnot understood"); return; }
         string key = parts[2];

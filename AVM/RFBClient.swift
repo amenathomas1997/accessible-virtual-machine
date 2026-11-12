@@ -1,5 +1,5 @@
 // RFBClient.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // A small screen-sharing (VNC, RFB 3.8) client for automatic macOS setup
 // (2026-10-30, MacAutoSetup.swift). A macOS machine ignores keys a program
@@ -263,5 +263,5 @@ nonisolated final class RFBClient {
 
 /// A character the macOS setup can't type.
 struct RFBUntypable: LocalizedError {
-    var errorDescription: String? { "that text has a character AVM can't type into macOS's setup" }
+    var errorDescription: String? { "that text has a character Guest House can't type into macOS's setup" }
 }

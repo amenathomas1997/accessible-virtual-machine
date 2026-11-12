@@ -1,6 +1,6 @@
 #!/bin/bash
 # test-update.sh
-# AVM — Accessible Virtual Machine
+# Guest House — accessible virtual machines
 #
 # An update really installing (2026-11-01, UpdateTestJob.swift). Makes a copy
 # of the app that calls itself version 0.0.1, lets Sparkle in it find the
@@ -16,7 +16,7 @@ set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CACHE="$HOME/Library/Caches/AVM-build"
-APP="$CACHE/dd-check/Build/Products/Debug/AVM.app"
+APP="$CACHE/dd-check/Build/Products/Debug/Guest House.app"
 FEED=""
 OUT=""
 EARLY=()
@@ -31,11 +31,11 @@ while [ $# -gt 0 ]; do
         *) echo "Unknown option: $1"; exit 64 ;;
     esac
 done
-[ -x "$APP/Contents/MacOS/AVM" ] || { echo "FAILED: no AVM at $APP."; exit 1; }
+[ -x "$APP/Contents/MacOS/Guest House" ] || { echo "FAILED: no Guest House at $APP."; exit 1; }
 
 WORK="$(mktemp -d "$CACHE/update-test.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
-COPY="$WORK/AVM.app"
+COPY="$WORK/Guest House.app"
 ditto "$APP" "$COPY" || { echo "FAILED: couldn't copy the app."; exit 1; }
 PLIST="$COPY/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.0.1" -c "Set :CFBundleVersion 1" "$PLIST"
@@ -48,7 +48,7 @@ codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign "${IDEN
 echo "== The copy says it's 0.0.1, signed by ${IDENTITY:-nobody}"
 
 LOG="${OUT:-$WORK}/update-job.txt"
-"$COPY/Contents/MacOS/AVM" --test-update ${FEED:+--feed "$FEED"} ${POLL[@]+"${POLL[@]}"} ${EARLY[@]+"${EARLY[@]}"} > "$LOG" 2>/dev/null &
+"$COPY/Contents/MacOS/Guest House" --test-update ${FEED:+--feed "$FEED"} ${POLL[@]+"${POLL[@]}"} ${EARLY[@]+"${EARLY[@]}"} > "$LOG" 2>/dev/null &
 JOB=$!
 INSTALLED=""
 for _ in $(seq 1 240); do

@@ -1,5 +1,5 @@
 // RemoteDesktop.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // Remote Desktop into a machine (2026-10-28, a tester's request): the
 // Windows App (Microsoft's Remote Desktop client, from the App Store, on
@@ -7,16 +7,16 @@
 // a Windows or Linux machine running here, with a user name and password
 // chosen in the machine's Settings.
 //
-// What AVM does:
+// What Guest House does:
 //   - In the machine, through its guest agent: makes the account (or sets
 //     its password), lets it in by Remote Desktop, turns the Remote Desktop
 //     host on and opens its firewall. Windows Pro has one built in; Windows
-//     Home doesn't, and AVM says so. Linux gets xrdp.
+//     Home doesn't, and Guest House says so. Linux gets xrdp.
 //   - On the Mac: QEMU's user networking keeps the machine off the network,
-//     so AVM forwards a port on the Mac to the machine's 3389: the first
+//     so Guest House forwards a port on the Mac to the machine's 3389: the first
 //     machine with Remote Desktop on gets 3389 itself (so the name alone
 //     works), the next 3390, and so on. Bound to this Mac only, or to every
-//     address, as chosen. While the machine runs, AVM publishes the
+//     address, as chosen. While the machine runs, Guest House publishes the
 //     machine's name on the local network (Bonjour), so the Windows App
 //     can be given "machine-name.local" rather than an IP address.
 //   - The password goes to the Mac's keychain (the user's choice), so
@@ -81,7 +81,7 @@ final class RemoteDesktopAdvertiser {
                                      UInt16(kDNSServiceType_A), UInt16(kDNSServiceClass_IN),
                                      UInt16(raw.count), raw.baseAddress, 120, { _, _, _, error, _ in
                 if error != kDNSServiceErr_NoError {
-                    AVMLog.write("AVM: Remote Desktop — the name couldn't be published (\(error))")
+                    AVMLog.write("Guest House: Remote Desktop — the name couldn't be published (\(error))")
                 }
             }, nil)
         }
@@ -99,7 +99,7 @@ final class RemoteDesktopAdvertiser {
             entry.service = service
         }
         entries[config.id] = entry
-        AVMLog.write("AVM: Remote Desktop — \(host.dropLast()) published for \(config.name), port \(port)")
+        AVMLog.write("Guest House: Remote Desktop — \(host.dropLast()) published for \(config.name), port \(port)")
         watchNetwork()
         return true
     }
@@ -108,7 +108,7 @@ final class RemoteDesktopAdvertiser {
         guard let entry = entries.removeValue(forKey: id) else { return }
         if let service = entry.service { DNSServiceRefDeallocate(service) }
         if let connection = entry.connection { DNSServiceRefDeallocate(connection) }   // takes its records with it
-        AVMLog.write("AVM: Remote Desktop — \(entry.name.dropLast()) withdrawn")
+        AVMLog.write("Guest House: Remote Desktop — \(entry.name.dropLast()) withdrawn")
         if entries.isEmpty {
             networkWatch?.cancel()
             networkWatch = nil
@@ -145,7 +145,7 @@ final class RemoteDesktopAdvertiser {
         for entry in entries.values where entry.config.remoteDesktopReachesNetwork {
             let now = RemoteDesktop.macAddress() ?? "127.0.0.1"
             guard now != entry.address else { continue }
-            AVMLog.write("AVM: Remote Desktop — the Mac's address changed; republishing \(entry.name.dropLast())")
+            AVMLog.write("Guest House: Remote Desktop — the Mac's address changed; republishing \(entry.name.dropLast())")
             publish(entry.config, port: entry.port)
         }
     }
@@ -183,7 +183,7 @@ extension VMManager {
             // review): a script's error can quote the line that failed.
             let first = error.localizedDescription.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no detail"
             AVMLog.write("remoteDesktop: setup failed: \(first.prefix(160))")
-            return .failed("Remote Desktop couldn't be set up in \(configuration.name). The reason is in AVM's diagnostic log.")
+            return .failed("Remote Desktop couldn't be set up in \(configuration.name). The reason is in Guest House's diagnostic log.")
         }
     }
 
@@ -277,7 +277,7 @@ extension VMManager {
         """
         let out = try await agentRun("/bin/sh", ["-c", host], limit: .seconds(600))
         if out.contains("NOPKG") {
-            return .unsupported("AVM doesn't know how to install xrdp on this Linux. Install xrdp yourself, then connect with the account \(user).")
+            return .unsupported("Guest House doesn't know how to install xrdp on this Linux. Install xrdp yourself, then connect with the account \(user).")
         }
         guard out.contains("AVM-RD-READY") else {
             throw AVMError.qmpCommandFailed(out.trimmingCharacters(in: .whitespacesAndNewlines).description)

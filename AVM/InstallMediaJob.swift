@@ -1,10 +1,10 @@
 // InstallMediaJob.swift
-// AVM — Accessible Virtual Machine
+// Guest House — accessible virtual machines
 //
 // A window-less way to build a Windows machine's install media
 // (2026-10-26), for Tools/test-windows-install.sh:
 //
-//   AVM.app/Contents/MacOS/AVM --build-install-media --iso <Windows ISO>
+//   Guest House.app/Contents/MacOS/Guest House --build-install-media --iso <Windows ISO>
 //       --out <folder> [--edition pro|home|homeSingleLanguage]
 //       [--screen-readers nvda,jaws] [--guest windows|ubuntu|debian|fedora|kali|almalinux|rocky|opensuse]
 //       [--disk virtio|nvme]   (the disk the answers install onto; default
@@ -39,7 +39,7 @@ enum InstallMediaJob {
             return arguments[i + 1]
         }
         guard let iso = value("--iso"), let out = value("--out") else {
-            print("Usage: AVM \(flag) --iso <Windows ISO> --out <folder> [--edition pro|home|homeSingleLanguage] [--screen-readers nvda,jaws]")
+            print("Usage: Guest House \(flag) --iso <Windows ISO> --out <folder> [--edition pro|home|homeSingleLanguage] [--screen-readers nvda,jaws]")
             exit(64)
         }
         let edition = value("--edition") ?? WindowsEdition.pro.rawValue
