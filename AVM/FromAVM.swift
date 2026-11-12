@@ -140,9 +140,14 @@ enum FromAVM {
             notes.append("the app is still at \(here.path): \(error.localizedDescription)")
             return
         }
+        // Opened once this process has gone (2026-11-12): opened at once, the
+        // new one found this one still listed, took it for a second copy
+        // (AVMAppDelegate's one-at-a-time check) and quit, and nothing was open.
         let open = Process()
-        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        open.arguments = ["-n", there.path] + (testReport.map { ["--args", "--test-from-avm-renamed", $0] } ?? [])
+        open.executableURL = URL(fileURLWithPath: "/bin/sh")
+        let extra = testReport.map { ["--args", "--test-from-avm-renamed", $0] } ?? []
+        open.arguments = ["-c", "while kill -0 \"$0\" 2>/dev/null; do sleep 0.2; done; exec /usr/bin/open -n \"$@\"",
+                          "\(ProcessInfo.processInfo.processIdentifier)", there.path] + extra
         do {
             try open.run()
             exit(0)
