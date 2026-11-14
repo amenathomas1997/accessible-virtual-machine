@@ -20,30 +20,83 @@ nonisolated struct WindowsApp: Sendable, Hashable, Identifiable {
     let id: String
     /// How its entry in Windows' installed list starts.
     let listedAs: String
+    /// The heading it sits under in the window.
+    let group: String
 
     /// Where its releases are in microsoft/winget-pkgs.
     var manifestFolder: String {
         "manifests/\(id.prefix(1).lowercased())/" + id.replacingOccurrences(of: ".", with: "/")
     }
 
-    /// Each one really installed in Windows on ARM on 2026-11-03: a machine-wide
-    /// installer that runs with no questions. Not Adobe Acrobat Reader: its
-    /// installer ended at 0 with nothing in Windows' list. Nor Office, which is
-    /// its own installer and needs a sign-in.
+    /// Each one really installed in Windows on ARM, the first twelve on
+    /// 2026-11-03 and the rest on 2026-11-13: a machine-wide installer that
+    /// runs with no questions, and Windows lists the app afterwards. Not Adobe
+    /// Acrobat Reader: its installer ended at 0 with nothing in Windows' list.
+    /// Nor Office, which is its own installer and needs a sign-in. Tried and
+    /// left out on 2026-11-13: AIMP (its maker's site refused the download),
+    /// WinSCP (SourceForge sends a web page, so the checksum fails) and
+    /// ocenaudio (it installs for the account that runs it, which here is
+    /// SYSTEM, so the person signed in never sees it).
     static let all: [WindowsApp] = [
-        WindowsApp(name: "Google Chrome", what: "Web browser", id: "Google.Chrome", listedAs: "Google Chrome"),
-        WindowsApp(name: "Mozilla Firefox", what: "Web browser", id: "Mozilla.Firefox", listedAs: "Mozilla Firefox"),
-        WindowsApp(name: "Mozilla Thunderbird", what: "Email", id: "Mozilla.Thunderbird", listedAs: "Mozilla Thunderbird"),
-        WindowsApp(name: "LibreOffice", what: "Documents and spreadsheets", id: "TheDocumentFoundation.LibreOffice", listedAs: "LibreOffice"),
-        WindowsApp(name: "Zoom", what: "Video meetings", id: "Zoom.Zoom", listedAs: "Zoom"),
-        WindowsApp(name: "VLC", what: "Audio and video player", id: "VideoLAN.VLC", listedAs: "VLC media player"),
-        WindowsApp(name: "Audacity", what: "Audio editor", id: "Audacity.Audacity", listedAs: "Audacity"),
-        WindowsApp(name: "7-Zip", what: "Compressed files", id: "7zip.7zip", listedAs: "7-Zip"),
-        WindowsApp(name: "Notepad++", what: "Text editor", id: "Notepad++.Notepad++", listedAs: "Notepad++"),
-        WindowsApp(name: "Visual Studio Code", what: "Code editor", id: "Microsoft.VisualStudioCode", listedAs: "Microsoft Visual Studio Code"),
-        WindowsApp(name: "Git", what: "Version control", id: "Git.Git", listedAs: "Git"),
-        WindowsApp(name: "Python", what: "Programming language", id: "Python.Python.3.13", listedAs: "Python 3.13"),
+        // Web browsers
+        WindowsApp(name: "Google Chrome", what: "Web browser", id: "Google.Chrome", listedAs: "Google Chrome", group: "Web browsers"),
+        WindowsApp(name: "Mozilla Firefox", what: "Web browser", id: "Mozilla.Firefox", listedAs: "Mozilla Firefox", group: "Web browsers"),
+        WindowsApp(name: "Brave", what: "Web browser", id: "Brave.Brave", listedAs: "Brave", group: "Web browsers"),
+        WindowsApp(name: "Vivaldi", what: "Web browser", id: "Vivaldi.Vivaldi", listedAs: "Vivaldi", group: "Web browsers"),
+        // Email, documents and notes
+        WindowsApp(name: "Mozilla Thunderbird", what: "Email", id: "Mozilla.Thunderbird", listedAs: "Mozilla Thunderbird", group: "Email, documents and notes"),
+        WindowsApp(name: "LibreOffice", what: "Documents and spreadsheets", id: "TheDocumentFoundation.LibreOffice", listedAs: "LibreOffice", group: "Email, documents and notes"),
+        WindowsApp(name: "Obsidian", what: "Notes", id: "Obsidian.Obsidian", listedAs: "Obsidian", group: "Email, documents and notes"),
+        WindowsApp(name: "Notepad++", what: "Text editor", id: "Notepad++.Notepad++", listedAs: "Notepad++", group: "Email, documents and notes"),
+        WindowsApp(name: "Pandoc", what: "Document converter", id: "JohnMacFarlane.Pandoc", listedAs: "Pandoc", group: "Email, documents and notes"),
+        // Meetings and voice chat
+        WindowsApp(name: "Zoom", what: "Video meetings", id: "Zoom.Zoom", listedAs: "Zoom", group: "Meetings and voice chat"),
+        WindowsApp(name: "Mumble", what: "Voice chat", id: "Mumble.Mumble.Client", listedAs: "Mumble", group: "Meetings and voice chat"),
+        // Music and video
+        WindowsApp(name: "VLC", what: "Audio and video player", id: "VideoLAN.VLC", listedAs: "VLC media player", group: "Music and video"),
+        WindowsApp(name: "foobar2000", what: "Music player", id: "PeterPawlowski.foobar2000", listedAs: "foobar2000", group: "Music and video"),
+        WindowsApp(name: "Winamp", what: "Music player", id: "Winamp.Winamp", listedAs: "Winamp", group: "Music and video"),
+        WindowsApp(name: "iTunes", what: "Music and Apple devices", id: "Apple.iTunes", listedAs: "iTunes", group: "Music and video"),
+        WindowsApp(name: "HandBrake", what: "Video converter", id: "HandBrake.HandBrake", listedAs: "HandBrake", group: "Music and video"),
+        WindowsApp(name: "OBS Studio", what: "Recording and streaming", id: "OBSProject.OBSStudio", listedAs: "OBS Studio", group: "Music and video"),
+        // Recording and audio editing
+        WindowsApp(name: "Audacity", what: "Audio editor", id: "Audacity.Audacity", listedAs: "Audacity", group: "Recording and audio editing"),
+        WindowsApp(name: "REAPER", what: "Recording and music production", id: "Cockos.REAPER", listedAs: "REAPER", group: "Recording and audio editing"),
+        WindowsApp(name: "GoldWave", what: "Audio editor", id: "GoldWave.GoldWave", listedAs: "GoldWave", group: "Recording and audio editing"),
+        // Reading
+        WindowsApp(name: "calibre", what: "E-book library", id: "calibre.calibre", listedAs: "calibre", group: "Reading"),
+        WindowsApp(name: "SumatraPDF", what: "PDF and e-book reader", id: "SumatraPDF.SumatraPDF", listedAs: "SumatraPDF", group: "Reading"),
+        WindowsApp(name: "Foxit PDF Reader", what: "PDF reader", id: "Foxit.FoxitReader", listedAs: "Foxit PDF Reader", group: "Reading"),
+        // Files and passwords
+        WindowsApp(name: "7-Zip", what: "Compressed files", id: "7zip.7zip", listedAs: "7-Zip", group: "Files and passwords"),
+        WindowsApp(name: "Everything", what: "Find files by name", id: "voidtools.Everything", listedAs: "Everything", group: "Files and passwords"),
+        WindowsApp(name: "Dropbox", what: "Files in the cloud", id: "Dropbox.Dropbox", listedAs: "Dropbox", group: "Files and passwords"),
+        WindowsApp(name: "Google Drive", what: "Files in the cloud", id: "Google.GoogleDrive", listedAs: "Google Drive", group: "Files and passwords"),
+        WindowsApp(name: "KeePassXC", what: "Password manager", id: "KeePassXCTeam.KeePassXC", listedAs: "KeePassXC", group: "Files and passwords"),
+        WindowsApp(name: "Bitwarden", what: "Password manager", id: "Bitwarden.Bitwarden", listedAs: "Bitwarden", group: "Files and passwords"),
+        // Remote access and networks
+        WindowsApp(name: "TeamViewer", what: "Remote help", id: "TeamViewer.TeamViewer", listedAs: "TeamViewer", group: "Remote access and networks"),
+        WindowsApp(name: "PuTTY", what: "Remote terminal", id: "PuTTY.PuTTY", listedAs: "PuTTY", group: "Remote access and networks"),
+        WindowsApp(name: "Tailscale", what: "Private network", id: "Tailscale.Tailscale", listedAs: "Tailscale", group: "Remote access and networks"),
+        // For developers
+        WindowsApp(name: "Visual Studio Code", what: "Code editor", id: "Microsoft.VisualStudioCode", listedAs: "Microsoft Visual Studio Code", group: "For developers"),
+        WindowsApp(name: "Git", what: "Version control", id: "Git.Git", listedAs: "Git", group: "For developers"),
+        WindowsApp(name: "GitHub CLI", what: "GitHub from the command line", id: "GitHub.cli", listedAs: "GitHub CLI", group: "For developers"),
+        WindowsApp(name: "Python", what: "Programming language", id: "Python.Python.3.13", listedAs: "Python 3.13", group: "For developers"),
+        WindowsApp(name: "Node.js", what: "JavaScript runtime", id: "OpenJS.NodeJS.LTS", listedAs: "Node.js", group: "For developers"),
+        WindowsApp(name: "Go", what: "Programming language", id: "GoLang.Go", listedAs: "Go Programming Language", group: "For developers"),
+        WindowsApp(name: "AutoHotkey", what: "Keyboard shortcuts and scripts", id: "AutoHotkey.AutoHotkey", listedAs: "AutoHotkey", group: "For developers"),
     ]
+
+    /// The list under its headings, in the list's order (2026-11-13: with
+    /// forty apps, VoiceOver's heading keys go from one kind to the next).
+    static var grouped: [(group: String, apps: [WindowsApp])] {
+        var result: [(group: String, apps: [WindowsApp])] = []
+        for app in all {
+            if result.last?.group == app.group { result[result.count - 1].apps.append(app) } else { result.append((app.group, [app])) }
+        }
+        return result
+    }
 
     /// `Git`, not `GitHub Desktop`: what follows the name isn't more of a word.
     func isListed(in names: [String]) -> Bool {

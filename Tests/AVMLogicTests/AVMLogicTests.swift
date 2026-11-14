@@ -2002,6 +2002,19 @@ final class GuestWatchTests: XCTestCase {
         XCTAssertTrue(python.isListed(in: ["Python 3.13.17 (64-bit)"]))
         XCTAssertEqual(python.manifestFolder, "manifests/p/Python/Python/3/13")
         XCTAssertEqual(WindowsApp.all.first { $0.name == "Notepad++" }?.manifestFolder, "manifests/n/Notepad++/Notepad++")
+        // GitHub CLI joined the list (2026-11-13): one isn't taken for the other.
+        XCTAssertFalse(git.isListed(in: ["GitHub CLI"]))
+        XCTAssertTrue(WindowsApp.all.first { $0.name == "GitHub CLI" }!.isListed(in: ["GitHub CLI"]))
+    }
+
+    /// Each heading once, every app under one, no app or package twice.
+    func testWindowsAppsAreGroupedUnderHeadings() {
+        let grouped = WindowsApp.grouped
+        XCTAssertEqual(Set(grouped.map(\.group)).count, grouped.count, "a heading appears twice: its apps aren't together in the list")
+        XCTAssertEqual(grouped.flatMap(\.apps), WindowsApp.all)
+        XCTAssertFalse(grouped.contains { $0.group.isEmpty || $0.apps.isEmpty })
+        XCTAssertEqual(Set(WindowsApp.all.map(\.name)).count, WindowsApp.all.count)
+        XCTAssertEqual(Set(WindowsApp.all.map(\.id)).count, WindowsApp.all.count)
     }
 
     func testTheFeedsNewestBuild() {

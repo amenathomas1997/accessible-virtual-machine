@@ -149,12 +149,19 @@ struct InstallAppsView: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(WindowsApp.all) { app in
-                        let already = present?.contains(app) == true
-                        Toggle(already ? "\(app.name), \(app.what), already installed" : "\(app.name), \(app.what)", isOn: Binding(
-                            get: { chosen.contains(app) },
-                            set: { if $0 { chosen.insert(app) } else { chosen.remove(app) } }))
-                            .disabled(already || installer.current != nil)
+                    ForEach(WindowsApp.grouped, id: \.group) { section in
+                        Text(section.group)
+                            .font(.headline)
+                            .padding(.top, 6)
+                            .accessibilityAddTraits(.isHeader)
+                            .accessibilityHeading(.h2)
+                        ForEach(section.apps) { app in
+                            let already = present?.contains(app) == true
+                            Toggle(already ? "\(app.name), \(app.what), already installed" : "\(app.name), \(app.what)", isOn: Binding(
+                                get: { chosen.contains(app) },
+                                set: { if $0 { chosen.insert(app) } else { chosen.remove(app) } }))
+                                .disabled(already || installer.current != nil)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

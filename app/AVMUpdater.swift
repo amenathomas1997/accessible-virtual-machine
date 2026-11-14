@@ -260,6 +260,10 @@ struct ReleaseNote {
 enum ReleaseNotes {
     /// Newest first.
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "0.4.48", changes: [
+            "Install Apps, in the Virtual Machine menu, now offers 39 Windows apps instead of 12. New ones include the Brave and Vivaldi browsers, REAPER and GoldWave for recording, foobar2000, Winamp and iTunes for music, calibre, SumatraPDF and Foxit PDF Reader for reading, Dropbox, Google Drive, KeePassXC and Bitwarden, TeamViewer, PuTTY and Tailscale, and Node.js, Go, GitHub CLI and AutoHotkey for developers. Every one was installed in Windows before it went on the list.",
+            "The list is now under headings, such as Web browsers, Music and video, and Files and passwords. With VoiceOver, VO-Command-H moves from one heading to the next.",
+        ]),
         ReleaseNote(version: "0.4.47", changes: [
             "This app has a new name: Guest House. Until now it was released as AVM, which is the name of Allison Meloy's original app, and people were taking one for the other. Guest House is this fork's own name; it is still built on Allison's work, under the same license. Nothing else about how it works has changed.",
             "Your machines, their saved sessions and restore points, your settings and the Windows apps you kept in the Dock all came across by themselves. In Finder, the Dock and Command-Tab the app is now Guest House, and the Windows apps folder in Applications is now Guest House Windows Apps.",

@@ -89,9 +89,12 @@ The **Virtual Machine** menu can also:
 - **Type Clipboard into Windows** (Command-Shift-V): types the clipboard's
   text as key presses, for a sign-in box or product key field that won't
   take a paste. It types a US keyboard's characters.
-- **Install Apps** (Virtual Machine menu, Windows): tick Chrome, Firefox,
-  Thunderbird, LibreOffice, Zoom, VLC, Audacity, 7-Zip, Notepad++, Visual Studio
-  Code, Git or Python, and they install one at a time with no questions. Each
+- **Install Apps** (Virtual Machine menu, Windows): tick any of 39 apps, under
+  headings VoiceOver can move between: web browsers (Chrome, Firefox, Brave,
+  Vivaldi), email, documents and notes, meetings and voice chat, music and
+  video, recording and audio editing (Audacity, REAPER, GoldWave), reading,
+  files and passwords, remote access and networks, and tools for developers.
+  They install one at a time with no questions. Each
   comes from its maker to Windows, checked against the SHA-256 in Microsoft's
   public package list. What's already installed is marked.
 - **Speak Updates and Disk** (Command-Option-Shift-I): how full the
