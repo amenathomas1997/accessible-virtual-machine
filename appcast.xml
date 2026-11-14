@@ -10,6 +10,15 @@
              original project's releases are not listed: they are built for
              its own app and could not be installed over this one. -->
         <item>
+            <title>Version 0.4.48</title>
+            <sparkle:version>68</sparkle:version>
+            <sparkle:shortVersionString>0.4.48</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul><li>Install Apps, in the Virtual Machine menu, now offers 39 Windows apps instead of 12. New ones include the Brave and Vivaldi browsers, REAPER and GoldWave for recording, foobar2000, Winamp and iTunes for music, calibre, SumatraPDF and Foxit PDF Reader for reading, Dropbox, Google Drive, KeePassXC and Bitwarden, TeamViewer, PuTTY and Tailscale, and Node.js, Go, GitHub CLI and AutoHotkey for developers. Every one was installed in Windows before it went on the list.</li><li>The list is now under headings, such as Web browsers, Music and video, and Files and passwords. With VoiceOver, VO-Command-H moves from one heading to the next.</li></ul>]]></description>
+            <pubDate>Sat, 14 Nov 2026 00:36:13 +0000</pubDate>
+            <enclosure url="https://github.com/amenathomas1997/accessible-virtual-machine/releases/download/v0.4.48/GuestHouse-0.4.48.zip" sparkle:edSignature="0P44bhU5rWUZh0OJE1xJ/TJYMfEymvc+9oEZcky8lQvPsZgqSB3k8BBCFWjrZYRGQrA3MMInDJ8/UTjkpUjXAA==" length="106700274" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 0.4.47</title>
             <sparkle:version>67</sparkle:version>
             <sparkle:shortVersionString>0.4.47</sparkle:shortVersionString>
